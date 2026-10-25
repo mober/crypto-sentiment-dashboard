@@ -50,11 +50,25 @@ def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, 
 
 
 def build_payload() -> Dict[str, Any]:
-    with ThreadPoolExecutor(max_workers=len(SYMBOLS) + 1) as pool:
+    with ThreadPoolExecutor(max_workers=len(SYMBOLS) + 2) as pool:
         global_future = pool.submit(sentiment.collect_global)
+        mcap_future = pool.submit(sentiment.safe, sentiment.get_market_caps, SYMBOLS)
         symbol_futures = {s: pool.submit(sentiment.collect_symbol, s) for s in SYMBOLS}
         global_data = global_future.result()
-        symbol_data = {s: f.result() for s, f in symbol_futures.items()}
+        mcaps = mcap_future.result() or {}
+        symbol_data = {s: {**f.result(), "market_cap": mcaps.get(s)} for s, f in symbol_futures.items()}
+
+    # Fehlgeschlagene Abfragen (z. B. Rate-Limit) durch den letzten erfolgreichen Wert ersetzen
+    previous = _cache["payload"]
+    if previous:
+        for key, value in global_data.items():
+            if value is None:
+                global_data[key] = previous["global"].get(key)
+        old_coins = {c["symbol"]: c["data"] for c in previous["coins"]}
+        for s in SYMBOLS:
+            for key, value in symbol_data[s].items():
+                if value is None:
+                    symbol_data[s][key] = old_coins.get(s, {}).get(key)
 
     coins = [build_coin(s, global_data, symbol_data[s]) for s in SYMBOLS]
 
@@ -79,7 +93,14 @@ def get_coin(symbol: str, force: bool = False) -> Dict[str, Any]:
     with _coin_lock:
         entry = _coin_cache.get(symbol)
         if force or entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            entry = {"time": time.time(), "coin": build_coin(symbol, global_data, sentiment.collect_symbol(symbol))}
+            symbol_data = sentiment.collect_symbol(symbol)
+            # Marktkapitalisierung aus den Trending-Daten, spart eine CoinGecko-Abfrage
+            trend = next((t for t in global_data["trending"] or [] if t["symbol"] == symbol), None)
+            symbol_data["market_cap"] = (
+                {"usd": trend["market_cap"], "rank": trend["market_cap_rank"]}
+                if trend and trend.get("market_cap") else None
+            )
+            entry = {"time": time.time(), "coin": build_coin(symbol, global_data, symbol_data)}
             _coin_cache[symbol] = entry
         return entry["coin"]
 

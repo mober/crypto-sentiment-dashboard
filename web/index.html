@@ -93,8 +93,10 @@
   .coin-note { color: var(--muted); font-size: 13px; }
   .coin-loading { padding: 20px; color: var(--muted); }
   .coin { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-  .coin-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .coin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .coin-head h2 { margin: 0; font-size: 20px; }
+  .mcap { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .mcap .val { color: var(--text); font-weight: 600; }
   .price { font-size: 20px; font-weight: 600; }
   .trend { font-size: 13px; font-weight: 600; }
   .trend.up { color: var(--up); }
@@ -186,6 +188,11 @@ const usd = (v) => {
   if (v >= 1e6) return "$" + (v / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Mio.";
   return "$" + v.toLocaleString("de-DE", { maximumFractionDigits: v < 100 ? 2 : 0 });
 };
+// Große Beträge auf 6 signifikante Stellen mit Einheit, z. B. "$1,61238 Bio."
+const usd6 = (v) => {
+  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
+  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
+};
 const num = (v, d) => v.toFixed(d).replace(".", ",");
 // Farbschwellen wie in sentiment.py: VERDICT_WARM (Gesamtscore) und SIGNAL_STRONG (Einzelsignal)
 const tone = (score, limit = 15) => (score >= limit ? "tone-hot" : score <= -limit ? "tone-cold" : "tone-neutral");
@@ -199,6 +206,7 @@ const TIPS = {
   dominance: "Anteil von Bitcoin an der gesamten Krypto-Marktkapitalisierung (CoinGecko). Über 55 % spricht für eine vorsichtige, BTC-lastige Phase; fallende Dominanz dafür, dass Altcoins Kapital anziehen. Nicht Teil des Scores.",
   trending: "Die meistgesuchten Coins auf CoinGecko in den letzten 24 Stunden (max. 15) – ein Maß für Aufmerksamkeit, nicht für Qualität. Kleine Zahl links = Rang (1 = meistgesucht), je kräftiger die Färbung, desto weiter oben. Rechts die Kursänderung in 24 h. Klick auf einen Coin zeigt ihn als zusätzliche Karte.",
   score: "Durchschnitt aller Einzelsignale. Jedes Signal liefert −100 (extreme Angst) bis +100 (Überhitzung / Gier), stufenlos je nach Messwert. Ab ±15 gilt der Markt als leicht gierig bzw. ängstlich, ab +40 als überhitzt, ab −40 als extrem ängstlich.",
+  mcap: "Marktkapitalisierung in US-Dollar: aktueller Preis × umlaufende Coins (CoinGecko). Rang = Platz unter allen Kryptowährungen nach Marktkapitalisierung. Nicht Teil des Scores.",
   ma200: "Durchschnitt der Tages-Schlusskurse der letzten 200 Tage (Binance). Gilt als Trennlinie zwischen langfristigem Auf- und Abwärtstrend.",
   distance: "Wie weit der aktuelle Preis über (+) oder unter (−) dem MA200 liegt. Im Score: +10 % (normaler Aufwärtstrend) → 0, ab +35 % stark gestreckt → +100, ab −20 % → −100, linear dazwischen.",
   funding: "Durchschnittliche Funding Rate der letzten 7 Tage auf Binance Futures, pro 8 Stunden. Positiv: Longs zahlen an Shorts, der Markt ist long-lastig. Im Score: 0,01 % (Binance-Standard) → 0, ab 0,05 % → +100, ab −0,01 % → −100, linear dazwischen.",
@@ -271,6 +279,7 @@ function renderCoin(c) {
   const ls = d.long_short;
   const rsi = d.rsi;
   const dv = d.dvol;
+  const mc = d.market_cap;
   const pos = (c.score + 100) / 2;
   const noData = !ma && !fr && !oi && !ls && !rsi;
   const trend = ma
@@ -286,7 +295,11 @@ function renderCoin(c) {
   return `
     <article class="card coin">
       <div class="coin-head">
-        <h2>${esc(c.symbol)}</h2>
+        <div>
+          <h2>${esc(c.symbol)}</h2>
+          <div class="mcap"><span${tipAttr("mcap")}>Marktkap.</span>
+            ${mc ? `<span class="val">${usd6(mc.usd)}</span>${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "n/a"}</div>
+        </div>
         <div style="text-align:right">
           <div class="price">${ma ? usd(ma.price) : "–"}</div>
           ${trend}

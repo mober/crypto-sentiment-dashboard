@@ -10,7 +10,7 @@ Quellen:
   - Binance Spot       Tageskerzen für den 200-Tage-Durchschnitt und RSI(14)
   - Deribit            DVOL (implizite Optionsvolatilität, nur BTC und ETH)
   - DefiLlama          Stablecoin-Marktkapitalisierung
-  - CoinGecko          BTC-Dominanz, Trending Coins
+  - CoinGecko          Marktkapitalisierung, BTC-Dominanz, Trending Coins
 
 Aufruf:
   python3 sentiment.py              # BTC
@@ -31,6 +31,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 TIMEOUT = 15
+RATE_LIMIT_RETRIES = 2    # erneute Versuche bei HTTP 429 (v. a. CoinGecko ohne API-Key)
 USER_AGENT = "Mozilla/5.0 (sentiment-script)"
 
 # Skalen für den Score: Ankerpunkte (Messwert, Punkte). Zwischen den Punkten
@@ -54,8 +55,15 @@ DVOL_WINDOW = 90          # Tage für Mittelwert und Standardabweichung
 
 def fetch_json(url: str) -> Any:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                raise
+            retry_after = exc.headers.get("Retry-After", "")
+            time.sleep(min(int(retry_after), 10) if retry_after.isdigit() else 3 * (attempt + 1))
 
 
 def safe(fn, *args) -> Optional[Any]:
@@ -151,6 +159,17 @@ def get_dvol(symbol: str) -> Optional[Dict[str, Any]]:
     return {"value": current, "mean": mean, "z": (current - mean) / statistics.stdev(window)}
 
 
+def get_market_caps(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Marktkapitalisierung mehrerer Coins in einer Abfrage (CoinGecko limitiert stark)."""
+    # include_tokens=top: bei mehrdeutigen Symbolen den Coin mit der höchsten Marktkapitalisierung
+    coins = fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&symbols={','.join(symbols).lower()}&include_tokens=top"
+    )
+    return {c["symbol"].upper(): {"usd": float(c["market_cap"]), "rank": c.get("market_cap_rank")}
+            for c in coins}
+
+
 def get_stablecoins() -> Dict[str, Any]:
     chart = fetch_json("https://stablecoins.llama.fi/stablecoincharts/all")
     now = chart[-1]["totalCirculatingUSD"]["peggedUSD"]
@@ -169,12 +188,15 @@ def get_trending() -> List[Dict[str, Any]]:
     result = []
     for rank, c in enumerate(coins, start=1):
         item = c["item"]
-        change = (item.get("data") or {}).get("price_change_percentage_24h", {}).get("usd")
+        data = item.get("data") or {}
+        change = data.get("price_change_percentage_24h", {}).get("usd")
+        mcap = data.get("market_cap")  # als Text, z. B. "$16,819,539,659"
         result.append({
             "symbol": item["symbol"].upper(),
             "name": item["name"],
             "rank": rank,
             "change_24h": change / 100 if change is not None else None,
+            "market_cap": float(mcap.lstrip("$").replace(",", "")) if mcap else None,
             "market_cap_rank": item.get("market_cap_rank"),
         })
     return result
@@ -282,6 +304,10 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
         trend = "AUFWÄRTS (über MA200)" if ma["distance"] >= 0 else "ABWÄRTS (unter MA200)"
         print(f"  Preis:          {fmt_usd(ma['price'])}   MA200: {fmt_usd(ma['ma200'])}")
         print(f"  Trend:          {trend}")
+    mc = d.get("market_cap")
+    if mc:
+        rank = f" (Rang {mc['rank']})" if mc.get("rank") else ""
+        print(f"  Marktkap.:      ${mc['usd']:,.0f}{rank}")
     rs = d.get("rsi")
     if rs:
         print(f"  RSI (14):       {rs['value']:.0f}")
@@ -348,6 +374,7 @@ def main() -> None:
     symbol = args.symbol.upper()
 
     data = {**collect_global(), **collect_symbol(symbol)}
+    data["market_cap"] = (safe(get_market_caps, [symbol]) or {}).get(symbol)
     signals = score(data)
 
     if args.json:
