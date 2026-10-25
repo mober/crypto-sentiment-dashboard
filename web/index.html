@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crypto Sentiment</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #15181d;
+    --muted: #667085;
+    --border: #e4e7ec;
+    --track: #eef0f3;
+    --hot: #d9480f;
+    --hot-bg: #fff1e8;
+    --cold: #1c7ed6;
+    --cold-bg: #e7f2fd;
+    --neutral: #868e96;
+    --neutral-bg: #f1f3f5;
+    --up: #2b8a3e;
+    --down: #c92a2a;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --card: #171a21;
+      --text: #e8eaed;
+      --muted: #8b93a1;
+      --border: #262b35;
+      --track: #222731;
+      --hot: #ff8a4c;
+      --hot-bg: #3a2216;
+      --cold: #5aa9f0;
+      --cold-bg: #15283b;
+      --neutral: #8b93a1;
+      --neutral-bg: #222731;
+      --up: #51cf66;
+      --down: #ff6b6b;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  button {
+    font: inherit; font-size: 14px; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button:disabled { opacity: .5; cursor: wait; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+
+  /* Markt-Leiste */
+  .market { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 20px; }
+  .market > div { padding: 16px 20px; border-left: 1px solid var(--border); }
+  .market > div:first-child { border-left: 0; }
+  .market .val { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .market .note { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--neutral-bg); }
+
+  /* Coins */
+  .coins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .coin { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .coin-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .coin-head h2 { margin: 0; font-size: 20px; }
+  .price { font-size: 20px; font-weight: 600; }
+  .trend { font-size: 13px; font-weight: 600; }
+  .trend.up { color: var(--up); }
+  .trend.down { color: var(--down); }
+
+  .verdict { border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 500; }
+  .tone-hot { background: var(--hot-bg); color: var(--hot); }
+  .tone-cold { background: var(--cold-bg); color: var(--cold); }
+  .tone-neutral { background: var(--neutral-bg); color: var(--text); }
+
+  .gauge { position: relative; height: 8px; border-radius: 99px;
+    background: linear-gradient(90deg, var(--cold), var(--track) 40%, var(--track) 60%, var(--hot)); }
+  .gauge .marker { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--card); border: 3px solid var(--text); transform: translate(-50%, -50%); transition: left .4s; }
+  .gauge-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 6px; }
+  .score-line { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .score { font-size: 28px; font-weight: 700; }
+
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .metrics .val { font-weight: 600; }
+
+  .signals { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+  .signals li { display: grid; grid-template-columns: 30px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .signals li:last-child { border-bottom: 0; }
+  .pts { font-weight: 700; text-align: center; border-radius: 6px; font-size: 12px; padding: 1px 0; height: fit-content; }
+  .signals .name { font-weight: 600; }
+  .signals .reason { color: var(--muted); }
+
+  .error { padding: 16px 20px; color: var(--down); margin-bottom: 20px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
+
+  @media (max-width: 960px) {
+    .coins { grid-template-columns: 1fr; }
+    .market { grid-template-columns: 1fr 1fr; }
+    .market > div:nth-child(3) { border-left: 0; }
+    .market > div:nth-child(n+3) { border-top: 1px solid var(--border); }
+  }
+  @media (max-width: 480px) {
+    .market { grid-template-columns: 1fr; }
+    .market > div { border-left: 0; border-top: 1px solid var(--border); }
+    .market > div:first-child { border-top: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Crypto Sentiment</h1>
+      <div class="sub" id="updated">Lade Daten …</div>
+    </div>
+    <button id="refresh">Aktualisieren</button>
+  </header>
+
+  <div id="error" class="card error" hidden></div>
+  <section class="card market" id="market"></section>
+  <section class="coins" id="coins"></section>
+
+  <footer>
+    Score je Coin: Fear &amp; Greed, Funding Rate, Open Interest, Preis vs. MA200, Long/Short Ratio (je −1 / 0 / +1).<br>
+    Daten: alternative.me, Binance, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.
+  </footer>
+</main>
+
+<script>
+const REFRESH_MS = 5 * 60 * 1000;
+const $ = (id) => document.getElementById(id);
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pct = (v, d = 1) => (v >= 0 ? "+" : "") + (v * 100).toFixed(d).replace(".", ",") + " %";
+const usd = (v) => {
+  if (v >= 1e9) return "$" + (v / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Mrd.";
+  if (v >= 1e6) return "$" + (v / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Mio.";
+  return "$" + v.toLocaleString("de-DE", { maximumFractionDigits: v < 100 ? 2 : 0 });
+};
+const tone = (score) => (score >= 1 ? "tone-hot" : score <= -1 ? "tone-cold" : "tone-neutral");
+const na = '<span class="note">n/a</span>';
+
+function renderMarket(g) {
+  const fng = g.fear_greed;
+  const st = g.stablecoins;
+  const dom = g.btc_dominance;
+  const tr = g.trending || [];
+  $("market").innerHTML = `
+    <div>
+      <div class="label">Fear &amp; Greed</div>
+      <div class="val">${fng ? fng.value : "–"}</div>
+      <div class="note">${fng ? `${esc(fng.label)} · vor 7 Tagen ${fng.week_ago}` : "nicht verfügbar"}</div>
+    </div>
+    <div>
+      <div class="label">Stablecoins</div>
+      <div class="val">${st ? usd(st.mcap) : "–"}</div>
+      <div class="note">${st ? `${pct(st.change_30d)} in 30 Tagen` : "nicht verfügbar"}</div>
+    </div>
+    <div>
+      <div class="label">BTC-Dominanz</div>
+      <div class="val">${dom ? dom.btc.toFixed(1).replace(".", ",") + " %" : "–"}</div>
+      <div class="note">${dom ? (dom.btc >= 55 ? "Risk-off / BTC-Phase" : "Altcoins gewinnen Anteile") : "nicht verfügbar"}</div>
+    </div>
+    <div>
+      <div class="label">Trending (CoinGecko)</div>
+      <div class="chips">${tr.length ? tr.map((t) => `<span class="chip">${esc(t)}</span>`).join("") : '<span class="note">nicht verfügbar</span>'}</div>
+    </div>`;
+}
+
+function renderCoin(c) {
+  const d = c.data;
+  const ma = d.price_ma200;
+  const fr = d.funding;
+  const oi = d.open_interest;
+  const ls = d.long_short;
+  const max = Math.max(c.max_score, 1);
+  const pos = ((c.score + max) / (2 * max)) * 100;
+  const trend = ma
+    ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
+    : "";
+
+  const signals = c.signals.map((s) => {
+    const t = s.points > 0 ? "tone-hot" : s.points < 0 ? "tone-cold" : "tone-neutral";
+    const p = s.points > 0 ? "+1" : s.points < 0 ? "−1" : "0";
+    return `<li><span class="pts ${t}">${p}</span><span><span class="name">${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
+  }).join("");
+
+  return `
+    <article class="card coin">
+      <div class="coin-head">
+        <h2>${esc(c.symbol)}</h2>
+        <div style="text-align:right">
+          <div class="price">${ma ? usd(ma.price) : "–"}</div>
+          ${trend}
+        </div>
+      </div>
+
+      <div>
+        <div class="score-line">
+          <span class="label">Überhitzungs-Score</span>
+          <span class="score">${c.score > 0 ? "+" : ""}${c.score}</span>
+        </div>
+        <div class="gauge"><div class="marker" style="left:${pos}%"></div></div>
+        <div class="gauge-scale"><span>Angst −${max}</span><span>0</span><span>+${max} Gier</span></div>
+      </div>
+
+      <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
+
+      <div class="metrics">
+        <div><div class="label">MA200</div><div class="val">${ma ? usd(ma.ma200) : na}</div></div>
+        <div><div class="label">Abstand</div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
+        <div><div class="label">Funding Ø 7T</div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
+        <div><div class="label">Long/Short</div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", ",") : na}</div></div>
+        <div><div class="label">Open Interest</div><div class="val">${oi ? usd(oi.usd) : na}</div></div>
+        <div><div class="label">OI 7 Tage</div><div class="val">${oi ? pct(oi.change_7d) : na}</div></div>
+      </div>
+
+      <ul class="signals">${signals}</ul>
+    </article>`;
+}
+
+async function load(force = false) {
+  const btn = $("refresh");
+  btn.disabled = true;
+  btn.textContent = "Lädt …";
+  try {
+    const res = await fetch("/api/sentiment" + (force ? "?refresh=1" : ""));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const p = await res.json();
+    renderMarket(p.global);
+    $("coins").innerHTML = p.coins.map(renderCoin).join("");
+    $("updated").textContent = "Stand: " + new Date(p.updated).toLocaleString("de-DE");
+    $("error").hidden = true;
+  } catch (e) {
+    $("error").textContent = "Daten konnten nicht geladen werden (" + e.message + "). Läuft server.py?";
+    $("error").hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Aktualisieren";
+  }
+}
+
+$("refresh").addEventListener("click", () => load(true));
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>
