@@ -7,7 +7,7 @@ einen einfachen Überhitzungs-Score für BTC.
 Quellen:
   - alternative.me     Fear & Greed Index
   - Binance Futures    Funding Rate, Open Interest, Long/Short Ratio
-  - Binance Spot       Tageskerzen für den 200-Tage-Durchschnitt
+  - Binance Spot       Tageskerzen für den 200-Tage-Durchschnitt und RSI(14)
   - DefiLlama          Stablecoin-Marktkapitalisierung
   - CoinGecko          BTC-Dominanz, Trending Coins
 
@@ -39,6 +39,9 @@ OI_CHANGE_HOT = 0.15      # +15 % Open Interest in 7 Tagen
 MA200_STRETCH_HOT = 0.35  # Preis 35 % über 200-Tage-Durchschnitt
 LS_RATIO_HOT = 2.0        # mehr als doppelt so viele Long- wie Short-Accounts
 LS_RATIO_COLD = 0.9
+RSI_PERIOD = 14
+RSI_HOT = 70              # überkauft
+RSI_COLD = 30             # überverkauft
 
 
 def fetch_json(url: str) -> Any:
@@ -94,14 +97,34 @@ def get_long_short(symbol: str) -> Dict[str, Any]:
     return {"ratio": float(data[-1]["longShortRatio"])}
 
 
-def get_price_vs_ma200(symbol: str) -> Dict[str, Any]:
+def get_daily_closes(symbol: str) -> List[float]:
     klines = fetch_json(
         f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval=1d&limit=200"
     )
-    closes = [float(k[4]) for k in klines]
+    return [float(k[4]) for k in klines]
+
+
+def price_vs_ma200(closes: List[float]) -> Dict[str, Any]:
     ma200 = sum(closes) / len(closes)
     price = closes[-1]
     return {"price": price, "ma200": ma200, "distance": (price - ma200) / ma200}
+
+
+def rsi(closes: List[float], period: int = RSI_PERIOD) -> Optional[Dict[str, Any]]:
+    """RSI nach Wilder (geglättete Durchschnitte von Gewinnen und Verlusten)."""
+    if len(closes) <= period:
+        return None
+    deltas = [b - a for a, b in zip(closes, closes[1:])]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for g, l in zip(gains[period:], losses[period:]):
+        avg_gain = (avg_gain * (period - 1) + g) / period
+        avg_loss = (avg_loss * (period - 1) + l) / period
+    if avg_loss == 0:
+        return {"value": 100.0}
+    return {"value": 100 - 100 / (1 + avg_gain / avg_loss)}
 
 
 def get_stablecoins() -> Dict[str, Any]:
@@ -168,6 +191,16 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
         else:
             add("Preis vs. MA200", 0, f"{dist:+.1%}, gesunder Aufwärtstrend")
 
+    rs = d.get("rsi")
+    if rs:
+        v = rs["value"]
+        if v >= RSI_HOT:
+            add("RSI (14)", 1, f"{v:.0f}, überkauft")
+        elif v <= RSI_COLD:
+            add("RSI (14)", -1, f"{v:.0f}, überverkauft")
+        else:
+            add("RSI (14)", 0, f"{v:.0f}, neutral")
+
     ls = d.get("long_short")
     if ls:
         r = ls["ratio"]
@@ -213,6 +246,9 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
         trend = "AUFWÄRTS (über MA200)" if ma["distance"] >= 0 else "ABWÄRTS (unter MA200)"
         print(f"  Preis:          {fmt_usd(ma['price'])}   MA200: {fmt_usd(ma['ma200'])}")
         print(f"  Trend:          {trend}")
+    rs = d.get("rsi")
+    if rs:
+        print(f"  RSI (14):       {rs['value']:.0f}")
 
     fng = d.get("fear_greed")
     if fng:
@@ -252,11 +288,13 @@ def collect_global() -> Dict[str, Any]:
 
 def collect_symbol(symbol: str) -> Dict[str, Any]:
     """Coin-spezifische Derivate- und Kursdaten."""
+    closes = safe(get_daily_closes, symbol)
     return {
         "funding": safe(get_funding, symbol),
         "open_interest": safe(get_open_interest, symbol),
         "long_short": safe(get_long_short, symbol),
-        "price_ma200": safe(get_price_vs_ma200, symbol),
+        "price_ma200": price_vs_ma200(closes) if closes else None,
+        "rsi": rsi(closes) if closes else None,
     }
 
 

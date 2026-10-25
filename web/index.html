@@ -113,6 +113,19 @@
   .signals .name { font-weight: 600; }
   .signals .reason { color: var(--muted); }
 
+  /* Tooltips */
+  [data-tip] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--border);
+    text-underline-offset: 3px; }
+  [data-tip]:hover, [data-tip]:focus { text-decoration-color: var(--muted); outline: none; }
+  #tip {
+    position: fixed; z-index: 10; max-width: 280px; padding: 8px 11px; border-radius: 8px;
+    background: var(--text); color: var(--bg); font-size: 13px; line-height: 1.45;
+    text-transform: none; letter-spacing: normal; font-weight: 400;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .18); pointer-events: none;
+    opacity: 0; transition: opacity .12s;
+  }
+  #tip.show { opacity: 1; }
+
   .error { padding: 16px 20px; color: var(--down); margin-bottom: 20px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
 
@@ -147,10 +160,12 @@
   <section class="coins" id="coins"></section>
 
   <footer>
-    Score je Coin: Fear &amp; Greed, Funding Rate, Open Interest, Preis vs. MA200, Long/Short Ratio (je −1 / 0 / +1).<br>
+    Score je Coin: Fear &amp; Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio (je −1 / 0 / +1).<br>
     Daten: alternative.me, Binance, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.
   </footer>
 </main>
+
+<div id="tip" role="tooltip" hidden></div>
 
 <script>
 const REFRESH_MS = 5 * 60 * 1000;
@@ -166,11 +181,33 @@ const usd = (v) => {
 const tone = (score) => (score >= 1 ? "tone-hot" : score <= -1 ? "tone-cold" : "tone-neutral");
 const na = '<span class="note">n/a</span>';
 
+// Erklärungen für Tooltips. Die Schwellen entsprechen denen in sentiment.py.
+const TIPS = {
+  fng: "Fear & Greed Index von alternative.me (0–100), berechnet aus Volatilität, Volumen, Social Media, BTC-Dominanz und Google Trends. 0 = extreme Angst, 100 = extreme Gier. Im Score: ab 80 → +1, bis 20 → −1.",
+  stablecoins: "Gesamte Marktkapitalisierung aller Stablecoins (DefiLlama). Wachsende Bestände gelten als „trockenes Pulver“, das in Krypto fließen kann; schrumpfende als Kapitalabfluss. Nicht Teil des Scores.",
+  dominance: "Anteil von Bitcoin an der gesamten Krypto-Marktkapitalisierung (CoinGecko). Über 55 % spricht für eine vorsichtige, BTC-lastige Phase; fallende Dominanz dafür, dass Altcoins Kapital anziehen. Nicht Teil des Scores.",
+  trending: "Die meistgesuchten Coins auf CoinGecko in den letzten 24 Stunden – ein Maß für Aufmerksamkeit, nicht für Qualität. Klick auf einen Coin zeigt ihn als zusätzliche Karte.",
+  score: "Summe aller Einzelsignale. Jedes Signal zählt +1 (Gier / Überhitzung), 0 (neutral) oder −1 (Angst). Ab +3 gilt der Markt als überhitzt, ab −3 als extrem ängstlich.",
+  ma200: "Durchschnitt der Tages-Schlusskurse der letzten 200 Tage (Binance). Gilt als Trennlinie zwischen langfristigem Auf- und Abwärtstrend.",
+  distance: "Wie weit der aktuelle Preis über (+) oder unter (−) dem MA200 liegt. Im Score: ab +35 % stark gestreckt → +1, unter 0 % Abwärtstrend → −1.",
+  funding: "Durchschnittliche Funding Rate der letzten 7 Tage auf Binance Futures, pro 8 Stunden. Positiv: Longs zahlen an Shorts, der Markt ist long-lastig. Im Score: ab 0,05 % → +1, negativ → −1.",
+  longShort: "Verhältnis der Binance-Futures-Konten mit Long- zu Short-Position. 2,0 heißt: doppelt so viele Konten long. Gilt als Kontraindikator. Im Score: ab 2,0 → +1, bis 0,9 → −1.",
+  oi: "Open Interest: Gesamtwert aller offenen Futures-Positionen auf Binance in USD. Zeigt, wie viel gehebeltes Kapital im Markt steckt.",
+  oiChange: "Veränderung des Open Interest in 7 Tagen. Viel neuer Hebel erhöht das Risiko heftiger Liquidationswellen. Im Score: ab +15 % → +1.",
+  rsi: "Relative Strength Index über 14 Tage (0–100): misst, wie stark die Kursgewinne die Verluste zuletzt überwogen haben. Im Score: ab 70 überkauft → +1, bis 30 überverkauft → −1.",
+};
+const SIGNAL_TIPS = {
+  "Fear & Greed": "fng", "Funding Rate": "funding", "Open Interest": "oiChange",
+  "Preis vs. MA200": "distance", "RSI (14)": "rsi", "Long/Short Ratio": "longShort",
+};
+const tipAttr = (key) => (key && TIPS[key] ? ` data-tip="${key}" tabindex="0"` : "");
+
 let payload = null;     // letzte Antwort von /api/sentiment
 let extra = null;       // per Klick gewählter Trending Coin
 let extraCoin = null;   // dessen Daten (null = lädt)
 
 function renderMarket(g) {
+  hideTip();
   const fng = g.fear_greed;
   const st = g.stablecoins;
   const dom = g.btc_dominance;
@@ -178,22 +215,22 @@ function renderMarket(g) {
   const shown = payload ? payload.coins.map((c) => c.symbol) : [];
   $("market").innerHTML = `
     <div>
-      <div class="label">Fear &amp; Greed</div>
+      <div class="label"><span${tipAttr("fng")}>Fear &amp; Greed</span></div>
       <div class="val">${fng ? fng.value : "–"}</div>
       <div class="note">${fng ? `${esc(fng.label)} · vor 7 Tagen ${fng.week_ago}` : "nicht verfügbar"}</div>
     </div>
     <div>
-      <div class="label">Stablecoins</div>
+      <div class="label"><span${tipAttr("stablecoins")}>Stablecoins</span></div>
       <div class="val">${st ? usd(st.mcap) : "–"}</div>
       <div class="note">${st ? `${pct(st.change_30d)} in 30 Tagen` : "nicht verfügbar"}</div>
     </div>
     <div>
-      <div class="label">BTC-Dominanz</div>
+      <div class="label"><span${tipAttr("dominance")}>BTC-Dominanz</span></div>
       <div class="val">${dom ? dom.btc.toFixed(1).replace(".", ",") + " %" : "–"}</div>
       <div class="note">${dom ? (dom.btc >= 55 ? "Risk-off / BTC-Phase" : "Altcoins gewinnen Anteile") : "nicht verfügbar"}</div>
     </div>
     <div>
-      <div class="label">Trending (CoinGecko)</div>
+      <div class="label"><span${tipAttr("trending")}>Trending (CoinGecko)</span></div>
       <div class="chips">${tr.length ? tr.map((t) => shown.includes(t)
         ? `<span class="chip static">${esc(t)}</span>`
         : `<button class="chip${t === extra ? " active" : ""}" data-symbol="${esc(t)}" title="Im Dashboard anzeigen">${esc(t)}</button>`).join("") : '<span class="note">nicht verfügbar</span>'}</div>
@@ -206,9 +243,10 @@ function renderCoin(c) {
   const fr = d.funding;
   const oi = d.open_interest;
   const ls = d.long_short;
+  const rsi = d.rsi;
   const max = Math.max(c.max_score, 1);
   const pos = ((c.score + max) / (2 * max)) * 100;
-  const noData = !ma && !fr && !oi && !ls;
+  const noData = !ma && !fr && !oi && !ls && !rsi;
   const trend = ma
     ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
     : "";
@@ -216,7 +254,7 @@ function renderCoin(c) {
   const signals = c.signals.map((s) => {
     const t = s.points > 0 ? "tone-hot" : s.points < 0 ? "tone-cold" : "tone-neutral";
     const p = s.points > 0 ? "+1" : s.points < 0 ? "−1" : "0";
-    return `<li><span class="pts ${t}">${p}</span><span><span class="name">${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
+    return `<li><span class="pts ${t}">${p}</span><span><span class="name"${tipAttr(SIGNAL_TIPS[s.name])}>${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
   }).join("");
 
   return `
@@ -231,7 +269,7 @@ function renderCoin(c) {
 
       <div>
         <div class="score-line">
-          <span class="label">Überhitzungs-Score</span>
+          <span class="label"><span${tipAttr("score")}>Überhitzungs-Score</span></span>
           <span class="score">${c.score > 0 ? "+" : ""}${c.score}</span>
         </div>
         <div class="gauge"><div class="marker" style="left:${pos}%"></div></div>
@@ -241,12 +279,13 @@ function renderCoin(c) {
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
 
       <div class="metrics">
-        <div><div class="label">MA200</div><div class="val">${ma ? usd(ma.ma200) : na}</div></div>
-        <div><div class="label">Abstand</div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
-        <div><div class="label">Funding Ø 7T</div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
-        <div><div class="label">Long/Short</div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", ",") : na}</div></div>
-        <div><div class="label">Open Interest</div><div class="val">${oi ? usd(oi.usd) : na}</div></div>
-        <div><div class="label">OI 7 Tage</div><div class="val">${oi ? pct(oi.change_7d) : na}</div></div>
+        <div><div class="label"><span${tipAttr("ma200")}>MA200</span></div><div class="val">${ma ? usd(ma.ma200) : na}</div></div>
+        <div><div class="label"><span${tipAttr("distance")}>Abstand</span></div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
+        <div><div class="label"><span${tipAttr("funding")}>Funding Ø 7T</span></div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
+        <div><div class="label"><span${tipAttr("longShort")}>Long/Short</span></div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", ",") : na}</div></div>
+        <div><div class="label"><span${tipAttr("oi")}>Open Interest</span></div><div class="val">${oi ? usd(oi.usd) : na}</div></div>
+        <div><div class="label"><span${tipAttr("oiChange")}>OI 7 Tage</span></div><div class="val">${oi ? pct(oi.change_7d) : na}</div></div>
+        <div><div class="label"><span${tipAttr("rsi")}>RSI 14T</span></div><div class="val">${rsi ? Math.round(rsi.value) : na}</div></div>
       </div>
 
       ${noData ? '<div class="coin-note">Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.</div>' : ""}
@@ -256,6 +295,7 @@ function renderCoin(c) {
 
 function renderCoins() {
   if (!payload) return;
+  hideTip();
   let html = payload.coins.map(renderCoin).join("");
   if (extra) {
     html += extraCoin
@@ -316,6 +356,46 @@ async function load(force = false) {
     btn.textContent = "Aktualisieren";
   }
 }
+
+// --- Tooltips: Maus (Hover), Tastatur und Touch (beide über den Fokus) ---
+let tipTarget = null;
+
+function showTip(el) {
+  const tip = $("tip");
+  tipTarget = el;
+  tip.textContent = TIPS[el.dataset.tip];
+  tip.hidden = false;
+  const r = el.getBoundingClientRect();
+  const t = tip.getBoundingClientRect();
+  const margin = 8;
+  const left = Math.min(Math.max(margin, r.left), window.innerWidth - t.width - margin);
+  // unterhalb anzeigen, bei Platzmangel oberhalb
+  const below = r.bottom + 6;
+  const top = below + t.height > window.innerHeight - margin ? r.top - t.height - 6 : below;
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+  tip.classList.add("show");
+}
+
+function hideTip() {
+  tipTarget = null;
+  $("tip").classList.remove("show");
+  $("tip").hidden = true;
+}
+
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (el && el !== tipTarget) showTip(el);
+  else if (!el && tipTarget) hideTip();
+});
+document.addEventListener("focusin", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (el) showTip(el);
+});
+document.addEventListener("focusout", hideTip);
+document.addEventListener("mouseout", (e) => { if (!e.relatedTarget) hideTip(); });  // Maus verlässt das Fenster
+window.addEventListener("scroll", hideTip, { passive: true });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
 
 $("refresh").addEventListener("click", () => load(true));
 $("market").addEventListener("click", (e) => {
