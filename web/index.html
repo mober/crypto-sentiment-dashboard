@@ -71,10 +71,17 @@
   .market .val { font-size: 22px; font-weight: 600; margin-top: 2px; }
   .market .note { color: var(--muted); font-size: 13px; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .chip { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--neutral-bg); }
+  .chip { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--neutral-bg);
+    border: 1px solid transparent; color: var(--text); cursor: pointer; }
+  .chip:hover { border-color: var(--muted); }
+  .chip.static { cursor: default; border-color: transparent; color: var(--muted); }
+  .chip.active { background: var(--text); color: var(--card); }
 
   /* Coins */
   .coins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .coins.extra { grid-template-columns: repeat(4, 1fr); }
+  .coin-note { color: var(--muted); font-size: 13px; }
+  .coin-loading { padding: 20px; color: var(--muted); }
   .coin { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
   .coin-head { display: flex; justify-content: space-between; align-items: baseline; }
   .coin-head h2 { margin: 0; font-size: 20px; }
@@ -109,8 +116,11 @@
   .error { padding: 16px 20px; color: var(--down); margin-bottom: 20px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
 
+  @media (max-width: 1180px) {
+    .coins.extra { grid-template-columns: 1fr 1fr; }
+  }
   @media (max-width: 960px) {
-    .coins { grid-template-columns: 1fr; }
+    .coins, .coins.extra { grid-template-columns: 1fr; }
     .market { grid-template-columns: 1fr 1fr; }
     .market > div:nth-child(3) { border-left: 0; }
     .market > div:nth-child(n+3) { border-top: 1px solid var(--border); }
@@ -156,11 +166,16 @@ const usd = (v) => {
 const tone = (score) => (score >= 1 ? "tone-hot" : score <= -1 ? "tone-cold" : "tone-neutral");
 const na = '<span class="note">n/a</span>';
 
+let payload = null;     // letzte Antwort von /api/sentiment
+let extra = null;       // per Klick gewählter Trending Coin
+let extraCoin = null;   // dessen Daten (null = lädt)
+
 function renderMarket(g) {
   const fng = g.fear_greed;
   const st = g.stablecoins;
   const dom = g.btc_dominance;
   const tr = g.trending || [];
+  const shown = payload ? payload.coins.map((c) => c.symbol) : [];
   $("market").innerHTML = `
     <div>
       <div class="label">Fear &amp; Greed</div>
@@ -179,7 +194,9 @@ function renderMarket(g) {
     </div>
     <div>
       <div class="label">Trending (CoinGecko)</div>
-      <div class="chips">${tr.length ? tr.map((t) => `<span class="chip">${esc(t)}</span>`).join("") : '<span class="note">nicht verfügbar</span>'}</div>
+      <div class="chips">${tr.length ? tr.map((t) => shown.includes(t)
+        ? `<span class="chip static">${esc(t)}</span>`
+        : `<button class="chip${t === extra ? " active" : ""}" data-symbol="${esc(t)}" title="Im Dashboard anzeigen">${esc(t)}</button>`).join("") : '<span class="note">nicht verfügbar</span>'}</div>
     </div>`;
 }
 
@@ -191,6 +208,7 @@ function renderCoin(c) {
   const ls = d.long_short;
   const max = Math.max(c.max_score, 1);
   const pos = ((c.score + max) / (2 * max)) * 100;
+  const noData = !ma && !fr && !oi && !ls;
   const trend = ma
     ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
     : "";
@@ -231,8 +249,50 @@ function renderCoin(c) {
         <div><div class="label">OI 7 Tage</div><div class="val">${oi ? pct(oi.change_7d) : na}</div></div>
       </div>
 
+      ${noData ? '<div class="coin-note">Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.</div>' : ""}
       <ul class="signals">${signals}</ul>
     </article>`;
+}
+
+function renderCoins() {
+  if (!payload) return;
+  let html = payload.coins.map(renderCoin).join("");
+  if (extra) {
+    html += extraCoin
+      ? renderCoin(extraCoin)
+      : `<article class="card coin-loading">${esc(extra)} wird geladen …</article>`;
+  }
+  $("coins").innerHTML = html;
+  $("coins").classList.toggle("extra", !!extra);
+}
+
+async function loadExtra(force = false) {
+  const symbol = extra;
+  if (!symbol) return;
+  try {
+    const res = await fetch("/api/coin?symbol=" + encodeURIComponent(symbol) + (force ? "&refresh=1" : ""));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const coin = await res.json();
+    if (extra !== symbol) return;  // inzwischen anderer Coin gewählt
+    extraCoin = coin;
+    renderCoins();
+  } catch (e) {
+    if (extra !== symbol) return;
+    $("error").textContent = symbol + " konnte nicht geladen werden (" + e.message + ").";
+    $("error").hidden = false;
+    extra = null;
+    extraCoin = null;
+    renderMarket(payload.global);
+    renderCoins();
+  }
+}
+
+function selectExtra(symbol) {
+  extra = extra === symbol ? null : symbol;  // erneuter Klick entfernt den Coin wieder
+  extraCoin = null;
+  renderMarket(payload.global);
+  renderCoins();
+  loadExtra();
 }
 
 async function load(force = false) {
@@ -242,11 +302,12 @@ async function load(force = false) {
   try {
     const res = await fetch("/api/sentiment" + (force ? "?refresh=1" : ""));
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const p = await res.json();
-    renderMarket(p.global);
-    $("coins").innerHTML = p.coins.map(renderCoin).join("");
-    $("updated").textContent = "Stand: " + new Date(p.updated).toLocaleString("de-DE");
+    payload = await res.json();
+    renderMarket(payload.global);
+    renderCoins();
+    $("updated").textContent = "Stand: " + new Date(payload.updated).toLocaleString("de-DE");
     $("error").hidden = true;
+    loadExtra(force);
   } catch (e) {
     $("error").textContent = "Daten konnten nicht geladen werden (" + e.message + "). Läuft server.py?";
     $("error").hidden = false;
@@ -257,6 +318,10 @@ async function load(force = false) {
 }
 
 $("refresh").addEventListener("click", () => load(true));
+$("market").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (chip) selectExtra(chip.dataset.symbol);
+});
 load();
 setInterval(load, REFRESH_MS);
 </script>

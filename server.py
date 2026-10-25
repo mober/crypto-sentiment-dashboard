@@ -11,6 +11,7 @@ Aufruf:
 
 import argparse
 import json
+import re
 import threading
 import time
 import webbrowser
@@ -19,6 +20,7 @@ from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import parse_qs, urlparse
 
 import sentiment
 
@@ -26,8 +28,26 @@ SYMBOLS = ["BTC", "ETH", "SOL"]
 CACHE_SECONDS = 300
 STATIC_DIR = Path(__file__).resolve().parent / "web"
 
+SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
+
 _cache: Dict[str, Any] = {"time": 0.0, "payload": None}
 _lock = threading.Lock()
+_coin_cache: Dict[str, Dict[str, Any]] = {}
+_coin_lock = threading.Lock()
+
+
+def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
+    data = {"fear_greed": global_data["fear_greed"], **symbol_data}
+    signals = sentiment.score(data)
+    total = sum(s["points"] for s in signals)
+    return {
+        "symbol": symbol,
+        "data": symbol_data,
+        "signals": signals,
+        "score": total,
+        "max_score": len(signals),
+        "verdict": sentiment.verdict(total, len(signals)),
+    }
 
 
 def build_payload() -> Dict[str, Any]:
@@ -37,19 +57,7 @@ def build_payload() -> Dict[str, Any]:
         global_data = global_future.result()
         symbol_data = {s: f.result() for s, f in symbol_futures.items()}
 
-    coins = []
-    for symbol in SYMBOLS:
-        data = {"fear_greed": global_data["fear_greed"], **symbol_data[symbol]}
-        signals = sentiment.score(data)
-        total = sum(s["points"] for s in signals)
-        coins.append({
-            "symbol": symbol,
-            "data": symbol_data[symbol],
-            "signals": signals,
-            "score": total,
-            "max_score": len(signals),
-            "verdict": sentiment.verdict(total, len(signals)),
-        })
+    coins = [build_coin(s, global_data, symbol_data[s]) for s in SYMBOLS]
 
     return {
         "updated": datetime.now().isoformat(timespec="seconds"),
@@ -66,20 +74,43 @@ def get_payload(force: bool = False) -> Dict[str, Any]:
         return _cache["payload"]
 
 
+def get_coin(symbol: str, force: bool = False) -> Dict[str, Any]:
+    """Einzelner Coin (z. B. aus den Trending Coins), eigener Cache je Symbol."""
+    global_data = get_payload()["global"]
+    with _coin_lock:
+        entry = _coin_cache.get(symbol)
+        if force or entry is None or time.time() - entry["time"] > CACHE_SECONDS:
+            entry = {"time": time.time(), "coin": build_coin(symbol, global_data, sentiment.collect_symbol(symbol))}
+            _coin_cache[symbol] = entry
+        return entry["coin"]
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
+    def send_json(self, payload: Any, status: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
-        if self.path.startswith("/api/sentiment"):
-            payload = get_payload(force="refresh=1" in self.path)
-            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+        url = urlparse(self.path)
+        query = parse_qs(url.query)
+        force = query.get("refresh") == ["1"]
+        if url.path == "/api/sentiment":
+            self.send_json(get_payload(force=force))
+            return
+        if url.path == "/api/coin":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            if not SYMBOL_RE.match(symbol):
+                self.send_json({"error": "ungültiges Symbol"}, 400)
+                return
+            self.send_json(get_coin(symbol, force=force))
             return
         super().do_GET()
 
