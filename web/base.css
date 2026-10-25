@@ -1,0 +1,66 @@
+/* Gemeinsame Styles für Dashboard (index.html) und Marktübersicht (markets.html) */
+
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --text: #15181d;
+  --muted: #667085;
+  --border: #e4e7ec;
+  --track: #eef0f3;
+  --row-hover: #f8f9fb;
+  --hot: #d9480f;
+  --hot-bg: #fff1e8;
+  --cold: #1c7ed6;
+  --cold-bg: #e7f2fd;
+  --neutral: #868e96;
+  --neutral-bg: #f1f3f5;
+  --up: #2b8a3e;
+  --down: #c92a2a;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --text: #e8eaed;
+    --muted: #8b93a1;
+    --border: #262b35;
+    --track: #222731;
+    --row-hover: #1d212a;
+    --hot: #ff8a4c;
+    --hot-bg: #3a2216;
+    --cold: #5aa9f0;
+    --cold-bg: #15283b;
+    --neutral: #8b93a1;
+    --neutral-bg: #222731;
+    --up: #51cf66;
+    --down: #ff6b6b;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 13px; }
+
+button, .navlink {
+  font: inherit; font-size: 14px; color: var(--text); text-decoration: none; background: var(--card);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; cursor: pointer;
+}
+button:hover:not(:disabled), .navlink:hover { border-color: var(--muted); }
+button:disabled { opacity: .5; cursor: default; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+
+footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }

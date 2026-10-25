@@ -4,51 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marktübersicht</title>
+<link rel="stylesheet" href="base.css">
 <style>
-  :root {
-    --bg: #f6f7f9;
-    --card: #ffffff;
-    --text: #15181d;
-    --muted: #667085;
-    --border: #e4e7ec;
-    --row-hover: #f8f9fb;
-    --up: #2b8a3e;
-    --down: #c92a2a;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .05);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1115;
-      --card: #171a21;
-      --text: #e8eaed;
-      --muted: #8b93a1;
-      --border: #262b35;
-      --row-hover: #1d212a;
-      --up: #51cf66;
-      --down: #ff6b6b;
-      --shadow: none;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-variant-numeric: tabular-nums;
-  }
-  main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
-
-  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-  h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
-  .sub { color: var(--muted); font-size: 13px; }
-  .navlink, .pager button {
-    font: inherit; font-size: 14px; color: var(--text); text-decoration: none; background: var(--card);
-    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; cursor: pointer;
-  }
-  .navlink:hover, .pager button:hover:not(:disabled) { border-color: var(--muted); }
-
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { padding: 10px 12px; text-align: right; white-space: nowrap; }
@@ -69,13 +26,12 @@
 
   .pager { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; margin: 16px 0; }
   .pager button { padding: 6px 11px; min-width: 38px; }
-  .pager button.current { background: var(--text); color: var(--card); border-color: var(--text); cursor: default; }
-  .pager button:disabled:not(.current) { opacity: .4; cursor: default; }
+  .pager button:disabled { opacity: .4; }
+  .pager button.current { background: var(--text); color: var(--card); border-color: var(--text); opacity: 1; }
   .pager .gap { color: var(--muted); padding: 0 2px; }
 
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
-  footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
 
   /* Schmale Bildschirme: weniger wichtige Spalten ausblenden */
   @media (max-width: 960px) { .opt-wide { display: none; } }
