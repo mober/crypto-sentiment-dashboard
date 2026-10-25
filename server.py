@@ -31,6 +31,7 @@ MARKETS_MAX_PAGE = 20     # Top 1000, wie bei Cryptobubbles
 STATIC_DIR = Path(__file__).resolve().parent / "web"
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
+COIN_ID_RE = re.compile(r"^[a-z0-9-]{1,100}$")  # CoinGecko-ID, z. B. "bitcoin"
 
 _cache: Dict[str, Any] = {"time": 0.0, "payload": None}
 _lock = threading.Lock()
@@ -91,21 +92,16 @@ def get_payload(force: bool = False) -> Dict[str, Any]:
         return _cache["payload"]
 
 
-def get_coin(symbol: str, force: bool = False) -> Dict[str, Any]:
-    """Einzelner Coin (z. B. aus den Trending Coins), eigener Cache je Symbol."""
+def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
+    """Einzelner Coin (aus Trending oder Marktübersicht), eigener Cache je Coin."""
     global_data = get_payload()["global"]
+    key = f"{symbol}:{coin_id or ''}"
     with _coin_lock:
-        entry = _coin_cache.get(symbol)
+        entry = _coin_cache.get(key)
         if force or entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            symbol_data = sentiment.collect_symbol(symbol)
-            # Marktkapitalisierung aus den Trending-Daten, spart eine CoinGecko-Abfrage
-            trend = next((t for t in global_data["trending"] or [] if t["symbol"] == symbol), None)
-            symbol_data["market_cap"] = (
-                {"usd": trend["market_cap"], "rank": trend["market_cap_rank"]}
-                if trend and trend.get("market_cap") else None
-            )
+            symbol_data = sentiment.collect_symbol(symbol, coin_id, with_market=True)
             entry = {"time": time.time(), "coin": build_coin(symbol, global_data, symbol_data)}
-            _coin_cache[symbol] = entry
+            _coin_cache[key] = entry
         return entry["coin"]
 
 
@@ -170,7 +166,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not SYMBOL_RE.match(symbol):
                 self.send_json({"error": "ungültiges Symbol"}, 400)
                 return
-            self.send_json(get_coin(symbol, force=force))
+            coin_id = (query.get("id") or [""])[0] or None
+            if coin_id and not COIN_ID_RE.match(coin_id):
+                self.send_json({"error": "ungültige Coin-ID"}, 400)
+                return
+            self.send_json(get_coin(symbol, coin_id, force=force))
             return
         super().do_GET()
 

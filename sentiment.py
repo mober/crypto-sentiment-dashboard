@@ -43,6 +43,10 @@ MA200_SCALE = [(-0.20, -100), (0.10, 0), (0.35, 100)]  # +10 % = normaler Aufwä
 LS_SCALE = [(0.9, -100), (2.0, 0), (3.5, 100)]      # Long- zu Short-Accounts; auf Binance meist ~2
 RSI_SCALE = [(30, -100), (50, 0), (70, 100)]
 DVOL_SCALE = [(-1.5, 100), (0.0, 0), (1.5, -100)]   # z-Wert: ruhig = Sorglosigkeit, hoch = Panik
+# Ersatz-Signale aus CoinGecko-Kursdaten für Coins ohne Binance-Futures oder -Kursdaten
+MOMENTUM_7D_SCALE = [(-0.25, -100), (0.0, 0), (0.25, 100)]
+MOMENTUM_30D_SCALE = [(-0.50, -100), (0.0, 0), (0.50, 100)]
+TURNOVER_SCALE = [(0.05, 0), (0.50, 100)]           # Tagesvolumen / Marktkap.; Vorzeichen folgt dem 7T-Trend
 
 SIGNAL_STRONG = 50        # ab hier gilt ein Einzelsignal als ausgeprägt
 VERDICT_HOT = 40          # Gesamtscore ab +40 = überhitzt, ab -40 = extreme Angst
@@ -170,6 +174,31 @@ def get_market_caps(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
             for c in coins}
 
 
+def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, Any]:
+    """Marktkapitalisierung und Kursmomentum eines Coins (CoinGecko).
+
+    Mit coin_id eindeutig, sonst per Symbol (bei Mehrdeutigkeit der größte Coin)."""
+    query = f"ids={coin_id}" if coin_id else f"symbols={symbol.lower()}&include_tokens=top"
+    c = fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&{query}&sparkline=true&price_change_percentage=7d,30d"
+    )[0]
+    mcap, volume = c.get("market_cap"), c.get("total_volume")
+    change_7d = c.get("price_change_percentage_7d_in_currency")
+    change_30d = c.get("price_change_percentage_30d_in_currency")
+    hourly = (c.get("sparkline_in_7d") or {}).get("price") or []
+    rsi_hourly = rsi(hourly)
+    return {
+        "market_cap": {"usd": float(mcap), "rank": c.get("market_cap_rank")} if mcap else None,
+        "momentum": {
+            "change_7d": change_7d / 100 if change_7d is not None else None,
+            "change_30d": change_30d / 100 if change_30d is not None else None,
+            "turnover": volume / mcap if mcap and volume else None,
+            "rsi_hourly": rsi_hourly["value"] if rsi_hourly else None,
+        },
+    }
+
+
 def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
     """Rangliste nach Marktkapitalisierung, seitenweise (CoinGecko)."""
     coins = fetch_json(
@@ -184,6 +213,7 @@ def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
 
     return [{
         "rank": c.get("market_cap_rank"),
+        "id": c["id"],
         "symbol": c["symbol"].upper(),
         "name": c["name"],
         "image": c.get("image"),
@@ -216,6 +246,7 @@ def get_trending() -> List[Dict[str, Any]]:
         change = data.get("price_change_percentage_24h", {}).get("usd")
         mcap = data.get("market_cap")  # als Text, z. B. "$16,819,539,659"
         result.append({
+            "id": item["id"],
             "symbol": item["symbol"].upper(),
             "name": item["name"],
             "rank": rank,
@@ -279,6 +310,23 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
         v, z = dv["value"], dv["z"]
         add("Optionsvola (DVOL)", scale(z, DVOL_SCALE), f"{v:.1f} ({z:+.1f}σ)",
             "ungewöhnlich ruhig, Sorglosigkeit", "ungewöhnlich hoch, Absicherung gefragt", "normal")
+
+    mo = d.get("momentum")
+    if mo:
+        c7, c30, turnover = mo["change_7d"], mo["change_30d"], mo["turnover"]
+        if c7 is not None:
+            add("Momentum 7T", scale(c7, MOMENTUM_7D_SCALE), f"{c7:+.1%}",
+                "starker Anstieg", "starker Rückgang", "moderat")
+        if c30 is not None:
+            add("Momentum 30T", scale(c30, MOMENTUM_30D_SCALE), f"{c30:+.1%}",
+                "starker Anstieg", "starker Rückgang", "moderat")
+        if turnover is not None and c7 is not None:
+            pts = scale(turnover, TURNOVER_SCALE) * (1 if c7 >= 0 else -1)
+            add("Umschlag", pts, f"{turnover:.0%} der Marktkap. pro Tag",
+                "Spekulationsrausch", "Panikverkäufe", "normal")
+        if not rs and mo["rsi_hourly"] is not None:
+            v = mo["rsi_hourly"]
+            add("RSI (14 Std.)", scale(v, RSI_SCALE), f"{v:.0f}", "überkauft", "überverkauft", "neutral")
 
     ls = d.get("long_short")
     if ls:
@@ -377,10 +425,14 @@ def collect_global() -> Dict[str, Any]:
     }
 
 
-def collect_symbol(symbol: str) -> Dict[str, Any]:
-    """Coin-spezifische Derivate- und Kursdaten."""
+def collect_symbol(symbol: str, coin_id: Optional[str] = None,
+                   with_market: bool = False) -> Dict[str, Any]:
+    """Coin-spezifische Derivate- und Kursdaten.
+
+    with_market: Marktkapitalisierung mit abfragen (eine CoinGecko-Abfrage).
+    Fehlen Binance-Futures oder -Kursdaten, kommen Ersatz-Signale aus derselben Abfrage."""
     closes = safe(get_daily_closes, symbol)
-    return {
+    data = {
         "funding": safe(get_funding, symbol),
         "open_interest": safe(get_open_interest, symbol),
         "long_short": safe(get_long_short, symbol),
@@ -388,6 +440,14 @@ def collect_symbol(symbol: str) -> Dict[str, Any]:
         "rsi": rsi(closes) if closes else None,
         "dvol": safe(get_dvol, symbol),
     }
+    no_futures = not (data["funding"] or data["open_interest"] or data["long_short"])
+    if with_market or no_futures or not closes:
+        cg = safe(get_coingecko_coin, symbol, coin_id) or {}
+        if with_market:
+            data["market_cap"] = cg.get("market_cap")
+        if no_futures or not closes:
+            data["momentum"] = cg.get("momentum")
+    return data
 
 
 def main() -> None:
@@ -397,8 +457,7 @@ def main() -> None:
     args = parser.parse_args()
     symbol = args.symbol.upper()
 
-    data = {**collect_global(), **collect_symbol(symbol)}
-    data["market_cap"] = (safe(get_market_caps, [symbol]) or {}).get(symbol)
+    data = {**collect_global(), **collect_symbol(symbol, with_market=True)}
     signals = score(data)
 
     if args.json:

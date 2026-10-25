@@ -161,17 +161,24 @@ const TIPS = {
   oi: "Open Interest: Gesamtwert aller offenen Futures-Positionen auf Binance in USD. Zeigt, wie viel gehebeltes Kapital im Markt steckt.",
   oiChange: "Veränderung des Open Interest in 7 Tagen. Viel neuer Hebel erhöht das Risiko heftiger Liquidationswellen. Im Score: 0 % oder weniger → 0, ab +15 % → +100, linear dazwischen.",
   dvol: "Deribit Volatility Index: die von Optionspreisen erwartete Schwankung der nächsten 30 Tage, als Jahreswert in %. In Klammern der Abstand zum 90-Tage-Durchschnitt in Standardabweichungen (σ). Nur für BTC und ETH verfügbar. Im Score: 0σ → 0, ab −1,5σ ungewöhnlich ruhig (Sorglosigkeit) → +100, ab +1,5σ ungewöhnlich hoch (Panik) → −100, linear dazwischen.",
+  momentum7: "Kursänderung der letzten 7 Tage (CoinGecko). Ersatz-Signal für Coins ohne Binance-Futures oder -Kursdaten. Im Score: 0 % → 0, ab +25 % → +100, ab −25 % → −100, linear dazwischen.",
+  momentum30: "Kursänderung der letzten 30 Tage (CoinGecko). Ersatz-Signal für Coins ohne Binance-Futures oder -Kursdaten. Im Score: 0 % → 0, ab +50 % → +100, ab −50 % → −100, linear dazwischen.",
+  turnover: "Handelsvolumen der letzten 24 h im Verhältnis zur Marktkapitalisierung (CoinGecko). Sehr hoher Umschlag zeigt hektischen Handel: im Aufwärtstrend Spekulationsrausch (+), im Abwärtstrend Panikverkäufe (−). Ersatz-Signal. Im Score: bis 5 % → 0, ab 50 % → ±100.",
+  rsiHourly: "RSI über 14 Stunden statt Tage, berechnet aus den stündlichen Kursen der letzten 7 Tage (CoinGecko). Ersatz, wenn keine Binance-Tageskerzen verfügbar sind; reagiert schneller als der Tages-RSI. Im Score: 50 → 0, ab 70 → +100, bis 30 → −100.",
   rsi: "Relative Strength Index über 14 Tage (0–100): misst, wie stark die Kursgewinne die Verluste zuletzt überwogen haben. Im Score: 50 → 0, ab 70 überkauft → +100, bis 30 überverkauft → −100, linear dazwischen.",
 };
 const SIGNAL_TIPS = {
   "Fear & Greed": "fng", "Funding Rate": "funding", "Open Interest": "oiChange",
   "Preis vs. MA200": "distance", "RSI (14)": "rsi", "Long/Short Ratio": "longShort", "Optionsvola (DVOL)": "dvol",
+  "Momentum 7T": "momentum7", "Momentum 30T": "momentum30", "Umschlag": "turnover", "RSI (14 Std.)": "rsiHourly",
 };
 const tipAttr = (key) => (key && TIPS[key] ? ` data-tip="${key}" tabindex="0"` : "");
 
 let payload = null;     // letzte Antwort von /api/sentiment
-let extra = null;       // per Klick gewählter Trending Coin
+let extra = null;       // Symbol des zusätzlich gewählten Coins (Trending oder Marktübersicht)
+let extraId = null;     // dessen CoinGecko-ID, falls bekannt (Symbole sind nicht eindeutig)
 let extraCoin = null;   // dessen Daten (null = lädt)
+const EXTRA_KEY = "extraCoin";
 
 function renderMarket(g) {
   hideTip();
@@ -208,7 +215,7 @@ function renderTrending(tr) {
     const inner = `<span class="rank">${t.rank}</span>${esc(t.symbol)}${chg}`;
     return shown.includes(t.symbol)
       ? `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · wird bereits angezeigt">${inner}</span>`
-      : `<button class="chip${t.symbol === extra ? " active" : ""}" style="--heat:${heat}%" data-symbol="${esc(t.symbol)}" title="${esc(title)} · im Dashboard anzeigen">${inner}</button>`;
+      : `<button class="chip${t.symbol === extra ? " active" : ""}" style="--heat:${heat}%" data-symbol="${esc(t.symbol)}" data-id="${esc(t.id || "")}" title="${esc(title)} · im Dashboard anzeigen">${inner}</button>`;
   };
   $("trending").innerHTML = `
     <div class="trending-head">
@@ -275,7 +282,8 @@ function renderCoin(c) {
         <div><div class="label"><span${tipAttr("dvol")}>DVOL</span></div><div class="val">${dv ? `${num(dv.value, 1)} <span class="note">(${dv.z >= 0 ? "+" : "−"}${num(Math.abs(dv.z), 1)}σ)</span>` : na}</div></div>
       </div>
 
-      ${noData ? '<div class="coin-note">Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.</div>' : ""}
+      ${d.momentum ? '<div class="coin-note">Binance-Daten unvollständig – Score ergänzt um Kursdaten von CoinGecko (Momentum, Umschlag).</div>'
+        : noData ? '<div class="coin-note">Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.</div>' : ""}
       <ul class="signals">${signals}</ul>
     </article>`;
 }
@@ -293,11 +301,45 @@ function renderCoins() {
   $("coins").classList.toggle("extra", !!extra);
 }
 
+// Auswahl im Browser merken; ist der Speicher blockiert (z. B. privates Fenster), wird sie einfach nicht gemerkt
+function saveExtra() {
+  try {
+    if (extra) localStorage.setItem(EXTRA_KEY, JSON.stringify({ symbol: extra, id: extraId }));
+    else localStorage.removeItem(EXTRA_KEY);
+  } catch (e) { /* ignorieren */ }
+}
+
+function restoreExtra() {
+  // Vorrang: Link aus der Marktübersicht (?coin=…&id=…), sonst gespeicherte Auswahl
+  const params = new URLSearchParams(location.search);
+  let saved = null;
+  if (params.get("coin")) {
+    saved = { symbol: params.get("coin").toUpperCase(), id: params.get("id") || null };
+    history.replaceState(null, "", location.pathname);
+  } else {
+    try { saved = JSON.parse(localStorage.getItem(EXTRA_KEY)); } catch (e) { saved = null; }
+  }
+  if (saved && /^[A-Z0-9]{1,15}$/.test(saved.symbol)) {
+    extra = saved.symbol;
+    extraId = saved.id || null;
+    saveExtra();
+  }
+}
+
 async function loadExtra(force = false) {
   const symbol = extra;
   if (!symbol) return;
+  if (payload && payload.coins.some((c) => c.symbol === symbol)) {
+    // wird ohnehin angezeigt (z. B. BTC aus der Marktübersicht)
+    extra = extraId = extraCoin = null;
+    saveExtra();
+    renderMarket(payload.global);
+    renderCoins();
+    return;
+  }
   try {
-    const res = await fetch("/api/coin?symbol=" + encodeURIComponent(symbol) + (force ? "&refresh=1" : ""));
+    const res = await fetch("/api/coin?symbol=" + encodeURIComponent(symbol)
+      + (extraId ? "&id=" + encodeURIComponent(extraId) : "") + (force ? "&refresh=1" : ""));
     if (!res.ok) throw new Error("HTTP " + res.status);
     const coin = await res.json();
     if (extra !== symbol) return;  // inzwischen anderer Coin gewählt
@@ -307,16 +349,19 @@ async function loadExtra(force = false) {
     if (extra !== symbol) return;
     $("error").textContent = symbol + " konnte nicht geladen werden (" + e.message + ").";
     $("error").hidden = false;
-    extra = null;
-    extraCoin = null;
+    extra = extraId = extraCoin = null;
+    saveExtra();
     renderMarket(payload.global);
     renderCoins();
   }
 }
 
-function selectExtra(symbol) {
-  extra = extra === symbol ? null : symbol;  // erneuter Klick entfernt den Coin wieder
+function selectExtra(symbol, id) {
+  const deselect = extra === symbol;  // erneuter Klick entfernt den Coin wieder
+  extra = deselect ? null : symbol;
+  extraId = deselect ? null : id || null;
   extraCoin = null;
+  saveExtra();
   renderMarket(payload.global);
   renderCoins();
   loadExtra();
@@ -387,8 +432,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip();
 $("refresh").addEventListener("click", () => load(true));
 $("trending").addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
-  if (chip) selectExtra(chip.dataset.symbol);
+  if (chip) selectExtra(chip.dataset.symbol, chip.dataset.id);
 });
+restoreExtra();
 load();
 setInterval(load, REFRESH_MS);
 </script>
