@@ -19,13 +19,15 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 import sentiment
 
 SYMBOLS = ["BTC", "ETH", "SOL"]
 CACHE_SECONDS = 300
+MARKETS_PER_PAGE = 50
+MARKETS_MAX_PAGE = 20     # Top 1000, wie bei Cryptobubbles
 STATIC_DIR = Path(__file__).resolve().parent / "web"
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
@@ -34,6 +36,8 @@ _cache: Dict[str, Any] = {"time": 0.0, "payload": None}
 _lock = threading.Lock()
 _coin_cache: Dict[str, Dict[str, Any]] = {}
 _coin_lock = threading.Lock()
+_markets_cache: Dict[int, Dict[str, Any]] = {}
+_markets_lock = threading.Lock()
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -105,6 +109,24 @@ def get_coin(symbol: str, force: bool = False) -> Dict[str, Any]:
         return entry["coin"]
 
 
+def get_markets(page: int) -> Optional[Dict[str, Any]]:
+    """Eine Seite der Rangliste; bei Fehlern die zuletzt erfolgreich geladene Fassung."""
+    with _markets_lock:
+        entry = _markets_cache.get(page)
+        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
+            coins = sentiment.safe(sentiment.get_markets, page, MARKETS_PER_PAGE)
+            if coins is not None:
+                entry = {"time": time.time(), "payload": {
+                    "page": page,
+                    "per_page": MARKETS_PER_PAGE,
+                    "max_page": MARKETS_MAX_PAGE,
+                    "updated": datetime.now().isoformat(timespec="seconds"),
+                    "coins": coins,
+                }}
+                _markets_cache[page] = entry
+        return entry["payload"] if entry else None
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -131,6 +153,17 @@ class Handler(SimpleHTTPRequestHandler):
         force = query.get("refresh") == ["1"]
         if url.path == "/api/sentiment":
             self.send_json(get_payload(force=force))
+            return
+        if url.path == "/api/markets":
+            page = (query.get("page") or ["1"])[0]
+            if not page.isdigit() or not 1 <= int(page) <= MARKETS_MAX_PAGE:
+                self.send_json({"error": "ungültige Seite"}, 400)
+                return
+            payload = get_markets(int(page))
+            if payload is None:
+                self.send_json({"error": "CoinGecko nicht erreichbar"}, 502)
+                return
+            self.send_json(payload)
             return
         if url.path == "/api/coin":
             symbol = (query.get("symbol") or [""])[0].upper()

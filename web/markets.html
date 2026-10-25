@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marktübersicht</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #15181d;
+    --muted: #667085;
+    --border: #e4e7ec;
+    --row-hover: #f8f9fb;
+    --up: #2b8a3e;
+    --down: #c92a2a;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --card: #171a21;
+      --text: #e8eaed;
+      --muted: #8b93a1;
+      --border: #262b35;
+      --row-hover: #1d212a;
+      --up: #51cf66;
+      --down: #ff6b6b;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .navlink, .pager button {
+    font: inherit; font-size: 14px; color: var(--text); text-decoration: none; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; cursor: pointer;
+  }
+  .navlink:hover, .pager button:hover:not(:disabled) { border-color: var(--muted); }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 10px 12px; text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid var(--border); }
+  td { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--row-hover); }
+  th.left, td.left { text-align: left; }
+  td.rank { color: var(--muted); width: 1%; }
+  .coin { display: flex; align-items: center; gap: 10px; }
+  .coin img { width: 22px; height: 22px; border-radius: 50%; flex: none; }
+  .coin .name { font-weight: 600; }
+  .coin .sym { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  .muted { color: var(--muted); }
+
+  .pager { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; margin: 16px 0; }
+  .pager button { padding: 6px 11px; min-width: 38px; }
+  .pager button.current { background: var(--text); color: var(--card); border-color: var(--text); cursor: default; }
+  .pager button:disabled:not(.current) { opacity: .4; cursor: default; }
+  .pager .gap { color: var(--muted); padding: 0 2px; }
+
+  .status { padding: 32px; text-align: center; color: var(--muted); }
+  .status.error { color: var(--down); }
+  footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
+
+  /* Schmale Bildschirme: weniger wichtige Spalten ausblenden */
+  @media (max-width: 960px) { .opt-wide { display: none; } }
+  @media (max-width: 640px) { .opt-mid { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Marktübersicht</h1>
+      <div class="sub" id="updated">Top 1000 nach Marktkapitalisierung</div>
+    </div>
+    <a class="navlink" href="/">← Sentiment-Dashboard</a>
+  </header>
+
+  <nav class="pager" id="pager-top"></nav>
+  <section class="card table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th class="left">Coin</th>
+          <th>Preis</th>
+          <th class="opt-wide">1h</th>
+          <th>24h</th>
+          <th class="opt-mid">7T</th>
+          <th class="opt-wide">30T</th>
+          <th class="opt-wide">1J</th>
+          <th class="opt-mid">Marktkap.</th>
+          <th class="opt-wide">Volumen 24h</th>
+        </tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="10" class="status">Lade Daten …</td></tr></tbody>
+    </table>
+  </section>
+  <nav class="pager" id="pager-bottom"></nav>
+
+  <footer>Daten: CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
+</main>
+
+<script>
+const REFRESH_MS = 5 * 60 * 1000;
+const $ = (id) => document.getElementById(id);
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const dash = '<span class="muted">–</span>';
+
+const price = (v) => {
+  if (v == null) return dash;
+  const opts = v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumSignificantDigits: 4 };
+  return "$" + v.toLocaleString("de-DE", opts);
+};
+// Große Beträge auf 6 signifikante Stellen mit Einheit, wie auf dem Dashboard
+const usd6 = (v) => {
+  if (v == null || v === 0) return dash;
+  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
+  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
+};
+const change = (v) => {
+  if (v == null) return dash;
+  const cls = v > 0 ? "up" : v < 0 ? "down" : "muted";
+  return `<span class="${cls}">${v > 0 ? "+" : ""}${(v * 100).toFixed(1).replace(".", ",")} %</span>`;
+};
+
+let page = 1;
+let maxPage = 20;
+
+function pageFromUrl() {
+  const p = parseInt(new URLSearchParams(location.search).get("page"), 10);
+  return p >= 1 ? Math.min(p, maxPage) : 1;
+}
+
+function renderPager() {
+  // 1 … p-2 p-1 [p] p+1 p+2 … max
+  const nums = new Set([1, maxPage]);
+  for (let i = page - 2; i <= page + 2; i++) if (i >= 1 && i <= maxPage) nums.add(i);
+  const sorted = [...nums].sort((a, b) => a - b);
+  let html = `<button data-page="${page - 1}" ${page === 1 ? "disabled" : ""} aria-label="Vorherige Seite">‹</button>`;
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) html += '<span class="gap">…</span>';
+    html += `<button data-page="${n}" class="${n === page ? "current" : ""}" ${n === page ? 'disabled aria-current="page"' : ""}>${n}</button>`;
+  });
+  html += `<button data-page="${page + 1}" ${page === maxPage ? "disabled" : ""} aria-label="Nächste Seite">›</button>`;
+  $("pager-top").innerHTML = html;
+  $("pager-bottom").innerHTML = html;
+}
+
+function renderRows(coins) {
+  $("rows").innerHTML = coins.map((c) => `
+    <tr>
+      <td class="rank">${c.rank ?? "–"}</td>
+      <td class="left"><div class="coin">
+        ${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : ""}
+        <span><span class="name">${esc(c.name)}</span><span class="sym">${esc(c.symbol)}</span></span>
+      </div></td>
+      <td>${price(c.price)}</td>
+      <td class="opt-wide">${change(c.change["1h"])}</td>
+      <td>${change(c.change["24h"])}</td>
+      <td class="opt-mid">${change(c.change["7d"])}</td>
+      <td class="opt-wide">${change(c.change["30d"])}</td>
+      <td class="opt-wide">${change(c.change["1y"])}</td>
+      <td class="opt-mid">${usd6(c.market_cap)}</td>
+      <td class="opt-wide">${usd6(c.volume)}</td>
+    </tr>`).join("");
+}
+
+async function load() {
+  renderPager();
+  try {
+    const res = await fetch("/api/markets?page=" + page);
+    const p = await res.json();
+    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    if (p.page !== page) return;  // inzwischen andere Seite gewählt
+    maxPage = p.max_page;
+    renderPager();
+    renderRows(p.coins);
+    const from = (page - 1) * p.per_page + 1;
+    $("updated").textContent = `Top ${p.max_page * p.per_page} nach Marktkapitalisierung · Platz ${from}–${from + p.coins.length - 1} · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+  } catch (e) {
+    $("rows").innerHTML = `<tr><td colspan="10" class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</td></tr>`;
+  }
+}
+
+function goTo(p) {
+  if (p < 1 || p > maxPage || p === page) return;
+  page = p;
+  history.pushState(null, "", p === 1 ? "markets.html" : `markets.html?page=${p}`);
+  $("rows").innerHTML = '<tr><td colspan="10" class="status">Lade Daten …</td></tr>';
+  window.scrollTo({ top: 0 });
+  load();
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".pager button[data-page]");
+  if (btn && !btn.disabled) goTo(parseInt(btn.dataset.page, 10));
+});
+window.addEventListener("popstate", () => { page = pageFromUrl(); load(); });
+
+page = pageFromUrl();
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>

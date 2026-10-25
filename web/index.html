@@ -60,6 +60,10 @@
   }
   button:hover { border-color: var(--muted); }
   button:disabled { opacity: .5; cursor: wait; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .navlink { font-size: 14px; color: var(--text); text-decoration: none; padding: 7px 14px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+  .navlink:hover { border-color: var(--muted); }
 
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
   .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
@@ -161,7 +165,10 @@
       <h1>Crypto Sentiment</h1>
       <div class="sub" id="updated">Lade Daten …</div>
     </div>
-    <button id="refresh">Aktualisieren</button>
+    <nav class="actions">
+      <a class="navlink" href="markets.html">Marktübersicht →</a>
+      <button id="refresh">Aktualisieren</button>
+    </nav>
   </header>
 
   <div id="error" class="card error" hidden></div>

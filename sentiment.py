@@ -170,6 +170,30 @@ def get_market_caps(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
             for c in coins}
 
 
+def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
+    """Rangliste nach Marktkapitalisierung, seitenweise (CoinGecko)."""
+    coins = fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&order=market_cap_desc&per_page={per_page}&page={page}"
+        "&price_change_percentage=1h,24h,7d,30d,1y"
+    )
+
+    def change(c: Dict[str, Any], period: str) -> Optional[float]:
+        v = c.get(f"price_change_percentage_{period}_in_currency")
+        return v / 100 if v is not None else None
+
+    return [{
+        "rank": c.get("market_cap_rank"),
+        "symbol": c["symbol"].upper(),
+        "name": c["name"],
+        "image": c.get("image"),
+        "price": c.get("current_price"),
+        "market_cap": c.get("market_cap"),
+        "volume": c.get("total_volume"),
+        "change": {p: change(c, p) for p in ("1h", "24h", "7d", "30d", "1y")},
+    } for c in coins]
+
+
 def get_stablecoins() -> Dict[str, Any]:
     chart = fetch_json("https://stablecoins.llama.fi/stablecoincharts/all")
     now = chart[-1]["totalCirculatingUSD"]["peggedUSD"]
