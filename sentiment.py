@@ -163,9 +163,21 @@ def get_btc_dominance() -> Dict[str, Any]:
     return {"btc": data["market_cap_percentage"]["btc"]}
 
 
-def get_trending() -> List[str]:
+def get_trending() -> List[Dict[str, Any]]:
+    """Meistgesuchte Coins der letzten 24 h, nach Rang sortiert (CoinGecko liefert max. 15)."""
     coins = fetch_json("https://api.coingecko.com/api/v3/search/trending")["coins"]
-    return [c["item"]["symbol"].upper() for c in coins[:10]]
+    result = []
+    for rank, c in enumerate(coins, start=1):
+        item = c["item"]
+        change = (item.get("data") or {}).get("price_change_percentage_24h", {}).get("usd")
+        result.append({
+            "symbol": item["symbol"].upper(),
+            "name": item["name"],
+            "rank": rank,
+            "change_24h": change / 100 if change is not None else None,
+            "market_cap_rank": item.get("market_cap_rank"),
+        })
+    return result
 
 
 # --- Auswertung -------------------------------------------------------------
@@ -291,7 +303,7 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
         print(f"  BTC-Dominanz:   {dom['btc']:.1f} %")
     tr = d.get("trending")
     if tr:
-        print(f"  Trending:       {', '.join(tr)}")
+        print(f"  Trending:       {', '.join(t['symbol'] for t in tr)}")
 
     print(f"\n  Signale:")
     for s in signals:

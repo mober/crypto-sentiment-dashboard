@@ -65,17 +65,27 @@
   .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 
   /* Markt-Leiste */
-  .market { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 20px; }
+  .market { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 20px; }
   .market > div { padding: 16px 20px; border-left: 1px solid var(--border); }
   .market > div:first-child { border-left: 0; }
   .market .val { font-size: 22px; font-weight: 600; margin-top: 2px; }
   .market .note { color: var(--muted); font-size: 13px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .chip { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--neutral-bg);
-    border: 1px solid transparent; color: var(--text); cursor: pointer; }
+  /* Trending: Chip-Färbung nach Rang (--heat), rechts die 24h-Kursänderung */
+  .trending { padding: 16px 20px; margin-bottom: 20px; }
+  .trending-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .trending .note { color: var(--muted); font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { display: inline-flex; align-items: baseline; gap: 5px; font: inherit; font-size: 13px; font-weight: 600;
+    padding: 3px 10px; border-radius: 99px; border: 1px solid transparent; color: var(--text); cursor: pointer;
+    background: color-mix(in srgb, var(--hot) var(--heat, 0%), var(--neutral-bg)); }
   .chip:hover { border-color: var(--muted); }
-  .chip.static { cursor: default; border-color: transparent; color: var(--muted); }
+  .chip .rank { font-size: 10px; color: var(--muted); }
+  .chip .chg { font-size: 11px; font-weight: 500; }
+  .chip .chg.up { color: var(--up); }
+  .chip .chg.down { color: var(--down); }
+  .chip.static { cursor: default; border-color: transparent; opacity: .55; }
   .chip.active { background: var(--text); color: var(--card); }
+  .chip.active .rank, .chip.active .chg { color: inherit; opacity: .75; }
 
   /* Coins */
   .coins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -134,11 +144,8 @@
   }
   @media (max-width: 960px) {
     .coins, .coins.extra { grid-template-columns: 1fr; }
-    .market { grid-template-columns: 1fr 1fr; }
-    .market > div:nth-child(3) { border-left: 0; }
-    .market > div:nth-child(n+3) { border-top: 1px solid var(--border); }
   }
-  @media (max-width: 480px) {
+  @media (max-width: 640px) {
     .market { grid-template-columns: 1fr; }
     .market > div { border-left: 0; border-top: 1px solid var(--border); }
     .market > div:first-child { border-top: 0; }
@@ -157,6 +164,7 @@
 
   <div id="error" class="card error" hidden></div>
   <section class="card market" id="market"></section>
+  <section class="card trending" id="trending"></section>
   <section class="coins" id="coins"></section>
 
   <footer>
@@ -189,7 +197,7 @@ const TIPS = {
   fng: "Fear & Greed Index von alternative.me (0–100), berechnet aus Volatilität, Volumen, Social Media, BTC-Dominanz und Google Trends. 0 = extreme Angst, 100 = extreme Gier. Im Score: 50 → 0, ab 80 → +100, bis 20 → −100, linear dazwischen.",
   stablecoins: "Gesamte Marktkapitalisierung aller Stablecoins (DefiLlama). Wachsende Bestände gelten als „trockenes Pulver“, das in Krypto fließen kann; schrumpfende als Kapitalabfluss. Nicht Teil des Scores.",
   dominance: "Anteil von Bitcoin an der gesamten Krypto-Marktkapitalisierung (CoinGecko). Über 55 % spricht für eine vorsichtige, BTC-lastige Phase; fallende Dominanz dafür, dass Altcoins Kapital anziehen. Nicht Teil des Scores.",
-  trending: "Die meistgesuchten Coins auf CoinGecko in den letzten 24 Stunden – ein Maß für Aufmerksamkeit, nicht für Qualität. Klick auf einen Coin zeigt ihn als zusätzliche Karte.",
+  trending: "Die meistgesuchten Coins auf CoinGecko in den letzten 24 Stunden (max. 15) – ein Maß für Aufmerksamkeit, nicht für Qualität. Kleine Zahl links = Rang (1 = meistgesucht), je kräftiger die Färbung, desto weiter oben. Rechts die Kursänderung in 24 h. Klick auf einen Coin zeigt ihn als zusätzliche Karte.",
   score: "Durchschnitt aller Einzelsignale. Jedes Signal liefert −100 (extreme Angst) bis +100 (Überhitzung / Gier), stufenlos je nach Messwert. Ab ±15 gilt der Markt als leicht gierig bzw. ängstlich, ab +40 als überhitzt, ab −40 als extrem ängstlich.",
   ma200: "Durchschnitt der Tages-Schlusskurse der letzten 200 Tage (Binance). Gilt als Trennlinie zwischen langfristigem Auf- und Abwärtstrend.",
   distance: "Wie weit der aktuelle Preis über (+) oder unter (−) dem MA200 liegt. Im Score: +10 % (normaler Aufwärtstrend) → 0, ab +35 % stark gestreckt → +100, ab −20 % → −100, linear dazwischen.",
@@ -215,8 +223,6 @@ function renderMarket(g) {
   const fng = g.fear_greed;
   const st = g.stablecoins;
   const dom = g.btc_dominance;
-  const tr = g.trending || [];
-  const shown = payload ? payload.coins.map((c) => c.symbol) : [];
   $("market").innerHTML = `
     <div>
       <div class="label"><span${tipAttr("fng")}>Fear &amp; Greed</span></div>
@@ -232,13 +238,29 @@ function renderMarket(g) {
       <div class="label"><span${tipAttr("dominance")}>BTC-Dominanz</span></div>
       <div class="val">${dom ? dom.btc.toFixed(1).replace(".", ",") + " %" : "–"}</div>
       <div class="note">${dom ? (dom.btc >= 55 ? "Risk-off / BTC-Phase" : "Altcoins gewinnen Anteile") : "nicht verfügbar"}</div>
-    </div>
-    <div>
-      <div class="label"><span${tipAttr("trending")}>Trending (CoinGecko)</span></div>
-      <div class="chips">${tr.length ? tr.map((t) => shown.includes(t)
-        ? `<span class="chip static">${esc(t)}</span>`
-        : `<button class="chip${t === extra ? " active" : ""}" data-symbol="${esc(t)}" title="Im Dashboard anzeigen">${esc(t)}</button>`).join("") : '<span class="note">nicht verfügbar</span>'}</div>
     </div>`;
+  renderTrending(g.trending || []);
+}
+
+function renderTrending(tr) {
+  const shown = payload ? payload.coins.map((c) => c.symbol) : [];
+  const chip = (t) => {
+    // Rang 1 kräftig (40 %), letzter Rang blass (6 %)
+    const heat = tr.length > 1 ? 6 + ((tr.length - t.rank) / (tr.length - 1)) * 34 : 40;
+    const chg = t.change_24h == null ? ""
+      : `<span class="chg ${t.change_24h >= 0 ? "up" : "down"}">${pct(t.change_24h)}</span>`;
+    const title = `Rang ${t.rank}: ${t.name}` + (t.market_cap_rank ? ` · Marktkap.-Rang ${t.market_cap_rank}` : "");
+    const inner = `<span class="rank">${t.rank}</span>${esc(t.symbol)}${chg}`;
+    return shown.includes(t.symbol)
+      ? `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · wird bereits angezeigt">${inner}</span>`
+      : `<button class="chip${t.symbol === extra ? " active" : ""}" style="--heat:${heat}%" data-symbol="${esc(t.symbol)}" title="${esc(title)} · im Dashboard anzeigen">${inner}</button>`;
+  };
+  $("trending").innerHTML = `
+    <div class="trending-head">
+      <div class="label"><span${tipAttr("trending")}>Trending (CoinGecko)</span></div>
+      <div class="note">Rang 1 = meistgesucht · rechts: Kurs 24 h · Klick = als Karte anzeigen</div>
+    </div>
+    <div class="chips">${tr.length ? tr.map(chip).join("") : '<span class="note">nicht verfügbar</span>'}</div>`;
 }
 
 function renderCoin(c) {
@@ -403,7 +425,7 @@ window.addEventListener("scroll", hideTip, { passive: true });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
 
 $("refresh").addEventListener("click", () => load(true));
-$("market").addEventListener("click", (e) => {
+$("trending").addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
   if (chip) selectExtra(chip.dataset.symbol);
 });
