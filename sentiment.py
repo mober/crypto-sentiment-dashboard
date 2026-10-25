@@ -8,6 +8,7 @@ Quellen:
   - alternative.me     Fear & Greed Index
   - Binance Futures    Funding Rate, Open Interest, Long/Short Ratio
   - Binance Spot       Tageskerzen für den 200-Tage-Durchschnitt und RSI(14)
+  - Deribit            DVOL (implizite Optionsvolatilität, nur BTC und ETH)
   - DefiLlama          Stablecoin-Marktkapitalisierung
   - CoinGecko          BTC-Dominanz, Trending Coins
 
@@ -21,7 +22,9 @@ Die Schwellenwerte sind Erfahrungswerte, keine Naturgesetze. Keine Anlageberatun
 
 import argparse
 import json
+import statistics
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -42,6 +45,10 @@ LS_RATIO_COLD = 0.9
 RSI_PERIOD = 14
 RSI_HOT = 70              # überkauft
 RSI_COLD = 30             # überverkauft
+DVOL_SYMBOLS = {"BTC", "ETH"}  # Deribit bietet DVOL nur für diese Coins
+DVOL_WINDOW = 90          # Tage für Mittelwert und Standardabweichung
+DVOL_Z_HOT = -1.5         # ungewöhnlich niedrige Vola = Sorglosigkeit
+DVOL_Z_COLD = 1.5         # ungewöhnlich hohe Vola = Panik / Absicherung
 
 
 def fetch_json(url: str) -> Any:
@@ -127,6 +134,22 @@ def rsi(closes: List[float], period: int = RSI_PERIOD) -> Optional[Dict[str, Any
     return {"value": 100 - 100 / (1 + avg_gain / avg_loss)}
 
 
+def get_dvol(symbol: str) -> Optional[Dict[str, Any]]:
+    if symbol not in DVOL_SYMBOLS:
+        return None
+    end = int(time.time() * 1000)
+    start = end - (DVOL_WINDOW + 2) * 86_400_000
+    data = fetch_json(
+        "https://www.deribit.com/api/v2/public/get_volatility_index_data"
+        f"?currency={symbol}&start_timestamp={start}&end_timestamp={end}&resolution=1D"
+    )["result"]["data"]
+    closes = [float(c[4]) for c in data]  # [Zeit, Open, High, Low, Close]
+    current = closes[-1]
+    window = closes[-DVOL_WINDOW - 1:-1]
+    mean = statistics.mean(window)
+    return {"value": current, "mean": mean, "z": (current - mean) / statistics.stdev(window)}
+
+
 def get_stablecoins() -> Dict[str, Any]:
     chart = fetch_json("https://stablecoins.llama.fi/stablecoincharts/all")
     now = chart[-1]["totalCirculatingUSD"]["peggedUSD"]
@@ -201,6 +224,16 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
         else:
             add("RSI (14)", 0, f"{v:.0f}, neutral")
 
+    dv = d.get("dvol")
+    if dv:
+        v, z = dv["value"], dv["z"]
+        if z <= DVOL_Z_HOT:
+            add("Optionsvola (DVOL)", 1, f"{v:.1f} ({z:+.1f}σ), ungewöhnlich ruhig, Sorglosigkeit")
+        elif z >= DVOL_Z_COLD:
+            add("Optionsvola (DVOL)", -1, f"{v:.1f} ({z:+.1f}σ), ungewöhnlich hoch, Absicherung gefragt")
+        else:
+            add("Optionsvola (DVOL)", 0, f"{v:.1f} ({z:+.1f}σ), normal")
+
     ls = d.get("long_short")
     if ls:
         r = ls["ratio"]
@@ -249,6 +282,9 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
     rs = d.get("rsi")
     if rs:
         print(f"  RSI (14):       {rs['value']:.0f}")
+    dv = d.get("dvol")
+    if dv:
+        print(f"  DVOL:           {dv['value']:.1f} (Ø {DVOL_WINDOW}T {dv['mean']:.1f}, {dv['z']:+.1f}σ)")
 
     fng = d.get("fear_greed")
     if fng:
@@ -269,7 +305,7 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
     print(f"\n  Signale:")
     for s in signals:
         mark = {1: "▲ +1", -1: "▼ -1", 0: "  ·0"}[s["points"]]
-        print(f"    {mark}  {s['name']:<17} {s['reason']}")
+        print(f"    {mark}  {s['name']:<19} {s['reason']}")
 
     print(f"\n  Score: {total:+d} (Bereich -{len(signals)} … +{len(signals)})")
     print(f"  → {verdict(total, len(signals))}")
@@ -295,6 +331,7 @@ def collect_symbol(symbol: str) -> Dict[str, Any]:
         "long_short": safe(get_long_short, symbol),
         "price_ma200": price_vs_ma200(closes) if closes else None,
         "rsi": rsi(closes) if closes else None,
+        "dvol": safe(get_dvol, symbol),
     }
 
 
