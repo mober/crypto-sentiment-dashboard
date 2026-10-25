@@ -2,7 +2,7 @@
 """Tägliche Crypto-Sentiment-Übersicht.
 
 Sammelt kostenlose, öffentliche Marktdaten (ohne API-Keys) und berechnet
-einen einfachen Überhitzungs-Score für BTC.
+einen Überhitzungs-Score von -100 (extreme Angst) bis +100 (überhitzt).
 
 Quellen:
   - alternative.me     Fear & Greed Index
@@ -28,27 +28,28 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 TIMEOUT = 15
 USER_AGENT = "Mozilla/5.0 (sentiment-script)"
 
-# Schwellenwerte für den Score
-FNG_GREED = 80
-FNG_FEAR = 20
-FUNDING_HOT = 0.0005      # 0,05 % pro 8 h
-FUNDING_COLD = 0.0        # negativ = Shorts zahlen
-OI_CHANGE_HOT = 0.15      # +15 % Open Interest in 7 Tagen
-MA200_STRETCH_HOT = 0.35  # Preis 35 % über 200-Tage-Durchschnitt
-LS_RATIO_HOT = 2.0        # mehr als doppelt so viele Long- wie Short-Accounts
-LS_RATIO_COLD = 0.9
+# Skalen für den Score: Ankerpunkte (Messwert, Punkte). Zwischen den Punkten
+# wird linear interpoliert, außerhalb auf -100 / +100 begrenzt.
+FNG_SCALE = [(20, -100), (50, 0), (80, 100)]
+FUNDING_SCALE = [(-0.0001, -100), (0.0001, 0), (0.0005, 100)]  # pro 8 h; 0,01 % = Binance-Standard
+OI_SCALE = [(0.0, 0), (0.15, 100)]                  # nur steigender Hebel zählt
+MA200_SCALE = [(-0.20, -100), (0.10, 0), (0.35, 100)]  # +10 % = normaler Aufwärtstrend
+LS_SCALE = [(0.9, -100), (2.0, 0), (3.5, 100)]      # Long- zu Short-Accounts; auf Binance meist ~2
+RSI_SCALE = [(30, -100), (50, 0), (70, 100)]
+DVOL_SCALE = [(-1.5, 100), (0.0, 0), (1.5, -100)]   # z-Wert: ruhig = Sorglosigkeit, hoch = Panik
+
+SIGNAL_STRONG = 50        # ab hier gilt ein Einzelsignal als ausgeprägt
+VERDICT_HOT = 40          # Gesamtscore ab +40 = überhitzt, ab -40 = extreme Angst
+VERDICT_WARM = 15         # ab ±15 = leicht gierig / ängstlich
+
 RSI_PERIOD = 14
-RSI_HOT = 70              # überkauft
-RSI_COLD = 30             # überverkauft
 DVOL_SYMBOLS = {"BTC", "ETH"}  # Deribit bietet DVOL nur für diese Coins
 DVOL_WINDOW = 90          # Tage für Mittelwert und Standardabweichung
-DVOL_Z_HOT = -1.5         # ungewöhnlich niedrige Vola = Sorglosigkeit
-DVOL_Z_COLD = 1.5         # ungewöhnlich hohe Vola = Panik / Absicherung
 
 
 def fetch_json(url: str) -> Any:
@@ -169,94 +170,84 @@ def get_trending() -> List[str]:
 
 # --- Auswertung -------------------------------------------------------------
 
+def scale(value: float, anchors: List[Tuple[float, int]]) -> int:
+    """Rechnet einen Messwert anhand der Ankerpunkte in -100 … +100 Punkte um."""
+    if value <= anchors[0][0]:
+        return anchors[0][1]
+    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
+        if value <= x1:
+            return round(y0 + (value - x0) / (x1 - x0) * (y1 - y0))
+    return anchors[-1][1]
+
+
 def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Liefert Einzelsignale: +1 = überhitzt/Gier, -1 = Angst, 0 = neutral."""
+    """Liefert Einzelsignale von -100 (Angst) über 0 (neutral) bis +100 (überhitzt/Gier)."""
     signals = []
 
-    def add(name: str, points: int, reason: str) -> None:
-        signals.append({"name": name, "points": points, "reason": reason})
+    def add(name: str, points: int, reason: str, hot: str, cold: str, neutral: str) -> None:
+        word = hot if points >= SIGNAL_STRONG else cold if points <= -SIGNAL_STRONG else neutral
+        signals.append({"name": name, "points": points, "reason": f"{reason}, {word}"})
 
     fng = d.get("fear_greed")
     if fng:
         v = fng["value"]
-        if v >= FNG_GREED:
-            add("Fear & Greed", 1, f"{v} = extreme Gier")
-        elif v <= FNG_FEAR:
-            add("Fear & Greed", -1, f"{v} = extreme Angst")
-        else:
-            add("Fear & Greed", 0, f"{v} = neutral")
+        add("Fear & Greed", scale(v, FNG_SCALE), f"{v}", "Gier", "Angst", "neutral")
 
     fr = d.get("funding")
     if fr:
         r = fr["avg_7d"]
-        if r >= FUNDING_HOT:
-            add("Funding Rate", 1, f"Ø {r:.4%} / 8h, Longs zahlen viel")
-        elif r < FUNDING_COLD:
-            add("Funding Rate", -1, f"Ø {r:.4%} / 8h, Shorts dominieren")
-        else:
-            add("Funding Rate", 0, f"Ø {r:.4%} / 8h, normal")
+        add("Funding Rate", scale(r, FUNDING_SCALE), f"Ø {r:.4%} / 8h",
+            "Longs zahlen viel", "Shorts dominieren", "normal")
 
     oi = d.get("open_interest")
     if oi:
         c = oi["change_7d"]
-        if c >= OI_CHANGE_HOT:
-            add("Open Interest", 1, f"{c:+.1%} in 7 Tagen, viel neuer Hebel")
-        else:
-            add("Open Interest", 0, f"{c:+.1%} in 7 Tagen")
+        add("Open Interest", scale(c, OI_SCALE), f"{c:+.1%} in 7 Tagen",
+            "viel neuer Hebel", "", "normal")
 
     ma = d.get("price_ma200")
     if ma:
         dist = ma["distance"]
-        if dist >= MA200_STRETCH_HOT:
-            add("Preis vs. MA200", 1, f"{dist:+.1%}, stark gestreckt")
-        elif dist < 0:
-            add("Preis vs. MA200", -1, f"{dist:+.1%}, unter dem Trend")
-        else:
-            add("Preis vs. MA200", 0, f"{dist:+.1%}, gesunder Aufwärtstrend")
+        add("Preis vs. MA200", scale(dist, MA200_SCALE), f"{dist:+.1%}",
+            "stark gestreckt", "deutlich unter dem Trend", "im Trendbereich")
 
     rs = d.get("rsi")
     if rs:
         v = rs["value"]
-        if v >= RSI_HOT:
-            add("RSI (14)", 1, f"{v:.0f}, überkauft")
-        elif v <= RSI_COLD:
-            add("RSI (14)", -1, f"{v:.0f}, überverkauft")
-        else:
-            add("RSI (14)", 0, f"{v:.0f}, neutral")
+        add("RSI (14)", scale(v, RSI_SCALE), f"{v:.0f}", "überkauft", "überverkauft", "neutral")
 
     dv = d.get("dvol")
     if dv:
         v, z = dv["value"], dv["z"]
-        if z <= DVOL_Z_HOT:
-            add("Optionsvola (DVOL)", 1, f"{v:.1f} ({z:+.1f}σ), ungewöhnlich ruhig, Sorglosigkeit")
-        elif z >= DVOL_Z_COLD:
-            add("Optionsvola (DVOL)", -1, f"{v:.1f} ({z:+.1f}σ), ungewöhnlich hoch, Absicherung gefragt")
-        else:
-            add("Optionsvola (DVOL)", 0, f"{v:.1f} ({z:+.1f}σ), normal")
+        add("Optionsvola (DVOL)", scale(z, DVOL_SCALE), f"{v:.1f} ({z:+.1f}σ)",
+            "ungewöhnlich ruhig, Sorglosigkeit", "ungewöhnlich hoch, Absicherung gefragt", "normal")
 
     ls = d.get("long_short")
     if ls:
         r = ls["ratio"]
-        if r >= LS_RATIO_HOT:
-            add("Long/Short Ratio", 1, f"{r:.2f}, Masse stark long")
-        elif r <= LS_RATIO_COLD:
-            add("Long/Short Ratio", -1, f"{r:.2f}, Masse short")
-        else:
-            add("Long/Short Ratio", 0, f"{r:.2f}, ausgeglichen")
+        add("Long/Short Ratio", scale(r, LS_SCALE), f"{r:.2f}",
+            "Masse stark long", "Masse short", "ausgeglichen")
 
     return signals
+
+
+def total_score(signals: List[Dict[str, Any]]) -> int:
+    """Gesamtscore = Durchschnitt der Einzelsignale (-100 … +100)."""
+    if not signals:
+        return 0
+    return round(sum(s["points"] for s in signals) / len(signals))
 
 
 def verdict(total: int, count: int) -> str:
     if count == 0:
         return "Keine Daten verfügbar."
-    if total >= 3:
+    if total >= VERDICT_HOT:
         return "ÜBERHITZT: Vorsicht, keine neuen Hebelpositionen, Gewinne sichern erwägen."
-    if total >= 1:
+    if total >= VERDICT_WARM:
         return "Leicht gierig: Markt läuft heiß, nicht der FOMO folgen."
-    if total <= -3:
+    if total <= -VERDICT_HOT:
         return "EXTREME ANGST: Historisch oft gute Kaufzonen (DCA fortsetzen)."
-    if total <= -1:
+    if total <= -VERDICT_WARM:
         return "Leicht ängstlich: eher Kaufgelegenheit als Verkaufssignal."
     return "Neutral: Keine Extreme erkennbar."
 
@@ -270,7 +261,7 @@ def fmt_usd(v: float) -> str:
 
 
 def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) -> None:
-    total = sum(s["points"] for s in signals)
+    total = total_score(signals)
     line = "─" * 60
     print(f"\n{line}\n  Crypto-Sentiment {symbol}  ·  {datetime.now():%d.%m.%Y %H:%M}\n{line}")
 
@@ -304,10 +295,12 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
 
     print(f"\n  Signale:")
     for s in signals:
-        mark = {1: "▲ +1", -1: "▼ -1", 0: "  ·0"}[s["points"]]
-        print(f"    {mark}  {s['name']:<19} {s['reason']}")
+        pts = s["points"]
+        arrow = "▲" if pts >= SIGNAL_STRONG else "▼" if pts <= -SIGNAL_STRONG else "·"
+        print(f"    {arrow} {pts:+4d}  {s['name']:<19} {s['reason']}" if pts else
+              f"    {arrow} {0:4d}  {s['name']:<19} {s['reason']}")
 
-    print(f"\n  Score: {total:+d} (Bereich -{len(signals)} … +{len(signals)})")
+    print(f"\n  Score: {total:+d} (Bereich -100 … +100, Durchschnitt aus {len(signals)} Signalen)")
     print(f"  → {verdict(total, len(signals))}")
     print(f"{line}\n  Keine Anlageberatung. Schwellenwerte sind Erfahrungswerte.\n")
 
@@ -346,7 +339,7 @@ def main() -> None:
     signals = score(data)
 
     if args.json:
-        total = sum(s["points"] for s in signals)
+        total = total_score(signals)
         print(json.dumps({"symbol": symbol, "data": data, "signals": signals,
                           "score": total, "verdict": verdict(total, len(signals))},
                          indent=2, ensure_ascii=False))

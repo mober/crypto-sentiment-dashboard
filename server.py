@@ -39,13 +39,12 @@ _coin_lock = threading.Lock()
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
     data = {"fear_greed": global_data["fear_greed"], **symbol_data}
     signals = sentiment.score(data)
-    total = sum(s["points"] for s in signals)
+    total = sentiment.total_score(signals)
     return {
         "symbol": symbol,
         "data": symbol_data,
         "signals": signals,
         "score": total,
-        "max_score": len(signals),
         "verdict": sentiment.verdict(total, len(signals)),
     }
 
@@ -88,6 +87,13 @@ def get_coin(symbol: str, force: bool = False) -> Dict[str, Any]:
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
+
+    def end_headers(self) -> None:
+        # Statische Dateien bei jedem Laden neu prüfen, damit nach Änderungen
+        # kein alter Frontend-Code mit neuer API zusammentrifft
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
 
     def send_json(self, payload: Any, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

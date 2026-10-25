@@ -107,7 +107,7 @@
   .metrics .val { font-weight: 600; }
 
   .signals { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
-  .signals li { display: grid; grid-template-columns: 30px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .signals li { display: grid; grid-template-columns: 40px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .signals li:last-child { border-bottom: 0; }
   .pts { font-weight: 700; text-align: center; border-radius: 6px; font-size: 12px; padding: 1px 0; height: fit-content; }
   .signals .name { font-weight: 600; }
@@ -160,7 +160,7 @@
   <section class="coins" id="coins"></section>
 
   <footer>
-    Score je Coin: Fear &amp; Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio, Optionsvola DVOL (nur BTC/ETH) (je −1 / 0 / +1).<br>
+    Score je Coin: Fear &amp; Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio, Optionsvola DVOL (nur BTC/ETH) (je −100 … +100, Score = Durchschnitt).<br>
     Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.
   </footer>
 </main>
@@ -179,24 +179,26 @@ const usd = (v) => {
   return "$" + v.toLocaleString("de-DE", { maximumFractionDigits: v < 100 ? 2 : 0 });
 };
 const num = (v, d) => v.toFixed(d).replace(".", ",");
-const tone = (score) => (score >= 1 ? "tone-hot" : score <= -1 ? "tone-cold" : "tone-neutral");
+// Farbschwellen wie in sentiment.py: VERDICT_WARM (Gesamtscore) und SIGNAL_STRONG (Einzelsignal)
+const tone = (score, limit = 15) => (score >= limit ? "tone-hot" : score <= -limit ? "tone-cold" : "tone-neutral");
+const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
 const na = '<span class="note">n/a</span>';
 
 // Erklärungen für Tooltips. Die Schwellen entsprechen denen in sentiment.py.
 const TIPS = {
-  fng: "Fear & Greed Index von alternative.me (0–100), berechnet aus Volatilität, Volumen, Social Media, BTC-Dominanz und Google Trends. 0 = extreme Angst, 100 = extreme Gier. Im Score: ab 80 → +1, bis 20 → −1.",
+  fng: "Fear & Greed Index von alternative.me (0–100), berechnet aus Volatilität, Volumen, Social Media, BTC-Dominanz und Google Trends. 0 = extreme Angst, 100 = extreme Gier. Im Score: 50 → 0, ab 80 → +100, bis 20 → −100, linear dazwischen.",
   stablecoins: "Gesamte Marktkapitalisierung aller Stablecoins (DefiLlama). Wachsende Bestände gelten als „trockenes Pulver“, das in Krypto fließen kann; schrumpfende als Kapitalabfluss. Nicht Teil des Scores.",
   dominance: "Anteil von Bitcoin an der gesamten Krypto-Marktkapitalisierung (CoinGecko). Über 55 % spricht für eine vorsichtige, BTC-lastige Phase; fallende Dominanz dafür, dass Altcoins Kapital anziehen. Nicht Teil des Scores.",
   trending: "Die meistgesuchten Coins auf CoinGecko in den letzten 24 Stunden – ein Maß für Aufmerksamkeit, nicht für Qualität. Klick auf einen Coin zeigt ihn als zusätzliche Karte.",
-  score: "Summe aller Einzelsignale. Jedes Signal zählt +1 (Gier / Überhitzung), 0 (neutral) oder −1 (Angst). Ab +3 gilt der Markt als überhitzt, ab −3 als extrem ängstlich.",
+  score: "Durchschnitt aller Einzelsignale. Jedes Signal liefert −100 (extreme Angst) bis +100 (Überhitzung / Gier), stufenlos je nach Messwert. Ab ±15 gilt der Markt als leicht gierig bzw. ängstlich, ab +40 als überhitzt, ab −40 als extrem ängstlich.",
   ma200: "Durchschnitt der Tages-Schlusskurse der letzten 200 Tage (Binance). Gilt als Trennlinie zwischen langfristigem Auf- und Abwärtstrend.",
-  distance: "Wie weit der aktuelle Preis über (+) oder unter (−) dem MA200 liegt. Im Score: ab +35 % stark gestreckt → +1, unter 0 % Abwärtstrend → −1.",
-  funding: "Durchschnittliche Funding Rate der letzten 7 Tage auf Binance Futures, pro 8 Stunden. Positiv: Longs zahlen an Shorts, der Markt ist long-lastig. Im Score: ab 0,05 % → +1, negativ → −1.",
-  longShort: "Verhältnis der Binance-Futures-Konten mit Long- zu Short-Position. 2,0 heißt: doppelt so viele Konten long. Gilt als Kontraindikator. Im Score: ab 2,0 → +1, bis 0,9 → −1.",
+  distance: "Wie weit der aktuelle Preis über (+) oder unter (−) dem MA200 liegt. Im Score: +10 % (normaler Aufwärtstrend) → 0, ab +35 % stark gestreckt → +100, ab −20 % → −100, linear dazwischen.",
+  funding: "Durchschnittliche Funding Rate der letzten 7 Tage auf Binance Futures, pro 8 Stunden. Positiv: Longs zahlen an Shorts, der Markt ist long-lastig. Im Score: 0,01 % (Binance-Standard) → 0, ab 0,05 % → +100, ab −0,01 % → −100, linear dazwischen.",
+  longShort: "Verhältnis der Binance-Futures-Konten mit Long- zu Short-Position. 2,0 heißt: doppelt so viele Konten long. Gilt als Kontraindikator. Auf Binance sind Kleinanleger meist deutlich long, daher gilt 2,0 als normal. Im Score: 2,0 → 0, ab 3,5 → +100, bis 0,9 → −100, linear dazwischen.",
   oi: "Open Interest: Gesamtwert aller offenen Futures-Positionen auf Binance in USD. Zeigt, wie viel gehebeltes Kapital im Markt steckt.",
-  oiChange: "Veränderung des Open Interest in 7 Tagen. Viel neuer Hebel erhöht das Risiko heftiger Liquidationswellen. Im Score: ab +15 % → +1.",
-  dvol: "Deribit Volatility Index: die von Optionspreisen erwartete Schwankung der nächsten 30 Tage, als Jahreswert in %. In Klammern der Abstand zum 90-Tage-Durchschnitt in Standardabweichungen (σ). Nur für BTC und ETH verfügbar. Im Score: ab −1,5σ ungewöhnlich ruhig (Sorglosigkeit) → +1, ab +1,5σ ungewöhnlich hoch (Panik) → −1.",
-  rsi: "Relative Strength Index über 14 Tage (0–100): misst, wie stark die Kursgewinne die Verluste zuletzt überwogen haben. Im Score: ab 70 überkauft → +1, bis 30 überverkauft → −1.",
+  oiChange: "Veränderung des Open Interest in 7 Tagen. Viel neuer Hebel erhöht das Risiko heftiger Liquidationswellen. Im Score: 0 % oder weniger → 0, ab +15 % → +100, linear dazwischen.",
+  dvol: "Deribit Volatility Index: die von Optionspreisen erwartete Schwankung der nächsten 30 Tage, als Jahreswert in %. In Klammern der Abstand zum 90-Tage-Durchschnitt in Standardabweichungen (σ). Nur für BTC und ETH verfügbar. Im Score: 0σ → 0, ab −1,5σ ungewöhnlich ruhig (Sorglosigkeit) → +100, ab +1,5σ ungewöhnlich hoch (Panik) → −100, linear dazwischen.",
+  rsi: "Relative Strength Index über 14 Tage (0–100): misst, wie stark die Kursgewinne die Verluste zuletzt überwogen haben. Im Score: 50 → 0, ab 70 überkauft → +100, bis 30 überverkauft → −100, linear dazwischen.",
 };
 const SIGNAL_TIPS = {
   "Fear & Greed": "fng", "Funding Rate": "funding", "Open Interest": "oiChange",
@@ -247,16 +249,15 @@ function renderCoin(c) {
   const ls = d.long_short;
   const rsi = d.rsi;
   const dv = d.dvol;
-  const max = Math.max(c.max_score, 1);
-  const pos = ((c.score + max) / (2 * max)) * 100;
+  const pos = (c.score + 100) / 2;
   const noData = !ma && !fr && !oi && !ls && !rsi;
   const trend = ma
     ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
     : "";
 
   const signals = c.signals.map((s) => {
-    const t = s.points > 0 ? "tone-hot" : s.points < 0 ? "tone-cold" : "tone-neutral";
-    const p = s.points > 0 ? "+1" : s.points < 0 ? "−1" : "0";
+    const t = tone(s.points, 50);
+    const p = signed(s.points);
     return `<li><span class="pts ${t}">${p}</span><span><span class="name"${tipAttr(SIGNAL_TIPS[s.name])}>${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
   }).join("");
 
@@ -273,10 +274,10 @@ function renderCoin(c) {
       <div>
         <div class="score-line">
           <span class="label"><span${tipAttr("score")}>Überhitzungs-Score</span></span>
-          <span class="score">${c.score > 0 ? "+" : ""}${c.score}</span>
+          <span class="score">${signed(c.score)}</span>
         </div>
         <div class="gauge"><div class="marker" style="left:${pos}%"></div></div>
-        <div class="gauge-scale"><span>Angst −${max}</span><span>0</span><span>+${max} Gier</span></div>
+        <div class="gauge-scale"><span>Angst −100</span><span>0</span><span>+100 Gier</span></div>
       </div>
 
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
