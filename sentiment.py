@@ -38,7 +38,7 @@ USER_AGENT = "Mozilla/5.0 (sentiment-script)"
 # wird linear interpoliert, außerhalb auf -100 / +100 begrenzt.
 FNG_SCALE = [(20, -100), (50, 0), (80, 100)]
 FUNDING_SCALE = [(-0.0001, -100), (0.0001, 0), (0.0005, 100)]  # pro 8 h; 0,01 % = Binance-Standard
-OI_SCALE = [(0.0, 0), (0.15, 100)]                  # nur steigender Hebel zählt
+OI_SCALE = [(-0.15, -100), (0.0, 0), (0.15, 100)]   # Hebelaufbau = Gier, Hebelabbau = Angst
 MA200_SCALE = [(-0.20, -100), (0.10, 0), (0.35, 100)]  # +10 % = normaler Aufwärtstrend
 LS_SCALE = [(0.9, -100), (2.0, 0), (3.5, 100)]      # Long- zu Short-Accounts; auf Binance meist ~2
 RSI_SCALE = [(30, -100), (50, 0), (70, 100)]
@@ -292,7 +292,7 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
     if oi:
         c = oi["change_7d"]
         add("Open Interest", scale(c, OI_SCALE), f"{c:+.1%} in 7 Tagen",
-            "viel neuer Hebel", "", "normal")
+            "viel neuer Hebel", "starker Hebelabbau", "normal")
 
     ma = d.get("price_ma200")
     if ma:
