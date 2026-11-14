@@ -83,6 +83,22 @@
     .bd-axis > :first-child { display: none; }
   }
 
+  /* Derivate: Funding und Open Interest */
+  .derivs { padding: 18px 20px 14px; margin-bottom: 20px; }
+  .derivs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 8px; }
+  .mini-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .mini-title { font-weight: 600; font-size: 14px; }
+  .mini-legend { color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .mini-legend b { color: var(--text); font-weight: 600; }
+  .mini-legend .hot b { color: var(--hot); }
+  .mini-legend .cold b { color: var(--cold); }
+  .mini-wrap { position: relative; height: 220px; }
+  .mini-chart { position: absolute; inset: 0; }
+  .mini-msg { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 16px; color: var(--muted); background: var(--card); font-size: 13px; }
+  .mini-msg[hidden] { display: none; }
+  @media (max-width: 760px) { .derivs-grid { grid-template-columns: 1fr; } }
+
   .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .placeholder { padding: 48px 24px; text-align: center; color: var(--muted); border-style: dashed; }
   .status { padding: 32px; text-align: center; color: var(--muted); }
@@ -141,6 +157,23 @@
     <div class="rsi-wrap" id="rsi-wrap">
       <div class="ohlc" id="rsi-legend"></div>
       <div id="rsi-chart"></div>
+    </div>
+  </section>
+
+  <section class="card derivs" id="derivs">
+    <div class="breakdown-head">
+      <div class="label">Derivate auf Binance Futures (USDT-Perpetual)</div>
+      <div class="note">Funding: 90 Tage · Open Interest: 30 Tage in 4-h-Schritten (mehr liefert Binance nicht)</div>
+    </div>
+    <div class="derivs-grid">
+      <div>
+        <div class="mini-head"><span class="mini-title"><span data-tip="fundingHist" tabindex="0">Funding Rate</span></span><span class="mini-legend" id="fund-legend"></span></div>
+        <div class="mini-wrap"><div class="mini-chart" id="fund-chart"></div><div class="mini-msg" id="fund-msg">Lade …</div></div>
+      </div>
+      <div>
+        <div class="mini-head"><span class="mini-title"><span data-tip="oiHist" tabindex="0">Open Interest</span> und Kurs</span><span class="mini-legend" id="oi-legend"></span></div>
+        <div class="mini-wrap"><div class="mini-chart" id="oi-chart"></div><div class="mini-msg" id="oi-msg">Lade …</div></div>
+      </div>
     </div>
   </section>
 
@@ -636,6 +669,143 @@ $("interval-seg").addEventListener("click", (e) => {
   loadChart();
 });
 
+// --- Derivate: Funding Rate und Open Interest ------------------------------
+
+const FUNDING_AVG_DAYS = 7;   // wie avg_7d in get_funding (sentiment.py)
+const OI_CHANGE_DAYS = 7;     // wie change_7d in get_open_interest
+const pct4 = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(4).replace(".", ",") + " %";
+const pct1 = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(1).replace(".", ",") + " %";
+// Schwellen wie FUNDING_SCALE: ab 0,05 % viel Long-Hebel, unter −0,01 % Shorts dominieren
+const fundTone = (r) => (r >= 0.0005 ? "hot" : r <= -0.0001 ? "cold" : "");
+
+let fundChart = null, fundBars = null, fundAvg = null, fundData = [], fundAvgByTime = new Map();
+let oiChart = null, oiSeries = null, oiPrice = null, oiData = [];
+
+// Achsenformat kommt aus priceFormat der Serien (OI-Chart hat zwei Achsen mit verschiedenen Einheiten)
+function miniChart(el) {
+  const t = themeOptions();
+  return LightweightCharts.createChart(el, {
+    ...t.chart,
+    autoSize: true,
+    crosshair: { ...t.chart.crosshair, mode: LightweightCharts.CrosshairMode.Magnet },
+    timeScale: { ...t.chart.timeScale, timeVisible: false, tickMarkFormatter: tickLabelDays },
+    layout: { ...t.chart.layout, attributionLogo: false },
+    localization: { locale: "de-DE", timeFormatter: (ts) => fmtDate(ts, {
+      weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) },
+    handleScroll: false, handleScale: false,
+  });
+}
+const tickLabelDays = (t, type) => type === 0 ? fmtDate(t, { year: "numeric" })
+  : type === 1 ? fmtDate(t, { month: "short" }) : fmtDate(t, { day: "numeric", month: "short" });
+
+function derivColors() {
+  return { hot: css("--hot"), cold: css("--cold"), text: css("--text"), muted: css("--muted") };
+}
+
+// Gleitender 7-Tage-Durchschnitt nach Zeit (manche Coins zahlen alle 4 h oder 1 h statt 8 h)
+function fundingAvg() {
+  const out = [];
+  let start = 0, sum = 0;
+  fundData.forEach((f, i) => {
+    sum += f.rate;
+    while (fundData[start].time <= f.time - FUNDING_AVG_DAYS * 86400) sum -= fundData[start++].rate;
+    if (f.time - fundData[0].time >= FUNDING_AVG_DAYS * 86400 - 3600) out.push({ time: f.time, value: sum / (i - start + 1) });
+  });
+  fundAvgByTime = new Map(out.map((p) => [p.time, p.value]));
+  return out;
+}
+
+function renderFundLegend(time) {
+  if (!fundData.length) { $("fund-legend").innerHTML = ""; return; }
+  const f = (time != null && fundData.find((x) => x.time === time)) || fundData[fundData.length - 1];
+  const avg = fundAvgByTime.get(f.time);
+  $("fund-legend").innerHTML = `<span class="${fundTone(f.rate)}">Zahlung <b>${pct4(f.rate)}</b></span>`
+    + (avg != null ? `<span class="${fundTone(avg)}">Ø ${FUNDING_AVG_DAYS} T <b>${pct4(avg)}</b></span>` : "");
+}
+
+function renderOiLegend(time) {
+  if (!oiData.length) { $("oi-legend").innerHTML = ""; return; }
+  const i = time != null ? oiData.findIndex((x) => x.time === time) : -1;
+  const o = oiData[i >= 0 ? i : oiData.length - 1];
+  const ref = oiData.find((x) => x.time >= o.time - OI_CHANGE_DAYS * 86400);
+  const chg = ref && ref !== o && o.time - ref.time >= (OI_CHANGE_DAYS - 0.5) * 86400 ? (o.usd - ref.usd) / ref.usd : null;
+  $("oi-legend").innerHTML = `<span>OI <b>$${compact(o.usd)}</b></span>`
+    + (chg != null ? `<span>${OI_CHANGE_DAYS} T <b>${pct1(chg)}</b></span>` : "")
+    + (o.price != null ? `<span>Kurs <b>${usd(o.price)}</b></span>` : "");
+}
+
+function initDerivCharts() {
+  const c = derivColors();
+  fundChart = miniChart($("fund-chart"));
+  fundBars = fundChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false,
+    priceFormat: { type: "custom", formatter: (v) => pct4(v), minMove: 1e-7 } });
+  fundAvg = fundChart.addLineSeries({ color: c.text, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false,
+    crosshairMarkerVisible: false, priceFormat: { type: "custom", formatter: (v) => pct4(v), minMove: 1e-7 } });
+  // Binance-Standard 0,01 % als Bezug
+  fundBars.createPriceLine({ price: 0.0001, color: c.muted, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: true, title: "Standard" });
+
+  oiChart = miniChart($("oi-chart"));
+  oiChart.applyOptions({ leftPriceScale: { visible: true, borderColor: css("--border") } });
+  oiSeries = oiChart.addAreaSeries({ lineColor: c.cold, topColor: alpha(c.cold, 0.25), bottomColor: alpha(c.cold, 0.02),
+    lineWidth: 2, priceLineVisible: false, priceFormat: { type: "custom", formatter: (v) => "$" + compact(v), minMove: 1 } });
+  oiPrice = oiChart.addLineSeries({ priceScaleId: "left", color: c.muted, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
+    priceLineVisible: false, crosshairMarkerVisible: false, title: "Kurs",
+    priceFormat: { type: "custom", formatter: (v) => usd(v), minMove: 1e-8 } });
+
+  fundChart.subscribeCrosshairMove((p) => renderFundLegend(p && p.time != null ? p.time : null));
+  oiChart.subscribeCrosshairMove((p) => renderOiLegend(p && p.time != null ? p.time : null));
+
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    const t = themeOptions(), n = derivColors();
+    fundChart.applyOptions(t.chart);
+    oiChart.applyOptions({ ...t.chart, leftPriceScale: { borderColor: css("--border") } });
+    fundAvg.applyOptions({ color: n.text });
+    setFundBars();
+    oiSeries.applyOptions({ lineColor: n.cold, topColor: alpha(n.cold, 0.25), bottomColor: alpha(n.cold, 0.02) });
+    oiPrice.applyOptions({ color: n.muted });
+  });
+}
+
+function setFundBars() {
+  const c = derivColors();
+  fundBars.setData(fundData.map((f) => ({ time: f.time, value: f.rate, color: alpha(f.rate >= 0 ? c.hot : c.cold, 0.6) })));
+}
+
+function derivMessage(text) {
+  for (const id of ["fund-msg", "oi-msg"]) { $(id).textContent = text || ""; $(id).hidden = !text; }
+}
+
+async function loadDerivs() {
+  try {
+    const res = await fetch("/api/derivatives?symbol=" + encodeURIComponent(symbol));
+    const p = await res.json().catch(() => ({}));
+    if (res.status === 404) {
+      derivMessage("");
+      $("derivs").innerHTML = `<div class="status">Für ${esc(symbol)} gibt es keine USDT-Perpetuals auf Binance Futures – daher kein Funding und Open Interest.</div>`;
+      return;
+    }
+    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    fundData = p.funding;
+    oiData = p.open_interest;
+    derivMessage("");
+    if (fundData.length) {
+      setFundBars();
+      fundAvg.setData(fundingAvg());
+      fundChart.timeScale().fitContent();
+    } else { $("fund-msg").hidden = false; $("fund-msg").textContent = "Keine Funding-Daten."; }
+    if (oiData.length) {
+      oiSeries.setData(oiData.map((o) => ({ time: o.time, value: o.usd })));
+      oiPrice.setData(oiData.filter((o) => o.price != null).map((o) => ({ time: o.time, value: o.price })));
+      oiChart.timeScale().fitContent();
+    } else { $("oi-msg").hidden = false; $("oi-msg").textContent = "Keine Open-Interest-Daten."; }
+    renderFundLegend(null);
+    renderOiLegend(null);
+  } catch (e) {
+    derivMessage(`Daten nicht verfügbar (${e.message}).`);
+  }
+}
+
 // --- Start ---------------------------------------------------------------
 
 if (!validSymbol) {
@@ -644,6 +814,7 @@ if (!validSymbol) {
   $("updated").textContent = "";
   chartMessage("Kein Coin gewählt.", true);
   $("rsi-wrap").hidden = true;
+  $("derivs").hidden = true;
   $("breakdown").hidden = true;
 } else {
   document.title = symbol + " – Details";
@@ -652,9 +823,12 @@ if (!validSymbol) {
   if (typeof LightweightCharts === "undefined") {
     chartMessage("Chart-Bibliothek konnte nicht geladen werden (keine Internetverbindung?).", true);
     $("rsi-wrap").hidden = true;
+    $("derivs").hidden = true;
   } else {
     initChart();
     loadChart();
+    initDerivCharts();
+    loadDerivs();
     setInterval(refreshChart, CHART_REFRESH_MS);
   }
 }

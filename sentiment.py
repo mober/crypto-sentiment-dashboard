@@ -56,6 +56,7 @@ RSI_PERIOD = 14
 MA_PERIOD = 200           # Tage für den gleitenden Durchschnitt
 DVOL_SYMBOLS = {"BTC", "ETH"}  # Deribit bietet DVOL nur für diese Coins
 DVOL_WINDOW = 90          # Tage für Mittelwert und Standardabweichung
+FUNDING_HISTORY_DAYS = 90 # Funding-Verlauf auf der Detailseite
 
 
 def fetch_json(url: str) -> Any:
@@ -93,18 +94,28 @@ def get_fear_greed() -> Dict[str, Any]:
     }
 
 
+def futures_data(url: str, symbol: str) -> List[Dict[str, Any]]:
+    """Abfrage bei Binance Futures; leere Antwort = kein USDT-Perpetual für diesen Coin."""
+    data = fetch_json(url)
+    if not data:
+        raise ValueError(f"keine Binance-Futures für {symbol}USDT")
+    return data
+
+
 def get_funding(symbol: str) -> Dict[str, Any]:
-    rates = fetch_json(
-        f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=21"
+    # Nach Zeit statt nach Anzahl filtern: manche Coins zahlen alle 4 h oder 1 h statt alle 8 h
+    rates = futures_data(
+        f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=200", symbol
     )
-    values = [float(r["fundingRate"]) for r in rates]
+    cutoff = rates[-1]["fundingTime"] - 7 * 86400 * 1000
+    values = [float(r["fundingRate"]) for r in rates if r["fundingTime"] > cutoff]
     return {"last": values[-1], "avg_7d": sum(values) / len(values)}
 
 
 def get_open_interest(symbol: str) -> Dict[str, Any]:
-    hist = fetch_json(
+    hist = futures_data(
         "https://fapi.binance.com/futures/data/openInterestHist"
-        f"?symbol={symbol}USDT&period=1d&limit=8"
+        f"?symbol={symbol}USDT&period=1d&limit=8", symbol
     )
     first = float(hist[0]["sumOpenInterestValue"])
     last = float(hist[-1]["sumOpenInterestValue"])
@@ -112,11 +123,37 @@ def get_open_interest(symbol: str) -> Dict[str, Any]:
 
 
 def get_long_short(symbol: str) -> Dict[str, Any]:
-    data = fetch_json(
+    data = futures_data(
         "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
-        f"?symbol={symbol}USDT&period=1d&limit=1"
+        f"?symbol={symbol}USDT&period=1d&limit=1", symbol
     )
     return {"ratio": float(data[-1]["longShortRatio"])}
+
+
+def get_funding_history(symbol: str) -> List[Dict[str, Any]]:
+    """Funding-Zahlungen der letzten FUNDING_HISTORY_DAYS Tage für die Detailseite."""
+    rates = futures_data(
+        f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=1000", symbol
+    )
+    cutoff = rates[-1]["fundingTime"] - FUNDING_HISTORY_DAYS * 86400 * 1000
+    return [
+        {"time": r["fundingTime"] // 1000, "rate": float(r["fundingRate"])}
+        for r in rates if r["fundingTime"] > cutoff
+    ]
+
+
+def get_open_interest_history(symbol: str) -> List[Dict[str, Any]]:
+    """Open Interest in 4-h-Schritten; Binance liefert davon nur die letzten 30 Tage.
+    Der Kurs ergibt sich aus Wert / Anzahl Kontrakte, ohne zusätzliche Abfrage."""
+    hist = futures_data(
+        "https://fapi.binance.com/futures/data/openInterestHist"
+        f"?symbol={symbol}USDT&period=4h&limit=500", symbol
+    )
+    out = []
+    for h in hist:
+        value, amount = float(h["sumOpenInterestValue"]), float(h["sumOpenInterest"])
+        out.append({"time": h["timestamp"] // 1000, "usd": value, "price": value / amount if amount else None})
+    return out
 
 
 def get_binance_klines(symbol: str, interval: str, limit: int) -> Tuple[List[list], str]:

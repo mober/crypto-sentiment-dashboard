@@ -43,6 +43,8 @@ _markets_cache: Dict[int, Dict[str, Any]] = {}
 _markets_lock = threading.Lock()
 _klines_cache: Dict[str, Dict[str, Any]] = {}
 _klines_lock = threading.Lock()
+_derivs_cache: Dict[str, Dict[str, Any]] = {}
+_derivs_lock = threading.Lock()
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -145,6 +147,23 @@ def get_klines(symbol: str, interval: str) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def get_derivatives(symbol: str) -> Optional[Dict[str, Any]]:
+    """Funding- und Open-Interest-Verlauf (Binance Futures); None ohne USDT-Perpetual."""
+    with _derivs_lock:
+        entry = _derivs_cache.get(symbol)
+        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
+            funding = sentiment.safe(sentiment.get_funding_history, symbol)
+            oi = sentiment.safe(sentiment.get_open_interest_history, symbol)
+            if funding or oi:
+                entry = {"time": time.time(), "payload": {
+                    "symbol": symbol,
+                    "funding": funding or [],
+                    "open_interest": oi or [],
+                }}
+                _derivs_cache[symbol] = entry
+        return entry["payload"] if entry else None
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -203,6 +222,17 @@ class Handler(SimpleHTTPRequestHandler):
             payload = get_klines(symbol, interval)
             if payload is None:
                 self.send_json({"error": f"Keine Binance-Kursdaten für {symbol}/USDT"}, 404)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/derivatives":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            if not SYMBOL_RE.match(symbol):
+                self.send_json({"error": "ungültiges Symbol"}, 400)
+                return
+            payload = get_derivatives(symbol)
+            if payload is None:
+                self.send_json({"error": f"Keine Binance-Futures für {symbol}/USDT"}, 404)
                 return
             self.send_json(payload)
             return
