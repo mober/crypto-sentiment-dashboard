@@ -27,6 +27,7 @@ import statistics
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -310,19 +311,15 @@ def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, 
     }
 
 
-def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
-    """Rangliste nach Marktkapitalisierung, seitenweise (CoinGecko)."""
-    coins = fetch_json(
-        "https://api.coingecko.com/api/v3/coins/markets"
-        f"?vs_currency=usd&order=market_cap_desc&per_page={per_page}&page={page}"
-        "&price_change_percentage=1h,24h,7d,30d,1y"
-    )
+MARKETS_FIELDS = "&price_change_percentage=1h,24h,7d,30d,1y"
 
-    def change(c: Dict[str, Any], period: str) -> Optional[float]:
+
+def _market_row(c: Dict[str, Any]) -> Dict[str, Any]:
+    def change(period: str) -> Optional[float]:
         v = c.get(f"price_change_percentage_{period}_in_currency")
         return v / 100 if v is not None else None
 
-    return [{
+    return {
         "rank": c.get("market_cap_rank"),
         "id": c["id"],
         "symbol": c["symbol"].upper(),
@@ -331,8 +328,39 @@ def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
         "price": c.get("current_price"),
         "market_cap": c.get("market_cap"),
         "volume": c.get("total_volume"),
-        "change": {p: change(c, p) for p in ("1h", "24h", "7d", "30d", "1y")},
-    } for c in coins]
+        "change": {p: change(p) for p in ("1h", "24h", "7d", "30d", "1y")},
+    }
+
+
+def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
+    """Rangliste nach Marktkapitalisierung, seitenweise (CoinGecko)."""
+    coins = fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&order=market_cap_desc&per_page={per_page}&page={page}" + MARKETS_FIELDS
+    )
+    return [_market_row(c) for c in coins]
+
+
+def search_markets(query: str) -> List[Dict[str, Any]]:
+    """Coins nach Name oder Symbol suchen (alle Coins auf CoinGecko, nicht nur die Top 1000).
+
+    Zwei Abfragen: die Suche selbst (bis zu 25 Treffer, nach Relevanz) und die Marktdaten der
+    Treffer in einem Rutsch. Treffer ohne Marktdaten erscheinen ohne Kurs."""
+    found = fetch_json(
+        "https://api.coingecko.com/api/v3/search?query=" + urllib.parse.quote(query)
+    )["coins"][:25]
+    if not found:
+        return []
+    ids = ",".join(c["id"] for c in found)
+    markets = {c["id"]: _market_row(c) for c in fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&ids={urllib.parse.quote(ids)}&per_page=25" + MARKETS_FIELDS
+    )}
+    empty = {p: None for p in ("1h", "24h", "7d", "30d", "1y")}
+    return [markets.get(c["id"]) or {
+        "rank": c.get("market_cap_rank"), "id": c["id"], "symbol": c["symbol"].upper(), "name": c["name"],
+        "image": c.get("thumb"), "price": None, "market_cap": None, "volume": None, "change": empty,
+    } for c in found]
 
 
 def get_stablecoins() -> Dict[str, Any]:

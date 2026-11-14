@@ -47,6 +47,9 @@ _derivs_cache: Dict[str, Dict[str, Any]] = {}
 _derivs_lock = threading.Lock()
 _history_cache: Dict[str, Dict[str, Any]] = {}
 _history_lock = threading.Lock()
+_search_cache: Dict[str, Dict[str, Any]] = {}
+_search_lock = threading.Lock()
+SEARCH_MAX_LEN = 40
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -131,6 +134,26 @@ def get_markets(page: int) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def search_markets(query: str) -> Optional[Dict[str, Any]]:
+    """Suchtreffer mit Marktdaten; je Suchbegriff 5 Min. gecacht (zwei CoinGecko-Abfragen)."""
+    key = query.lower()
+    with _search_lock:
+        entry = _search_cache.get(key)
+        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
+            coins = sentiment.safe(sentiment.search_markets, query)
+            if coins is not None:
+                entry = {"time": time.time(), "payload": {
+                    "query": query,
+                    "updated": datetime.now().isoformat(timespec="seconds"),
+                    "coins": coins,
+                }}
+                _search_cache[key] = entry
+                # Cache klein halten: abgelaufene Einträge entfernen
+                for k in [k for k, v in _search_cache.items() if time.time() - v["time"] > CACHE_SECONDS]:
+                    del _search_cache[k]
+        return entry["payload"] if entry else None
+
+
 def get_klines(symbol: str, interval: str) -> Optional[Dict[str, Any]]:
     """Kerzen für das Chart (Spot, sonst Futures); None, wenn Binance kein USDT-Paar hat."""
     key = f"{symbol}:{interval}"
@@ -211,6 +234,17 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "ungültige Seite"}, 400)
                 return
             payload = get_markets(int(page))
+            if payload is None:
+                self.send_json({"error": "CoinGecko nicht erreichbar"}, 502)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/search":
+            q = " ".join((query.get("q") or [""])[0].split())
+            if not 1 <= len(q) <= SEARCH_MAX_LEN:
+                self.send_json({"error": "Suchbegriff fehlt oder ist zu lang"}, 400)
+                return
+            payload = search_markets(q)
             if payload is None:
                 self.send_json({"error": "CoinGecko nicht erreichbar"}, 502)
                 return

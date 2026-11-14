@@ -16,7 +16,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `/api/coin?symbol=…&id=…`, `/api/markets?page=…`, `/api/klines?symbol=…&interval=1d|4h|1h`
   (Binance-Kerzen, Cache 60 s), `/api/derivatives?symbol=…` (Funding 90 T, Open Interest 30 T
   von Binance Futures, Cache 5 Min.), `/api/score-history?symbol=…` (Score je Tag, rückwirkend
-  aus Tageswerten mit `score()` berechnet, 1 Jahr); liefert `web/` statisch aus
+  aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/search?q=…` (CoinGecko-Suche plus
+  Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.); liefert `web/` statisch aus
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000),
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
   mit Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),

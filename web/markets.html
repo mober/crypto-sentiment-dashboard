@@ -31,6 +31,20 @@
   .pager button.current { background: var(--text); color: var(--card); border-color: var(--text); opacity: 1; }
   .pager .gap { color: var(--muted); padding: 0 2px; }
 
+  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  .search { position: relative; flex: 1 1 280px; max-width: 420px; }
+  .search input { width: 100%; box-sizing: border-box; padding: 8px 34px 8px 12px; font: inherit; font-size: 14px;
+    color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  .search input:focus { outline: none; border-color: var(--muted); }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .search kbd { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted);
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; pointer-events: none; }
+  .search .clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none;
+    color: var(--muted); padding: 2px 6px; font-size: 16px; line-height: 1; }
+  .search .clear[hidden], .search kbd[hidden] { display: none; }
+  .search-info { color: var(--muted); font-size: 13px; }
+  .pager[hidden] { display: none; }
+
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
 
@@ -49,6 +63,15 @@
     <a class="navlink" href="/">← Sentiment-Dashboard</a>
   </header>
 
+  <div class="toolbar">
+    <div class="search">
+      <input type="search" id="search" placeholder="Coin suchen (Name oder Symbol) …" autocomplete="off" spellcheck="false"
+        aria-label="Coin suchen" maxlength="40">
+      <kbd id="search-kbd" title="Taste / springt ins Suchfeld">/</kbd>
+      <button class="clear" id="search-clear" type="button" aria-label="Suche löschen" hidden>×</button>
+    </div>
+    <div class="search-info" id="search-info"></div>
+  </div>
   <nav class="pager" id="pager-top"></nav>
   <section class="card table-wrap">
     <table>
@@ -71,7 +94,7 @@
   </section>
   <nav class="pager" id="pager-bottom"></nav>
 
-  <footer>Klick auf einen Coin öffnet seine Detailseite (Chart und Score).<br>
+  <footer>Klick auf einen Coin öffnet seine Detailseite (Chart und Score). Die Suche durchsucht alle Coins auf CoinGecko, nicht nur die Top 1000.<br>
     Daten: CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
 </main>
 
@@ -144,19 +167,25 @@ function renderRows(coins) {
     </tr>`).join("");
 }
 
+// --- Rangliste, seitenweise ---------------------------------------------------
+
+let loadToken = 0;   // verwirft veraltete Antworten (Seite gewechselt oder Suche begonnen)
+
 async function load() {
+  const token = ++loadToken;
   renderPager();
   try {
     const res = await fetch("/api/markets?page=" + page);
     const p = await res.json();
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
-    if (p.page !== page) return;  // inzwischen andere Seite gewählt
+    if (token !== loadToken || p.page !== page) return;  // inzwischen andere Seite oder Suche
     maxPage = p.max_page;
     renderPager();
     renderRows(p.coins);
     const from = (page - 1) * p.per_page + 1;
     $("updated").textContent = `Top ${p.max_page * p.per_page} nach Marktkapitalisierung · Platz ${from}–${from + p.coins.length - 1} · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
   } catch (e) {
+    if (token !== loadToken) return;
     $("rows").innerHTML = `<tr><td colspan="10" class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</td></tr>`;
   }
 }
@@ -170,17 +199,116 @@ function goTo(p) {
   load();
 }
 
+// --- Suche ------------------------------------------------------------------
+// Fragt CoinGecko über den Server ab (2 Abfragen je neuem Suchbegriff, 5 Min. gecacht),
+// daher erst nach einer kurzen Tipp-Pause und ab 2 Zeichen.
+
+const SEARCH_DELAY_MS = 400;
+const SEARCH_MIN_LEN = 2;
+let query = "";
+let searchTimer = null;
+
+const normQuery = (q) => q.trim().replace(/\s+/g, " ");
+
+function setSearchMode(on) {
+  $("pager-top").hidden = on;
+  $("pager-bottom").hidden = on;
+  $("search-clear").hidden = !$("search").value;
+  $("search-kbd").hidden = !!$("search").value || document.activeElement === $("search");
+  if (!on) $("search-info").textContent = "";
+}
+
+async function runSearch() {
+  searchTimer = null;
+  const token = ++loadToken;
+  const q = query;
+  setSearchMode(true);
+  $("search-info").textContent = "Suche …";
+  try {
+    const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+    const p = await res.json();
+    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    if (token !== loadToken) return;
+    if (!p.coins.length) {
+      $("rows").innerHTML = `<tr><td colspan="10" class="status">Kein Coin gefunden für „${esc(q)}“.</td></tr>`;
+      $("search-info").textContent = "";
+    } else {
+      renderRows(p.coins);
+      $("search-info").textContent = `${p.coins.length}${p.coins.length === 25 ? "+" : ""} Treffer, nach Relevanz`;
+    }
+    $("updated").textContent = `Suche in allen Coins auf CoinGecko · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+  } catch (e) {
+    if (token !== loadToken) return;
+    $("search-info").textContent = "";
+    $("rows").innerHTML = `<tr><td colspan="10" class="status error">Suche fehlgeschlagen (${esc(e.message)}). CoinGecko ist ohne API-Key stark limitiert – kurz warten und erneut versuchen.</td></tr>`;
+  }
+}
+
+// Suchbegriff übernehmen: URL anpassen und Suche starten bzw. zur Rangliste zurück
+function applyQuery(q, { immediate = false } = {}) {
+  clearTimeout(searchTimer);
+  searchTimer = null;
+  q = normQuery(q);
+  const active = q.length >= SEARCH_MIN_LEN;
+  const changed = (active ? q : "") !== query;
+  query = active ? q : "";
+  const url = query ? `markets.html?q=${encodeURIComponent(query)}` : page === 1 ? "markets.html" : `markets.html?page=${page}`;
+  history.replaceState(null, "", url);
+  setSearchMode(active);
+  if (!changed) return;
+  if (!active) { loadToken++; load(); return; }
+  if (immediate) runSearch(); else searchTimer = setTimeout(runSearch, SEARCH_DELAY_MS);
+}
+
+$("search").addEventListener("input", () => applyQuery($("search").value));
+$("search").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    // Enter: sofort suchen; liegt das Ergebnis schon vor, den ersten Treffer öffnen
+    const first = document.querySelector("#rows tr[data-symbol]");
+    if (query && query === normQuery($("search").value) && first && !searchTimer) first.click();
+    else applyQuery($("search").value, { immediate: true });
+  } else if (e.key === "Escape") {
+    $("search").value = "";
+    applyQuery("");
+  }
+});
+$("search").addEventListener("focus", () => { $("search-kbd").hidden = true; });
+$("search").addEventListener("blur", () => setSearchMode(!!query));
+$("search-clear").addEventListener("click", () => {
+  $("search").value = "";
+  applyQuery("");
+  $("search").focus();
+});
+// "/" springt ins Suchfeld (außer beim Tippen in einem Eingabefeld)
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    $("search").focus();
+  }
+});
+
+// --- Start ------------------------------------------------------------------
+
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".pager button[data-page]");
   if (btn && !btn.disabled) goTo(parseInt(btn.dataset.page, 10));
   const row = e.target.closest("tr[data-symbol]");
   if (row) location.href = `coin.html?symbol=${encodeURIComponent(row.dataset.symbol)}&id=${encodeURIComponent(row.dataset.id)}`;
 });
-window.addEventListener("popstate", () => { page = pageFromUrl(); load(); });
 
-page = pageFromUrl();
-load();
-setInterval(load, REFRESH_MS);
+function fromUrl() {
+  const q = normQuery(new URLSearchParams(location.search).get("q") || "");
+  page = pageFromUrl();
+  $("search").value = q;
+  query = "";
+  if (q.length >= SEARCH_MIN_LEN) applyQuery(q, { immediate: true });
+  else { setSearchMode(false); load(); }
+}
+window.addEventListener("popstate", fromUrl);
+
+fromUrl();
+setInterval(() => (query ? runSearch() : load()), REFRESH_MS);
 </script>
 </body>
 </html>
