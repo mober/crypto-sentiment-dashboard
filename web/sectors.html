@@ -31,6 +31,17 @@
   .market-ref { color: var(--muted); font-size: 13px; padding: 0 20px 14px; }
   .market-ref b { color: var(--text); }
 
+  /* DeFi-TVL */
+  .tvl-row { grid-template-columns: minmax(140px, 220px) 1fr 76px 92px; cursor: default; }
+  .bar-row.tvl-row[data-tip] { cursor: default; }
+  .tvl-axis { grid-template-columns: minmax(140px, 220px) 1fr 76px 92px; }
+  .bar-tvl { text-align: right; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .tvl-total { color: var(--muted); font-size: 13px; padding: 0 20px 6px; }
+  .tvl-total b { color: var(--text); }
+  .tvl-tools { display: flex; gap: 8px; flex-wrap: wrap; padding: 4px 20px 6px; }
+  .tvl-cell { white-space: nowrap; }
+  .tvl-cell .sub7 { display: block; font-size: 11px; }
+
   /* Tabelle */
   .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 20px 12px; }
   .tools input { flex: 1 1 220px; max-width: 320px; padding: 7px 12px; font: inherit; font-size: 14px; color: var(--text);
@@ -69,6 +80,8 @@
 
   @media (max-width: 640px) {
     .bar-row, .bar-axis { grid-template-columns: 110px 1fr 64px; gap: 8px; }
+    .tvl-row, .tvl-axis { grid-template-columns: 110px 1fr 64px; }
+    .bar-tvl { display: none; }
     .bar-name .grp { display: none; }
     .opt-mid { display: none; }
   }
@@ -97,6 +110,25 @@
     <div class="market-ref" id="market-ref"></div>
   </section>
 
+  <section class="card" id="defi">
+    <div class="card-head">
+      <div class="label"><span data-tip="defiTvl" tabindex="0">DeFi-Kapital (TVL)</span></div>
+      <div class="note">Total Value Locked nach DefiLlama · wo echtes Kapital liegt, nicht nur Marktkap.</div>
+    </div>
+    <div class="tvl-total" id="tvl-total"></div>
+    <div class="tvl-tools">
+      <div class="seg" id="tvl-view" role="group" aria-label="Gliederung">
+        <button data-view="categories" aria-pressed="true">Kategorien</button>
+        <button data-view="chains" aria-pressed="false">Chains</button>
+      </div>
+      <div class="seg" id="tvl-period" role="group" aria-label="Zeitraum">
+        <button data-period="change_1d" aria-pressed="false">24 h</button>
+        <button data-period="change_7d" aria-pressed="true">7 T</button>
+      </div>
+    </div>
+    <div class="bars" id="tvl-bars"><div class="status">Lade …</div></div>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <div class="label">Alle Sparten</div>
@@ -120,15 +152,16 @@
             <th><button data-sort="change_24h">24h</button></th>
             <th class="opt-mid"><button data-sort="volume_24h">Volumen 24h</button></th>
             <th class="opt-wide"><button data-sort="turnover"><span data-tip="sectorTurnover">Umschlag</span></button></th>
+            <th class="opt-mid"><button data-sort="tvl"><span data-tip="sectorTvl">TVL · 7 T</span></button></th>
             <th class="static left opt-mid">Größte Coins</th>
           </tr>
         </thead>
-        <tbody id="rows"><tr><td colspan="7" class="status">Lade Daten …</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="8" class="status">Lade Daten …</td></tr></tbody>
       </table>
     </div>
   </section>
 
-  <footer>Daten: CoinGecko (Kategorien) · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
+  <footer>Daten: CoinGecko (Kategorien), DefiLlama (TVL) · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
 </main>
 
 <script src="tips.js"></script>
@@ -236,9 +269,9 @@ function renderTable() {
   });
   document.querySelectorAll("th button[data-sort]").forEach((b) =>
     b.setAttribute("aria-sort", b.dataset.sort === key ? (dir < 0 ? "descending" : "ascending") : "none"));
-  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scope === scope)));
+  document.querySelectorAll(".tools .seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scope === scope)));
   $("count").textContent = `${list.length} von ${scope === "main" ? MAIN_INFO.size : cats.length}`;
-  if (!list.length) { $("rows").innerHTML = '<tr><td colspan="7" class="status">Keine Sparte gefunden.</td></tr>'; return; }
+  if (!list.length) { $("rows").innerHTML = '<tr><td colspan="8" class="status">Keine Sparte gefunden.</td></tr>'; return; }
   $("rows").innerHTML = list.map((c, i) => {
     const main = MAIN_INFO.has(c.id);
     return `<tr data-href="${esc(categoryHref(c))}" title="Coins der Sparte ${esc(displayName(c))} anzeigen">
@@ -248,6 +281,7 @@ function renderTable() {
       <td>${change(c.change_24h)}</td>
       <td class="opt-mid">${usd6(c.volume_24h)}</td>
       <td class="opt-wide">${c.turnover != null ? pct(c.turnover).replace("+", "") : dash}</td>
+      <td class="opt-mid tvl-cell">${c.tvl != null ? `${usd6(c.tvl)}<span class="sub7">${change(c.tvl_7d)}</span>` : dash}</td>
       <td class="left opt-mid"><span class="tops">${c.top_coins.map((t) => `<img src="${esc(t.image)}" alt="${esc(t.id)}" title="${esc(t.id)}" loading="lazy">`).join("")}</span></td>
     </tr>`;
   }).join("");
@@ -263,6 +297,7 @@ async function load() {
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     cats = p.categories.map((c) => ({ ...c, turnover: c.volume_24h && c.market_cap ? c.volume_24h / c.market_cap : null }));
+    attachTvl();
     renderBars();
     renderTable();
     $("updated").textContent = `${cats.length} Sparten nach CoinGecko · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
@@ -274,7 +309,7 @@ async function load() {
       return;
     }
     $("bars").innerHTML = `<div class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</div>`;
-    if (!cats.length) $("rows").innerHTML = '<tr><td colspan="7" class="status error">Keine Daten.</td></tr>';
+    if (!cats.length) $("rows").innerHTML = '<tr><td colspan="8" class="status error">Keine Daten.</td></tr>';
   }
 }
 
@@ -286,7 +321,7 @@ document.querySelector("thead").addEventListener("click", (e) => {
   saveView();
   renderTable();
 });
-document.querySelector(".seg").addEventListener("click", (e) => {
+document.querySelector(".tools .seg").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-scope]");
   if (!b || b.dataset.scope === scope) return;
   scope = b.dataset.scope;
@@ -304,8 +339,99 @@ $("rows").addEventListener("click", (e) => {
   if (tr) location.href = tr.dataset.href;
 });
 
+// --- DeFi-TVL (DefiLlama) -------------------------------------------------------
+
+// Deutsche Namen für die größeren DefiLlama-Kategorien (sonst Originalname)
+const DEFI_NAMES = {
+  "Lending": "Kredite", "Liquid Staking": "Liquid Staking", "Staking Pool": "Staking-Pools", "Dexs": "DEX",
+  "Risk Curators": "Risiko-Kuratoren", "Onchain Capital Allocator": "On-Chain-Kapitalverwalter", "Restaking": "Restaking",
+  "Basis Trading": "Basis-Trading", "CDP": "Besicherte Stablecoins (CDP)", "Yield": "Rendite", "RWA": "RWA",
+  "Derivatives": "Derivate", "Yield Aggregator": "Rendite-Aggregatoren", "Liquid Restaking": "Liquid Restaking",
+  "Privacy": "Privacy", "Restaked BTC": "Restaked BTC", "Prediction Market": "Prognosemärkte", "Farm": "Farming",
+  "Indexes": "Indizes", "Options": "Optionen", "Synthetics": "Synthetische Assets", "Insurance": "Versicherungen",
+  "Launchpad": "Launchpads", "Payments": "Payments", "Algo-Stables": "Algorithmische Stablecoins",
+};
+// CoinGecko-Sparte → DefiLlama-Kategorie, für die TVL-Spalte in der Tabelle
+const CG_TO_DEFI = {
+  "decentralized-exchange": "Dexs", "lending-borrowing": "Lending", "liquid-staking": "Liquid Staking",
+  "restaking": "Restaking", "real-world-assets-rwa": "RWA", "decentralized-perpetuals": "Derivatives",
+  "decentralized-finance-defi": "__total",
+};
+const TVL_BARS = 16;   // so viele größte Kategorien bzw. Chains im Balkendiagramm
+
+let defi = null;
+let tvlView = "categories", tvlPeriod = "change_7d";
+
+const plain = (html) => html.replace(/<[^>]+>/g, "");
+
+function renderTvl() {
+  if (!defi) return;
+  document.querySelectorAll("#tvl-view button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === tvlView)));
+  document.querySelectorAll("#tvl-period button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.period === tvlPeriod)));
+  const t = defi.total;
+  $("tvl-total").innerHTML = `DeFi gesamt <b>${usd6(t.tvl)}</b> · 24 h ${change(t.change_1d)} · 7 T ${change(t.change_7d)}`
+    + ` · ${t.protocols.toLocaleString("de-DE")} Protokolle`;
+  const label = tvlPeriod === "change_1d" ? "24 h" : "7 T";
+  // die größten nach TVL, dann nach Veränderung sortiert
+  const list = defi[tvlView].filter((c) => c[tvlPeriod] != null).slice(0, TVL_BARS)
+    .sort((a, b) => b[tvlPeriod] - a[tvlPeriod]);
+  if (!list.length) { $("tvl-bars").innerHTML = '<div class="status">Keine Daten.</div>'; return; }
+  const lim = Math.ceil(Math.max(0.01, ...list.map((c) => Math.abs(c[tvlPeriod]))) * 100) / 100;
+  const name = (c) => (tvlView === "categories" ? DEFI_NAMES[c.name] || c.name : c.name);
+  $("tvl-bars").innerHTML = list.map((c) => {
+    const v = c[tvlPeriod];
+    const tip = `${name(c)}${name(c) !== c.name ? ` (${c.name})` : ""}\nTVL ${plain(usd6(c.tvl))} · 24 h ${c.change_1d != null ? pct(c.change_1d, 2) : "–"} · 7 T ${c.change_7d != null ? pct(c.change_7d, 2) : "–"}`
+      + (c.top.length ? `\nGrößte: ${c.top.map((x) => x.name).join(", ")}` : "")
+      + (c.protocols ? ` (${c.protocols} Protokolle)` : "");
+    return `<div class="bar-row tvl-row" data-tip="row" data-tip-now="${esc(tip)}" tabindex="0">
+        <div class="bar-name">${esc(name(c))}</div>
+        <div class="bar-track" role="img" aria-label="${esc(name(c))}: ${pct(v)} in ${label}">
+          <div class="bar ${v >= 0 ? "pos" : "neg"}" style="width:${Math.abs(v) / lim * 50}%"></div></div>
+        <div class="bar-val">${change(v)}</div>
+        <div class="bar-tvl">${usd6(c.tvl)}</div>
+      </div>`;
+  }).join("") + `<div class="bar-axis tvl-axis"><span></span><div class="ticks"><span>${pct(-lim, 0)}</span><span>0</span><span>${pct(lim, 0)}</span></div><span></span><span></span></div>`;
+}
+
+// TVL je CoinGecko-Sparte (nur wo eine passende DefiLlama-Kategorie existiert)
+function attachTvl() {
+  if (!defi || !cats.length) return;
+  const byName = new Map(defi.categories.map((c) => [c.name, c]));
+  for (const c of cats) {
+    const key = CG_TO_DEFI[c.id];
+    const d = key === "__total" ? defi.total : key ? byName.get(key) : null;
+    c.tvl = d ? d.tvl : null;
+    c.tvl_7d = d ? d.change_7d : null;
+  }
+}
+
+async function loadDefi() {
+  try {
+    const res = await fetch("/api/defi");
+    const p = await res.json();
+    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    defi = p;
+    renderTvl();
+    attachTvl();
+    if (cats.length) renderTable();
+  } catch (e) {
+    if (!defi) $("tvl-bars").innerHTML = `<div class="status error">TVL nicht verfügbar (${esc(e.message)}).</div>`;
+  }
+}
+
+$("tvl-view").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (b) { tvlView = b.dataset.view; renderTvl(); }
+});
+$("tvl-period").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-period]");
+  if (b) { tvlPeriod = b.dataset.period; renderTvl(); }
+});
+
 load();
+loadDefi();
 setInterval(load, REFRESH_MS);
+setInterval(loadDefi, REFRESH_MS * 2);
 </script>
 </body>
 </html>

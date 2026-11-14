@@ -460,6 +460,75 @@ def get_categories() -> List[Dict[str, Any]]:
     return out
 
 
+# DefiLlama: TVL je Kategorie und Chain, aus der Protokoll-Liste summiert (eine Abfrage, ~10 MB, ohne Key).
+# Ohne Börsen (CEX), Chains selbst und Bridges (deren TVL liegt doppelt auch auf den Ziel-Chains).
+DEFI_EXCLUDED = {"CEX", "Chain", "Bridge", "Canonical Bridge", "Cross Chain Bridge"}
+# Chain-Namen in den Protokolldaten → Namen in /v2/chains
+DEFI_CHAIN_ALIASES = {"Binance": "BSC", "Optimism": "OP Mainnet", "xDai": "Gnosis", "Pulse": "PulseChain", "RSK": "Rootstock"}
+DEFI_CHAIN_EXTRA = ("staking", "pool2", "borrowed", "vesting", "treasury", "offers", "doublecounted")
+
+
+def get_defi_tvl() -> Dict[str, Any]:
+    """TVL heute und vor 1 bzw. 7 Tagen je Kategorie und Chain.
+
+    Frühere Werte ergeben sich aus der Änderung je Protokoll (tvl / (1 + Änderung)); Protokolle
+    ohne Angabe zählen als unverändert. TVL enthält Kurseffekte: fällt ETH, sinkt auch der TVL.
+    Chains: TVL-Stand aus /v2/chains (wie auf DefiLlama, ohne Doppelzählungen), die Änderung aus
+    den summierten Protokollen; die Summe der Chains ist der Gesamtwert."""
+    protocols = fetch_json("https://api.llama.fi/protocols")
+    official = {c["name"]: float(c["tvl"]) for c in fetch_json("https://api.llama.fi/v2/chains") if c.get("tvl")}
+
+    def prev(tvl: float, change: Optional[float]) -> float:
+        return tvl / (1 + change / 100) if change is not None and change > -100 else tvl
+
+    def bucket() -> Dict[str, Any]:
+        return {"tvl": 0.0, "prev_1d": 0.0, "prev_7d": 0.0, "protocols": 0, "top": []}
+
+    cats: Dict[str, Dict[str, Any]] = {}
+    chains: Dict[str, Dict[str, Any]] = {}
+    total = bucket()
+    for p in protocols:
+        tvl, cat = p.get("tvl"), p.get("category")
+        if not tvl or tvl <= 0 or not cat or cat in DEFI_EXCLUDED:
+            continue
+        c1, c7 = p.get("change_1d"), p.get("change_7d")
+        entry = {"name": p["name"], "tvl": tvl, "logo": p.get("logo")}
+        targets = [(total, tvl), (cats.setdefault(cat, bucket()), tvl)]
+        for chain, v in (p.get("chainTvls") or {}).items():
+            if "-" in chain or chain in DEFI_CHAIN_EXTRA or not isinstance(v, (int, float)) or v <= 0:
+                continue
+            chain = DEFI_CHAIN_ALIASES.get(chain, chain)
+            targets.append((chains.setdefault(chain, bucket()), float(v)))
+        for b, v in targets:
+            b["tvl"] += v
+            b["prev_1d"] += prev(v, c1)
+            b["prev_7d"] += prev(v, c7)
+            b["protocols"] += 1
+            if b is not total:
+                b["top"].append({**entry, "tvl": v})
+
+    def finish(name: str, b: Dict[str, Any]) -> Dict[str, Any]:
+        top = sorted(b["top"], key=lambda x: -x["tvl"])[:3]
+        return {
+            "name": name, "tvl": b["tvl"], "protocols": b["protocols"],
+            "change_1d": b["tvl"] / b["prev_1d"] - 1 if b["prev_1d"] else None,
+            "change_7d": b["tvl"] / b["prev_7d"] - 1 if b["prev_7d"] else None,
+            "top": top,
+        }
+
+    chain_list = []
+    for name, tvl in official.items():
+        agg = finish(name, chains[name]) if name in chains else {"name": name, "protocols": 0, "change_1d": None, "change_7d": None, "top": []}
+        chain_list.append({**agg, "tvl": tvl})
+    chain_list.sort(key=lambda x: -x["tvl"])
+    tot = finish("DeFi gesamt", total)
+    return {
+        "total": {**tot, "tvl": sum(official.values())},
+        "categories": sorted((finish(k, v) for k, v in cats.items()), key=lambda x: -x["tvl"]),
+        "chains": chain_list[:60],
+    }
+
+
 def get_stablecoins() -> Dict[str, Any]:
     chart = fetch_json("https://stablecoins.llama.fi/stablecoincharts/all")
     now = chart[-1]["totalCirculatingUSD"]["peggedUSD"]

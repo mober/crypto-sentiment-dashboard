@@ -14,7 +14,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `sentiment.py` – Datenabfragen, Score-Skalen und Bewertung (auch als CLI nutzbar)
 - `server.py` – HTTP-Server mit Cache (5 Min.) und den Endpoints `/api/sentiment`,
   `/api/coin?symbol=…&id=…`, `/api/markets?page=…` (oder `?category=…`: größte 100 einer Sparte),
-  `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/liquidations?symbol=…`
+  `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/defi` (TVL je Kategorie und
+  Chain von DefiLlama, aus `/protocols` summiert, Chain-Stände aus `/v2/chains`, Cache 10 Min.), `/api/liquidations?symbol=…`
   (Futures-Kerzen und OI je Stunde, ~21 Tage, für die Liquidations-Heatmap; das Modell selbst
   rechnet `buildLiqModel` in `coin.html`), `/api/klines?symbol=…&interval=1d|4h|1h`
   (Binance-Kerzen, Cache 60 s), `/api/derivatives?symbol=…` (Funding 90 T, Open Interest 30 T
@@ -23,7 +24,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.); liefert `web/` statisch aus
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
-  Namen und CoinGecko-IDs) und Tabelle aller Sparten,
+  Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten
+  (TVL-Spalte über `CG_TO_DEFI`),
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
   mit Kennzahlen (Allzeithoch, Menge, FDV …; Felder `market_stats` aus der ohnehin laufenden
   CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),

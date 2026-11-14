@@ -45,6 +45,9 @@ _klines_cache: Dict[str, Dict[str, Any]] = {}
 _klines_lock = threading.Lock()
 _derivs_cache: Dict[str, Dict[str, Any]] = {}
 _derivs_lock = threading.Lock()
+_defi_cache: Dict[str, Any] = {"time": 0.0, "payload": None}
+_defi_lock = threading.Lock()
+DEFI_CACHE_SECONDS = 600  # DefiLlama aktualisiert TVL ohnehin nur grob stündlich; die Antwort ist ~10 MB
 _liq_cache: Dict[str, Dict[str, Any]] = {}
 _liq_lock = threading.Lock()
 _history_cache: Dict[str, Dict[str, Any]] = {}
@@ -216,6 +219,17 @@ def get_derivatives(symbol: str) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def get_defi_tvl() -> Optional[Dict[str, Any]]:
+    """TVL je Kategorie und Chain (DefiLlama); bei Fehlern der letzte erfolgreiche Stand."""
+    with _defi_lock:
+        if _defi_cache["payload"] is None or time.time() - _defi_cache["time"] > DEFI_CACHE_SECONDS:
+            result = sentiment.safe(sentiment.get_defi_tvl)
+            if result:
+                _defi_cache.update(time=time.time(), payload={
+                    "updated": datetime.now().isoformat(timespec="seconds"), **result})
+        return _defi_cache["payload"]
+
+
 def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
     """Kerzen und OI je Stunde (Binance Futures) für die Liquidations-Heatmap; 5 Min. gecacht."""
     with _liq_lock:
@@ -340,6 +354,13 @@ class Handler(SimpleHTTPRequestHandler):
             payload = get_score_history(symbol)
             if payload is None:
                 self.send_json({"error": f"Kein Score-Verlauf für {symbol} (keine Binance-Daten)"}, 404)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/defi":
+            payload = get_defi_tvl()
+            if payload is None:
+                self.send_json({"error": "DefiLlama nicht erreichbar"}, 502)
                 return
             self.send_json(payload)
             return
