@@ -82,8 +82,6 @@
   .pts { font-weight: 700; text-align: center; border-radius: 6px; font-size: 12px; padding: 1px 0; height: fit-content; }
   .signals .name { font-weight: 600; }
   .signals .reason { color: var(--muted); }
-  .pts.fng-pts { color: var(--text); background: color-mix(in srgb, var(--zone) 30%, var(--neutral-bg)); }
-
   /* Tooltips */
   [data-tip] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--border);
     text-underline-offset: 3px; }
@@ -299,13 +297,9 @@ function renderCoin(c, id = null) {
     ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
     : "";
 
-  const fng = payload && payload.global.fear_greed;
-  const signals = c.signals.map((s) => {
-    if (s.name === "Fear & Greed" && fng) {
-      // Index wie im Tacho als 0–100 zeigen; der Score-Beitrag steht im Text darunter
-      const z = fngZone(fng.value);
-      return `<li><span class="pts fng-pts" style="--zone:${z.color}" title="Fear &amp; Greed Index (0–100)">${fng.value}</span><span><span class="name"${tipAttr("fng")}>Fear &amp; Greed</span><br><span class="reason">${z.name} · Score-Beitrag ${signed(s.points)}</span></span></li>`;
-    }
+  // Fear & Greed gilt für den ganzen Markt und steht schon oben im Tacho; in der
+  // Kachel nur die coin-eigenen Signale (die volle Zusammensetzung zeigt die Detailseite)
+  const signals = c.signals.filter((s) => s.name !== "Fear & Greed").map((s) => {
     const t = tone(s.points, 50);
     const p = signed(s.points);
     return `<li><span class="pts ${t}">${p}</span><span><span class="name"${tipAttr(SIGNAL_TIPS[s.name])}>${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;

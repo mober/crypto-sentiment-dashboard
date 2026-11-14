@@ -46,6 +46,33 @@
   .chart-msg.error { color: var(--down); }
   .chart-msg[hidden] { display: none; }
 
+  /* Zusammensetzung des Scores: divergierende Balken um 0 */
+  .breakdown { padding: 18px 20px 14px; margin-bottom: 20px; }
+  .breakdown-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .breakdown-head .note { color: var(--muted); font-size: 13px; }
+  .bd-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) 2fr 92px; gap: 6px 16px; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .bd-name { font-weight: 600; font-size: 14px; }
+  .bd-reason { color: var(--muted); font-size: 12px; }
+  .bd-track { position: relative; height: 22px; }
+  .bd-track::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .bd-bar { position: absolute; top: 7px; height: 8px; }
+  .bd-bar.pos { left: 50%; border-radius: 0 4px 4px 0; background: var(--hot); }
+  .bd-bar.neg { right: 50%; border-radius: 4px 0 0 4px; background: var(--cold); }
+  .bd-val { text-align: right; font-weight: 700; font-size: 14px; }
+  .bd-val .share { display: block; color: var(--muted); font-weight: 400; font-size: 11px; white-space: nowrap; }
+  .bd-row.total { border-bottom: 0; border-top: 2px solid var(--border); margin-top: -1px; }
+  .bd-row.total .bd-bar { top: 5px; height: 12px; }
+  .bd-row.total .bd-val { font-size: 18px; }
+  .bd-axis { display: grid; grid-template-columns: minmax(150px, 1.1fr) 2fr 92px; gap: 16px; color: var(--muted); font-size: 11px; }
+  .bd-axis .ticks { display: flex; justify-content: space-between; }
+  @media (max-width: 640px) {
+    .bd-row { grid-template-columns: 1fr 92px; }
+    .bd-row .bd-label { grid-column: 1 / -1; }
+    .bd-axis { grid-template-columns: 1fr 92px; }
+    .bd-axis > :first-child { display: none; }
+  }
+
   .placeholder { padding: 48px 24px; text-align: center; color: var(--muted); border-style: dashed; }
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
@@ -88,8 +115,8 @@
     </div>
   </section>
 
-  <section class="card placeholder" id="content">
-    Weitere Detail-Inhalte folgen.
+  <section class="card breakdown" id="breakdown">
+    <div class="status">Lade Score …</div>
   </section>
 
   <footer>Chart: Binance Spot (USDT-Paar), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
@@ -138,6 +165,37 @@ function renderHero(c) {
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
     </div>`;
   fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
+  renderBreakdown(c);
+}
+
+const num1 = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1).replace(".", ",");
+
+function bdRow(name, reason, points, share, total = false) {
+  const w = Math.min(100, Math.abs(points)) / 2;  // halbe Spurbreite = 100 Punkte
+  const bar = points === 0 ? "" : `<div class="bd-bar ${points > 0 ? "pos" : "neg"}" style="width:${w}%"></div>`;
+  return `
+    <div class="bd-row${total ? " total" : ""}">
+      <div class="bd-label"><div class="bd-name">${esc(name)}</div>${reason ? `<div class="bd-reason">${esc(reason)}</div>` : ""}</div>
+      <div class="bd-track" role="img" aria-label="${esc(name)}: ${signed(points)} von −100 bis +100">${bar}</div>
+      <div class="bd-val">${signed(points)}${share != null ? `<span class="share">${num1(share)} im Score</span>` : ""}</div>
+    </div>`;
+}
+
+// Jedes Signal zählt gleich: Score = Durchschnitt, Anteil eines Signals = Punkte / Anzahl
+function renderBreakdown(c) {
+  const n = c.signals.length;
+  if (!n) {
+    $("breakdown").innerHTML = '<div class="status">Keine Signale für diesen Coin.</div>';
+    return;
+  }
+  $("breakdown").innerHTML = `
+    <div class="breakdown-head">
+      <div class="label">Zusammensetzung des Überhitzungs-Scores</div>
+      <div class="note">${n} Signale, jedes zählt gleich (1/${n}) · Score = Durchschnitt</div>
+    </div>
+    ${c.signals.map((s) => bdRow(s.name, s.reason, s.points, s.points / n)).join("")}
+    ${bdRow("Überhitzungs-Score", c.verdict, c.score, null, true)}
+    <div class="bd-axis"><span></span><div class="ticks"><span>−100 Angst</span><span>0</span><span>Gier +100</span></div><span></span></div>`;
 }
 
 async function loadHero() {
@@ -162,6 +220,7 @@ async function loadHero() {
     $("hero").className = "card status error";
     $("hero").textContent = `${symbol} konnte nicht geladen werden (${e.message}). Läuft server.py?`;
     $("updated").textContent = "";
+    $("breakdown").innerHTML = '<div class="status error">Score nicht verfügbar.</div>';
   }
 }
 
@@ -396,6 +455,7 @@ if (!validSymbol) {
   $("hero").textContent = "Kein gültiger Coin angegeben.";
   $("updated").textContent = "";
   chartMessage("Kein Coin gewählt.", true);
+  $("breakdown").hidden = true;
 } else {
   document.title = symbol + " – Details";
   $("title").textContent = symbol;

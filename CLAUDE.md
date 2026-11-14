@@ -17,7 +17,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   (Binance-Spot-Kerzen, Cache 60 s); liefert `web/` statisch aus
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000),
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
-  mit Candlestick-Chart, `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel)
+  mit Candlestick-Chart und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
+  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln), `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel)
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 
