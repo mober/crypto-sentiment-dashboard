@@ -15,6 +15,17 @@
   .market > div:first-child { border-left: 0; }
   .market .val { font-size: 22px; font-weight: 600; margin-top: 2px; }
   .market .note { color: var(--muted); font-size: 13px; }
+  /* Fear & Greed als Halbkreis-Tacho 0–100 */
+  .fng { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
+  .fng svg { width: 128px; height: auto; flex: none; overflow: visible; }
+  .fng .seg-arc { fill: none; stroke-width: 14; }
+  .fng .needle { stroke: var(--text); stroke-width: 3; stroke-linecap: round; transition: transform .4s; }
+  .fng .hub { fill: var(--text); }
+  .fng .tick { font-size: 10px; fill: var(--muted); }
+  .fng .cls { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .fng .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .fng .hist { color: var(--muted); font-size: 13px; }
+  .fng .hist b { color: var(--text); font-weight: 600; }
   /* Trending: Chip-Färbung nach Rang (--heat), rechts die 24h-Kursänderung */
   .trending { padding: 16px 20px; margin-bottom: 20px; }
   .trending-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -40,6 +51,8 @@
   .coin { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
   .coin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .coin-head h2 { margin: 0; font-size: 20px; }
+  .coin-title { display: flex; align-items: center; gap: 10px; }
+  .detail-link { font-size: 12px; padding: 3px 10px; }
   .mcap { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .mcap .val { color: var(--text); font-weight: 600; }
   .price { font-size: 20px; font-weight: 600; }
@@ -69,6 +82,7 @@
   .pts { font-weight: 700; text-align: center; border-radius: 6px; font-size: 12px; padding: 1px 0; height: fit-content; }
   .signals .name { font-weight: 600; }
   .signals .reason { color: var(--muted); }
+  .pts.fng-pts { color: var(--text); background: color-mix(in srgb, var(--zone) 30%, var(--neutral-bg)); }
 
   /* Tooltips */
   [data-tip] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--border);
@@ -180,16 +194,60 @@ let extraId = null;     // dessen CoinGecko-ID, falls bekannt (Symbole sind nich
 let extraCoin = null;   // dessen Daten (null = lädt)
 const EXTRA_KEY = "extraCoin";
 
+// Zonen wie auf alternative.me / CNN; Farben von Rot (Angst) über Grau zu Grün (Gier)
+const FNG_ZONES = [
+  { to: 25, name: "Extreme Angst", color: "var(--down)" },
+  { to: 45, name: "Angst", color: "color-mix(in srgb, var(--down) 55%, var(--neutral))" },
+  { to: 55, name: "Neutral", color: "var(--neutral)" },
+  { to: 75, name: "Gier", color: "color-mix(in srgb, var(--up) 55%, var(--neutral))" },
+  { to: 100, name: "Extreme Gier", color: "var(--up)" },
+];
+const FNG_LABELS = { "Extreme Fear": "Extreme Angst", "Fear": "Angst", "Neutral": "Neutral", "Greed": "Gier", "Extreme Greed": "Extreme Gier" };
+const fngZone = (v) => FNG_ZONES.find((z) => v <= z.to) || FNG_ZONES[FNG_ZONES.length - 1];
+
+function fngGauge(value) {
+  const cx = 70, cy = 70, r = 56;
+  const pt = (v, rad = r) => {
+    const a = Math.PI * (1 - v / 100);  // 0 links, 100 rechts
+    return [(cx + rad * Math.cos(a)).toFixed(2), (cy - rad * Math.sin(a)).toFixed(2)];
+  };
+  let from = 0;
+  const arcs = FNG_ZONES.map((z) => {
+    const [x1, y1] = pt(from + (from ? 1 : 0));   // kleine Lücke zwischen den Zonen
+    const [x2, y2] = pt(z.to - (z.to < 100 ? 1 : 0));
+    from = z.to;
+    return `<path class="seg-arc" d="M${x1} ${y1} A${r} ${r} 0 0 1 ${x2} ${y2}" style="stroke:${z.color}"/>`;
+  }).join("");
+  const angle = -90 + (Math.max(0, Math.min(100, value)) / 100) * 180;  // Nadel zeigt bei 0 nach links
+  return `
+    <svg viewBox="0 0 140 84" role="img" aria-label="Fear &amp; Greed ${value} von 100">
+      ${arcs}
+      <line class="needle" x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - r + 14}" style="transform:rotate(${angle}deg);transform-origin:${cx}px ${cy}px"/>
+      <circle class="hub" cx="${cx}" cy="${cy}" r="4.5"/>
+      <text class="tick" x="${cx - r}" y="${cy + 14}" text-anchor="middle">0</text>
+      <text class="tick" x="${cx + r}" y="${cy + 14}" text-anchor="middle">100</text>
+    </svg>`;
+}
+
 function renderMarket(g) {
   hideTip();
   const fng = g.fear_greed;
   const st = g.stablecoins;
   const dom = g.btc_dominance;
+  const hist = (label, v) => (v == null ? "" : `<div class="hist">${label} <b>${v}</b> · ${fngZone(v).name}</div>`);
   $("market").innerHTML = `
     <div>
       <div class="label"><span${tipAttr("fng")}>Fear &amp; Greed</span></div>
-      <div class="val">${fng ? fng.value : "–"}</div>
-      <div class="note">${fng ? `${esc(fng.label)} · vor 7 Tagen ${fng.week_ago}` : "nicht verfügbar"}</div>
+      ${fng ? `
+        <div class="fng">
+          ${fngGauge(fng.value)}
+          <div>
+            <div class="val">${fng.value}</div>
+            <div class="cls"><span class="dot" style="background:${fngZone(fng.value).color}"></span>${esc(FNG_LABELS[fng.label] || fng.label)}</div>
+            ${hist("Gestern", fng.yesterday)}
+            ${hist("Vor 7 Tagen", fng.week_ago)}
+          </div>
+        </div>` : '<div class="val">–</div><div class="note">nicht verfügbar</div>'}
     </div>
     <div>
       <div class="label"><span${tipAttr("stablecoins")}>Stablecoins</span></div>
@@ -225,8 +283,9 @@ function renderTrending(tr) {
     <div class="chips">${tr.length ? tr.map(chip).join("") : '<span class="note">nicht verfügbar</span>'}</div>`;
 }
 
-function renderCoin(c) {
+function renderCoin(c, id = null) {
   const d = c.data;
+  const detailHref = "coin.html?symbol=" + encodeURIComponent(c.symbol) + (id ? "&id=" + encodeURIComponent(id) : "");
   const ma = d.price_ma200;
   const fr = d.funding;
   const oi = d.open_interest;
@@ -240,7 +299,13 @@ function renderCoin(c) {
     ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
     : "";
 
+  const fng = payload && payload.global.fear_greed;
   const signals = c.signals.map((s) => {
+    if (s.name === "Fear & Greed" && fng) {
+      // Index wie im Tacho als 0–100 zeigen; der Score-Beitrag steht im Text darunter
+      const z = fngZone(fng.value);
+      return `<li><span class="pts fng-pts" style="--zone:${z.color}" title="Fear &amp; Greed Index (0–100)">${fng.value}</span><span><span class="name"${tipAttr("fng")}>Fear &amp; Greed</span><br><span class="reason">${z.name} · Score-Beitrag ${signed(s.points)}</span></span></li>`;
+    }
     const t = tone(s.points, 50);
     const p = signed(s.points);
     return `<li><span class="pts ${t}">${p}</span><span><span class="name"${tipAttr(SIGNAL_TIPS[s.name])}>${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
@@ -250,7 +315,10 @@ function renderCoin(c) {
     <article class="card coin">
       <div class="coin-head">
         <div>
-          <h2>${esc(c.symbol)}</h2>
+          <div class="coin-title">
+            <h2>${esc(c.symbol)}</h2>
+            <a class="navlink detail-link" href="${esc(detailHref)}" title="Detailansicht für ${esc(c.symbol)} öffnen">Details</a>
+          </div>
           <div class="mcap"><span${tipAttr("mcap")}>Marktkap.</span>
             ${mc ? `<span class="val">${usd6(mc.usd)}</span>${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "n/a"}</div>
         </div>
@@ -291,10 +359,10 @@ function renderCoin(c) {
 function renderCoins() {
   if (!payload) return;
   hideTip();
-  let html = payload.coins.map(renderCoin).join("");
+  let html = payload.coins.map((c) => renderCoin(c)).join("");
   if (extra) {
     html += extraCoin
-      ? renderCoin(extraCoin)
+      ? renderCoin(extraCoin, extraId)
       : `<article class="card coin-loading">${esc(extra)} wird geladen …</article>`;
   }
   $("coins").innerHTML = html;

@@ -87,6 +87,7 @@ def get_fear_greed() -> Dict[str, Any]:
     return {
         "value": int(data[0]["value"]),
         "label": data[0]["value_classification"],
+        "yesterday": int(data[1]["value"]),
         "week_ago": int(data[7]["value"]),
     }
 
@@ -115,6 +116,24 @@ def get_long_short(symbol: str) -> Dict[str, Any]:
         f"?symbol={symbol}USDT&period=1d&limit=1"
     )
     return {"ratio": float(data[-1]["longShortRatio"])}
+
+
+def get_klines(symbol: str, interval: str, limit: int = 1000) -> List[Dict[str, Any]]:
+    """Kerzen von Binance Spot (USDT-Paar) für das Chart auf der Detailseite."""
+    klines = fetch_json(
+        f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit={limit}"
+    )
+    return [
+        {
+            "time": k[0] // 1000,  # Öffnungszeit in Sekunden (UTC)
+            "open": float(k[1]),
+            "high": float(k[2]),
+            "low": float(k[3]),
+            "close": float(k[4]),
+            "volume": float(k[7]),  # Quote-Volumen, also in USDT
+        }
+        for k in klines
+    ]
 
 
 def get_daily_closes(symbol: str) -> List[float]:

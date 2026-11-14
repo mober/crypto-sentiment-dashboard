@@ -28,6 +28,8 @@ SYMBOLS = ["BTC", "ETH", "SOL"]
 CACHE_SECONDS = 300
 MARKETS_PER_PAGE = 50
 MARKETS_MAX_PAGE = 20     # Top 1000, wie bei Cryptobubbles
+KLINE_INTERVALS = {"1d", "4h", "1h"}
+KLINE_CACHE_SECONDS = 60  # Binance ist großzügig limitiert; die letzte Kerze soll aktuell sein
 STATIC_DIR = Path(__file__).resolve().parent / "web"
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
@@ -39,6 +41,8 @@ _coin_cache: Dict[str, Dict[str, Any]] = {}
 _coin_lock = threading.Lock()
 _markets_cache: Dict[int, Dict[str, Any]] = {}
 _markets_lock = threading.Lock()
+_klines_cache: Dict[str, Dict[str, Any]] = {}
+_klines_lock = threading.Lock()
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -123,6 +127,24 @@ def get_markets(page: int) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def get_klines(symbol: str, interval: str) -> Optional[Dict[str, Any]]:
+    """Kerzen für das Chart; None, wenn Binance kein USDT-Paar für den Coin hat."""
+    key = f"{symbol}:{interval}"
+    with _klines_lock:
+        entry = _klines_cache.get(key)
+        if entry is None or time.time() - entry["time"] > KLINE_CACHE_SECONDS:
+            candles = sentiment.safe(sentiment.get_klines, symbol, interval)
+            if candles:
+                entry = {"time": time.time(), "payload": {
+                    "symbol": symbol,
+                    "interval": interval,
+                    "source": "Binance",
+                    "candles": candles,
+                }}
+                _klines_cache[key] = entry
+        return entry["payload"] if entry else None
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -171,6 +193,18 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "ungültige Coin-ID"}, 400)
                 return
             self.send_json(get_coin(symbol, coin_id, force=force))
+            return
+        if url.path == "/api/klines":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            interval = (query.get("interval") or ["1d"])[0]
+            if not SYMBOL_RE.match(symbol) or interval not in KLINE_INTERVALS:
+                self.send_json({"error": "ungültiges Symbol oder Intervall"}, 400)
+                return
+            payload = get_klines(symbol, interval)
+            if payload is None:
+                self.send_json({"error": f"Keine Binance-Kursdaten für {symbol}/USDT"}, 404)
+                return
+            self.send_json(payload)
             return
         super().do_GET()
 

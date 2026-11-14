@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coin-Details</title>
+<link rel="stylesheet" href="base.css">
+<!-- TradingView Lightweight Charts (Apache-2.0), feste Version -->
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .hero { padding: 20px 24px; display: grid; grid-template-columns: 1fr auto; gap: 16px 24px; align-items: center; margin-bottom: 20px; }
+  .hero .price { font-size: 28px; font-weight: 700; }
+  .hero .mcap { color: var(--muted); font-size: 13px; }
+  .hero .score-box { text-align: right; }
+  .hero .score { font-size: 28px; font-weight: 700; }
+  .verdict { border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 500; display: inline-block; margin-top: 4px; }
+  .tone-hot { background: var(--hot-bg); color: var(--hot); }
+  .tone-cold { background: var(--cold-bg); color: var(--cold); }
+  .tone-neutral { background: var(--neutral-bg); color: var(--text); }
+
+  /* Chart */
+  .chart-card { padding: 14px 16px 10px; margin-bottom: 20px; }
+  .chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chart-head .pair { font-weight: 600; }
+  .chart-head .pair .note { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: var(--card); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--text); color: var(--card); }
+  .chart-tools { display: flex; gap: 8px; align-items: center; }
+  .toggle { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; font-size: 13px; }
+  .toggle .swatch { width: 14px; height: 2px; border-radius: 1px; background: var(--cold); }
+  .toggle[aria-pressed="false"] { color: var(--muted); }
+  .toggle[aria-pressed="false"] .swatch { background: var(--border); }
+  .chart-wrap { position: relative; height: 460px; }
+  #chart { position: absolute; inset: 0; }
+  .ohlc { position: absolute; top: 4px; left: 6px; z-index: 2; pointer-events: none; font-size: 12px;
+    display: flex; gap: 10px; flex-wrap: wrap; color: var(--muted); }
+  .ohlc b { color: var(--text); font-weight: 600; }
+  .ohlc .up { color: var(--up); }
+  .ohlc .down { color: var(--down); }
+  .ohlc .ma { color: var(--cold); }
+  .ohlc .ma b { color: var(--text); }
+  .chart-msg { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; color: var(--muted); background: var(--card); }
+  .chart-msg.error { color: var(--down); }
+  .chart-msg[hidden] { display: none; }
+
+  .placeholder { padding: 48px 24px; text-align: center; color: var(--muted); border-style: dashed; }
+  .status { padding: 32px; text-align: center; color: var(--muted); }
+  .status.error { color: var(--down); }
+
+  @media (max-width: 640px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero .score-box { text-align: left; }
+    .chart-wrap { height: 340px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 id="title">Coin-Details</h1>
+      <div class="sub" id="updated">Lade Daten …</div>
+    </div>
+    <a class="navlink" href="/">← Sentiment-Dashboard</a>
+  </header>
+
+  <section id="hero"></section>
+
+  <section class="card chart-card">
+    <div class="chart-head">
+      <div class="pair" id="pair">Kursverlauf</div>
+      <div class="chart-tools">
+        <button class="toggle" id="ma-toggle" aria-pressed="true" title="MA200-Linie ein- oder ausblenden"><span class="swatch"></span>MA200</button>
+        <div class="seg" role="group" aria-label="Zeitintervall">
+          <button data-interval="1d">1T</button>
+          <button data-interval="4h">4h</button>
+          <button data-interval="1h">1h</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <div class="ohlc" id="ohlc"></div>
+      <div id="chart"></div>
+      <div class="chart-msg" id="chart-msg">Lade Kursdaten …</div>
+    </div>
+  </section>
+
+  <section class="card placeholder" id="content">
+    Weitere Detail-Inhalte folgen.
+  </section>
+
+  <footer>Chart: Binance Spot (USDT-Paar), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
+    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Keine Anlageberatung.</footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const usd = (v) => "$" + v.toLocaleString("de-DE", v < 1 ? { maximumSignificantDigits: 4 } : { maximumFractionDigits: v < 100 ? 2 : 0 });
+const usd6 = (v) => {
+  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
+  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
+};
+const compact = (v) => v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 });
+const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
+// Farbschwelle wie VERDICT_WARM in sentiment.py
+const tone = (score) => (score >= 15 ? "tone-hot" : score <= -15 ? "tone-cold" : "tone-neutral");
+
+const MAIN_SYMBOLS = ["BTC", "ETH", "SOL"];  // wie SYMBOLS in server.py
+const INTERVAL_LABEL = { "1d": "1T", "4h": "4h", "1h": "1h" };
+const INTERVAL_KEY = "chartInterval";
+const CHART_REFRESH_MS = 60 * 1000;   // wie KLINE_CACHE_SECONDS in server.py
+const VISIBLE_BARS = 150;             // so viele Kerzen beim Öffnen sichtbar, der Rest per Scrollen
+const MA_PERIOD = 200;                // gleitender Durchschnitt über die Kerzen des gewählten Intervalls
+
+const params = new URLSearchParams(location.search);
+const symbol = (params.get("symbol") || "").toUpperCase();
+const coinId = params.get("id") || "";
+const validSymbol = /^[A-Z0-9]{1,15}$/.test(symbol);
+
+// --- Kopfbereich ---------------------------------------------------------
+
+function renderHero(c) {
+  const ma = c.data.price_ma200;
+  const mc = c.data.market_cap;
+  $("hero").className = "card hero";
+  $("hero").innerHTML = `
+    <div>
+      <div class="price" id="hero-price">${ma ? usd(ma.price) : "–"}</div>
+      <div class="mcap">${mc ? `Marktkap. ${usd6(mc.usd)}${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "Marktkap. n/a"}</div>
+    </div>
+    <div class="score-box">
+      <div class="label">Überhitzungs-Score</div>
+      <div class="score">${signed(c.score)}</div>
+      <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
+    </div>`;
+  fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
+}
+
+async function loadHero() {
+  try {
+    // Hauptcoins stecken im gecachten Dashboard-Payload, alle anderen im Coin-Cache des Servers
+    let coin, updated;
+    if (MAIN_SYMBOLS.includes(symbol)) {
+      const res = await fetch("/api/sentiment");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const p = await res.json();
+      coin = p.coins.find((c) => c.symbol === symbol);
+      updated = p.updated;
+    } else {
+      const res = await fetch("/api/coin?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      coin = await res.json();
+    }
+    if (!coin) throw new Error("keine Daten");
+    renderHero(coin);
+    $("updated").textContent = updated ? "Score-Stand: " + new Date(updated).toLocaleString("de-DE") : "";
+  } catch (e) {
+    $("hero").className = "card status error";
+    $("hero").textContent = `${symbol} konnte nicht geladen werden (${e.message}). Läuft server.py?`;
+    $("updated").textContent = "";
+  }
+}
+
+// --- Chart ---------------------------------------------------------------
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const alpha = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+// Lightweight Charts rechnet in UTC. Die Zeiten bleiben UTC (ein Verschieben auf Ortszeit
+// erzeugt bei der Zeitumstellung doppelte Stunden, und das Chart bleibt leer);
+// nur die Beschriftung wird in Ortszeit formatiert.
+const fmtDate = (t, opts) => new Date(t * 1000).toLocaleString("de-DE", opts);
+// Tick-Typen von Lightweight Charts: 0 Jahr, 1 Monat, 2 Tag, 3 Uhrzeit, 4 mit Sekunden
+function tickLabel(t, type) {
+  if (type === 0) return fmtDate(t, { year: "numeric" });
+  if (type === 1) return fmtDate(t, { month: "short" });
+  if (type === 2) return fmtDate(t, { day: "numeric", month: interval === "1d" ? undefined : "short" });
+  return fmtDate(t, { hour: "2-digit", minute: "2-digit" });
+}
+const crosshairLabel = (t) => interval === "1d"
+  ? fmtDate(t, { weekday: "short", day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" })
+  : fmtDate(t, { weekday: "short", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+let interval = "1d";
+try { if (INTERVAL_LABEL[localStorage.getItem(INTERVAL_KEY)]) interval = localStorage.getItem(INTERVAL_KEY); } catch (e) { /* ignorieren */ }
+if (INTERVAL_LABEL[params.get("interval")]) interval = params.get("interval");  // Link mit ?interval=… hat Vorrang
+
+const MA_KEY = "chartShowMa";
+let showMa = true;
+try { showMa = localStorage.getItem(MA_KEY) !== "0"; } catch (e) { /* ignorieren */ }
+
+let chart = null, candleSeries = null, volumeSeries = null, maSeries = null;
+let candles = [];        // aktuelle Kerzen (Zeit in UTC-Sekunden)
+let maByTime = new Map(); // MA-Wert je Kerzenzeit, für die OHLC-Zeile
+let precision = 2;
+let loadToken = 0;       // verwirft Antworten, wenn inzwischen ein anderes Intervall gewählt wurde
+
+const fmtPrice = (v) => v.toLocaleString("de-DE", { minimumFractionDigits: precision, maximumFractionDigits: precision });
+
+function themeOptions() {
+  const up = css("--up"), down = css("--down");
+  return {
+    chart: {
+      layout: { background: { type: "solid", color: css("--card") }, textColor: css("--muted"),
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: 12 },
+      grid: { vertLines: { color: css("--track") }, horzLines: { color: css("--track") } },
+      rightPriceScale: { borderColor: css("--border") },
+      timeScale: { borderColor: css("--border") },
+      crosshair: {
+        vertLine: { color: css("--muted"), labelBackgroundColor: css("--text") },
+        horzLine: { color: css("--muted"), labelBackgroundColor: css("--text") },
+      },
+    },
+    candles: { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false },
+    volUp: alpha(up, 0.35),
+    volDown: alpha(down, 0.35),
+    ma: { color: css("--cold") },
+  };
+}
+
+// Einfacher gleitender Durchschnitt der Schlusskurse; die ersten MA_PERIOD − 1 Kerzen haben keinen Wert
+function maData() {
+  const out = [];
+  let sum = 0;
+  candles.forEach((c, i) => {
+    sum += c.close;
+    if (i >= MA_PERIOD) sum -= candles[i - MA_PERIOD].close;
+    if (i >= MA_PERIOD - 1) out.push({ time: c.time, value: sum / MA_PERIOD });
+  });
+  maByTime = new Map(out.map((p) => [p.time, p.value]));
+  return out;
+}
+
+function initChart() {
+  const LC = LightweightCharts;
+  const t = themeOptions();
+  chart = LC.createChart($("chart"), {
+    ...t.chart,
+    autoSize: true,
+    crosshair: { ...t.chart.crosshair, mode: LC.CrosshairMode.Normal },
+    timeScale: { ...t.chart.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 5, tickMarkFormatter: tickLabel },
+    layout: { ...t.chart.layout, attributionLogo: false },  // Namensnennung mit Link steht im Footer
+    localization: { locale: "de-DE", priceFormatter: fmtPrice, timeFormatter: crosshairLabel },
+  });
+  candleSeries = chart.addCandlestickSeries({ ...t.candles, priceLineVisible: true });
+  candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.22 } });
+  // Volumen unten im Chart, eigene unsichtbare Skala (keine zweite Preisachse)
+  volumeSeries = chart.addHistogramSeries({
+    priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false,
+  });
+  chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
+  maSeries = chart.addLineSeries({
+    ...t.ma, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+    title: "MA200", visible: showMa,
+  });
+  $("ma-toggle").setAttribute("aria-pressed", String(showMa));
+
+  chart.subscribeCrosshairMove((p) => {
+    const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
+    renderOhlc(bar || candles[candles.length - 1]);
+  });
+
+  // Hell/Dunkel folgt dem System
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    const n = themeOptions();
+    chart.applyOptions(n.chart);
+    candleSeries.applyOptions(n.candles);
+    maSeries.applyOptions(n.ma);
+    volumeSeries.setData(volumeData(n));
+  });
+}
+
+const volumeData = (t = themeOptions()) =>
+  candles.map((c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown }));
+
+function renderOhlc(c) {
+  if (!c) { $("ohlc").innerHTML = ""; return; }
+  const chg = (c.close - c.open) / c.open;
+  const cls = chg >= 0 ? "up" : "down";
+  $("ohlc").innerHTML = `
+    <span>O <b>${fmtPrice(c.open)}</b></span>
+    <span>H <b>${fmtPrice(c.high)}</b></span>
+    <span>L <b>${fmtPrice(c.low)}</b></span>
+    <span>C <b>${fmtPrice(c.close)}</b></span>
+    <span class="${cls}">${chg >= 0 ? "+" : "−"}${Math.abs(chg * 100).toFixed(2).replace(".", ",")} %</span>
+    <span>Vol <b>$${compact(c.volume)}</b></span>
+    ${showMa ? `<span class="ma">MA200 <b>${maByTime.has(c.time) ? fmtPrice(maByTime.get(c.time)) : "–"}</b></span>` : ""}`;
+}
+
+function setPrecision(price) {
+  // genug Nachkommastellen auch für Coins unter 1 $
+  precision = price >= 1 ? 2 : Math.min(10, Math.max(4, Math.ceil(-Math.log10(price)) + 3));
+  candleSeries.applyOptions({ priceFormat: { type: "price", precision, minMove: 10 ** -precision } });
+}
+
+function chartMessage(text, isError = false) {
+  const el = $("chart-msg");
+  el.textContent = text || "";
+  el.hidden = !text;
+  el.classList.toggle("error", isError);
+}
+
+async function fetchKlines(iv) {
+  const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${iv}`);
+  const p = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { status: res.status });
+  return p.candles;
+}
+
+async function loadChart() {
+  const token = ++loadToken;
+  const iv = interval;
+  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.interval === iv)));
+  $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]} · Binance</span>`;
+  chartMessage("Lade Kursdaten …");
+  try {
+    const data = await fetchKlines(iv);
+    if (token !== loadToken) return;
+    candles = data;
+    setPrecision(candles[candles.length - 1].close);
+    candleSeries.setData(candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    volumeSeries.setData(volumeData());
+    maSeries.setData(maData());
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - VISIBLE_BARS), to: candles.length + 5 });
+    renderOhlc(candles[candles.length - 1]);
+    fillHeroPrice();
+    chartMessage("");
+  } catch (e) {
+    if (token !== loadToken) return;
+    candles = [];
+    candleSeries.setData([]);
+    volumeSeries.setData([]);
+    maSeries.setData([]);
+    maByTime = new Map();
+    renderOhlc(null);
+    chartMessage(e.status === 404
+      ? `Für ${symbol} gibt es kein USDT-Paar auf Binance – daher vorerst kein Chart.`
+      : `Kursdaten konnten nicht geladen werden (${e.message}).`, e.status !== 404);
+  }
+}
+
+// Nur die letzten Kerzen aktualisieren, damit Zoom und Scrollposition erhalten bleiben
+async function refreshChart() {
+  if (!candles.length || document.hidden) return;
+  const iv = interval, token = loadToken;
+  try {
+    const data = await fetchKlines(iv);
+    if (token !== loadToken) return;
+    const t = themeOptions();
+    const lastTime = candles[candles.length - 1].time;
+    for (const c of data.filter((c) => c.time >= lastTime)) {
+      candleSeries.update({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close });
+      volumeSeries.update({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown });
+      const i = candles.findIndex((x) => x.time === c.time);
+      if (i >= 0) candles[i] = c; else candles.push(c);
+    }
+    // MA neu berechnen und nur die betroffenen Punkte nachziehen
+    for (const p of maData().filter((p) => p.time >= lastTime)) maSeries.update(p);
+    renderOhlc(candles[candles.length - 1]);
+    fillHeroPrice();
+  } catch (e) { /* beim nächsten Intervall erneut versuchen */ }
+}
+
+// Coins ohne MA200-Daten: Preis im Kopf aus der letzten Kerze
+function fillHeroPrice() {
+  const el = $("hero-price");
+  if (el && el.textContent === "–" && candles.length) el.textContent = usd(candles[candles.length - 1].close);
+}
+
+$("ma-toggle").addEventListener("click", () => {
+  showMa = !showMa;
+  try { localStorage.setItem(MA_KEY, showMa ? "1" : "0"); } catch (err) { /* ignorieren */ }
+  $("ma-toggle").setAttribute("aria-pressed", String(showMa));
+  if (maSeries) maSeries.applyOptions({ visible: showMa });
+  renderOhlc(candles[candles.length - 1]);
+});
+
+document.querySelector(".seg").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-interval]");
+  if (!btn || btn.dataset.interval === interval) return;
+  interval = btn.dataset.interval;
+  try { localStorage.setItem(INTERVAL_KEY, interval); } catch (err) { /* ignorieren */ }
+  loadChart();
+});
+
+// --- Start ---------------------------------------------------------------
+
+if (!validSymbol) {
+  $("hero").className = "card status error";
+  $("hero").textContent = "Kein gültiger Coin angegeben.";
+  $("updated").textContent = "";
+  chartMessage("Kein Coin gewählt.", true);
+} else {
+  document.title = symbol + " – Details";
+  $("title").textContent = symbol;
+  loadHero();
+  if (typeof LightweightCharts === "undefined") {
+    chartMessage("Chart-Bibliothek konnte nicht geladen werden (keine Internetverbindung?).", true);
+  } else {
+    initChart();
+    loadChart();
+    setInterval(refreshChart, CHART_REFRESH_MS);
+  }
+}
+</script>
+</body>
+</html>
