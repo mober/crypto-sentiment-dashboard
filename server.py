@@ -48,6 +48,12 @@ _derivs_lock = threading.Lock()
 _defi_cache: Dict[str, Any] = {"time": 0.0, "payload": None}
 _defi_lock = threading.Lock()
 DEFI_CACHE_SECONDS = 600  # DefiLlama aktualisiert TVL ohnehin nur grob stündlich; die Antwort ist ~10 MB
+_llama_index: Dict[str, Any] = {"time": 0.0, "payload": None}
+_llama_index_lock = threading.Lock()
+LLAMA_INDEX_SECONDS = 24 * 3600   # Zuordnung Coin → Protokoll ändert sich selten
+_fees_cache: Dict[str, Dict[str, Any]] = {}
+_fees_lock = threading.Lock()
+FEES_CACHE_SECONDS = 1800         # DefiLlama aktualisiert Gebühren täglich
 _liq_cache: Dict[str, Dict[str, Any]] = {}
 _liq_lock = threading.Lock()
 _history_cache: Dict[str, Dict[str, Any]] = {}
@@ -230,6 +236,29 @@ def get_defi_tvl() -> Optional[Dict[str, Any]]:
         return _defi_cache["payload"]
 
 
+def get_fees(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Gebühren und Einnahmen (DefiLlama) eines Coins; zugeordnet über CoinGecko-ID, sonst Symbol."""
+    with _llama_index_lock:
+        if _llama_index["payload"] is None or time.time() - _llama_index["time"] > LLAMA_INDEX_SECONDS:
+            idx = sentiment.safe(sentiment.get_llama_index)
+            if idx:
+                _llama_index.update(time=time.time(), payload=idx)
+        idx = _llama_index["payload"]
+    if not idx:
+        return None
+    entry = (idx["gecko"].get(coin_id) if coin_id else None) or idx["symbol"].get(symbol)
+    if not entry:
+        return None
+    key = entry["kind"] + ":" + entry["slug"]
+    with _fees_lock:
+        cached = _fees_cache.get(key)
+        if cached is None or time.time() - cached["time"] > FEES_CACHE_SECONDS:
+            result = sentiment.get_fees(entry)   # fängt Fehler je Datenart selbst ab
+            cached = {"time": time.time(), "payload": result}
+            _fees_cache[key] = cached
+        return cached["payload"]
+
+
 def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
     """Kerzen und OI je Stunde (Binance Futures) für die Liquidations-Heatmap; 5 Min. gecacht."""
     with _liq_lock:
@@ -361,6 +390,18 @@ class Handler(SimpleHTTPRequestHandler):
             payload = get_defi_tvl()
             if payload is None:
                 self.send_json({"error": "DefiLlama nicht erreichbar"}, 502)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/fees":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            coin_id = (query.get("id") or [""])[0] or None
+            if not SYMBOL_RE.match(symbol) or (coin_id and not COIN_ID_RE.match(coin_id)):
+                self.send_json({"error": "ungültiges Symbol oder ungültige Coin-ID"}, 400)
+                return
+            payload = get_fees(symbol, coin_id)
+            if payload is None:
+                self.send_json({"error": f"Keine Gebührendaten für {symbol} bei DefiLlama"}, 404)
                 return
             self.send_json(payload)
             return

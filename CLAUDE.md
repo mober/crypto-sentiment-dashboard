@@ -9,6 +9,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `start.command` per Doppelklick im Finder macht dasselbe
 - `python3 sentiment.py --symbol ETH` → Bericht im Terminal (`--json` für Rohdaten)
 
+
 ## Aufbau
 
 - `sentiment.py` – Datenabfragen, Score-Skalen und Bewertung (auch als CLI nutzbar)
@@ -17,7 +18,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/defi` (TVL je Kategorie und
   Chain von DefiLlama, aus `/protocols` summiert, Chain-Stände aus `/v2/chains`, Cache 10 Min.), `/api/liquidations?symbol=…`
   (Futures-Kerzen und OI je Stunde, ~21 Tage, für die Liquidations-Heatmap; das Modell selbst
-  rechnet `buildLiqModel` in `coin.html`), `/api/klines?symbol=…&interval=1d|4h|1h`
+  rechnet `buildLiqModel` in `coin.html`), `/api/fees?symbol=…&id=…` (Gebühren, Einnahmen und
+  Weitergabe an Token-Halter von DefiLlama; Coin → Protokoll/Chain über `get_llama_index`,
+  Vorrang Dachprotokoll > Chain > Einzelprotokoll, Cache 30 Min., Index 1 Tag), `/api/klines?symbol=…&interval=1d|4h|1h`
   (Binance-Kerzen, Cache 60 s), `/api/derivatives?symbol=…` (Funding 90 T, Open Interest 30 T
   von Binance Futures, Cache 5 Min.), `/api/score-history?symbol=…` (Score je Tag, rückwirkend
   aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/search?q=…` (CoinGecko-Suche plus

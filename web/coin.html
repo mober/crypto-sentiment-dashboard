@@ -144,6 +144,18 @@
   .liq-clusters b { font-weight: 600; }
   @media (max-width: 640px) { .liq-wrap { height: 320px; } .liq-clusters { grid-template-columns: 1fr; } }
 
+  /* Gebühren & Einnahmen */
+  .fees { padding: 18px 20px 14px; margin-bottom: 20px; }
+  .fees[hidden] { display: none; }
+  .fee-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0 14px; }
+  .fee-tiles .stat { padding: 12px 14px; }
+  .fee-legend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .fee-legend .sw { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 6px; }
+  .fee-legend .sw.dash { background: none !important; border-top: 2px dashed; height: 0; }
+  .fee-legend b { color: var(--text); font-weight: 600; }
+  .fees .mini-wrap { height: 220px; }
+
   .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .placeholder { padding: 48px 24px; text-align: center; color: var(--muted); border-style: dashed; }
   .status { padding: 32px; text-align: center; color: var(--muted); }
@@ -205,6 +217,16 @@
       <div class="ohlc" id="rsi-legend"></div>
       <div id="rsi-chart"></div>
     </div>
+  </section>
+
+  <section class="card fees" id="fees" hidden>
+    <div class="breakdown-head">
+      <div class="label"><span data-tip="fees" tabindex="0">Gebühren &amp; Einnahmen</span></div>
+      <div class="note" id="fee-source"></div>
+    </div>
+    <div class="fee-tiles" id="fee-tiles"></div>
+    <div class="fee-legend" id="fee-legend"></div>
+    <div class="mini-wrap"><div class="mini-chart" id="fee-chart"></div></div>
   </section>
 
   <section class="card derivs" id="derivs">
@@ -464,6 +486,7 @@ function candleTiles() {
 function renderStats(c) {
   statsCoin = c;
   drawStats();
+  renderFees();   // Bewertung braucht die Marktkap.
 }
 
 function drawStats() {
@@ -1370,6 +1393,104 @@ async function loadLiquidations() {
   }
 }
 
+// --- Gebühren & Einnahmen (DefiLlama) ---------------------------------------
+
+const FEE_SERIES = [  // [Schlüssel, Name, Farbe (CSS-Variable), gestrichelt]
+  ["fees", "Gebühren", "--muted", false],
+  ["revenue", "Einnahmen", "--cold", false],
+  ["holders", "An Token-Halter", "--hot", true],
+];
+let feeData = null, feeChart = null;
+const feeSeries = {};
+
+const money = (v) => (v ? usd6(v) : "$0");   // usd6 zeigt 0 sonst als „$0,00000“
+
+function feeTiles() {
+  const f = feeData;
+  if (!f) return "";
+  const mc = statsCoin && statsCoin.data.market_cap ? statsCoin.data.market_cap.usd : null;
+  const fdv = statsCoin && statsCoin.data.market_stats ? statsCoin.data.market_stats.fdv : null;
+  const tiles = [];
+  const vs = (x) => x && x.prev30d > 0 ? `${chgSpan(x.total30d / x.prev30d - 1)} zu den 30 T davor` : "";
+  if (f.fees) {
+    tiles.push(statTile("feesTotal", "Gebühren 30 T", money(f.fees.total30d),
+      `<div class="det">${vs(f.fees)}</div>`));
+  }
+  if (f.revenue) {
+    const share = f.fees && f.fees.total30d ? f.revenue.total30d / f.fees.total30d : null;
+    tiles.push(statTile("feesRevenue", "Einnahmen 30 T", money(f.revenue.total30d),
+      `<div class="det">${share != null ? `<b>${numDe(share * 100, 0)} %</b> der Gebühren · ` : ""}${vs(f.revenue)}</div>`));
+  }
+  tiles.push(statTile("feesHolders", "An Token-Halter 30 T", f.holders ? money(f.holders.total30d) : "–",
+    `<div class="det">${f.holders ? "Rückkäufe, Burns oder Ausschüttungen" : "keine Weitergabe an Halter erfasst"}</div>`));
+  const rev1y = f.revenue && f.revenue.total1y;
+  if (f.revenue || f.fees) {
+    const x = f.revenue || f.fees;
+    tiles.push(statTile("feesYear", `${f.revenue ? "Einnahmen" : "Gebühren"} 1 J`, x.total1y ? money(x.total1y) : "–",
+      `<div class="det">${x.totalAllTime ? `gesamt seit Start ${money(x.totalAllTime)}` : ""}</div>`));
+  }
+  // Bewertung: Marktkap. im Verhältnis zu den hochgerechneten Einnahmen der letzten 30 T
+  const annual = f.revenue ? f.revenue.total30d * 365 / 30 : null;
+  if (mc && annual > 0) {
+    const mult = mc / annual;
+    tiles.push(statTile("feesMultiple", "Marktkap. / Einnahmen", `${numDe(mult, mult < 10 ? 1 : 0)}x`,
+      `<div class="det">30 T hochgerechnet${fdv ? ` · FDV-Basis ${numDe(fdv / annual, 0)}x` : ""}</div>`));
+  }
+  const holdersAnnual = f.holders ? f.holders.total30d * 365 / 30 : null;
+  if (mc && holdersAnnual > 0) {
+    tiles.push(statTile("feesYield", "Rendite für Halter", `${numDe(holdersAnnual / mc * 100, 1)} % p.a.`,
+      `<div class="det">Weitergabe an Halter / Marktkap., 30 T hochgerechnet</div>`));
+  }
+  return tiles.join("");
+}
+
+function renderFees() {
+  if (!feeData) return;
+  $("fee-tiles").innerHTML = feeTiles();
+}
+
+function renderFeeLegend(time) {
+  if (!feeData) return;
+  $("fee-legend").innerHTML = FEE_SERIES.filter(([k]) => feeData[k]).map(([k, label, color, dashed]) => {
+    const w = feeData[k].weekly;
+    const pt = (time != null && w.find((x) => x.time === time)) || w[w.length - 1];
+    return `<span><span class="sw${dashed ? " dash" : ""}" style="background:var(${color});border-color:var(${color})"></span>${label} <b>${pt ? usd6(pt.value) : "–"}</b></span>`;
+  }).join("") + `<span>je Woche${time != null ? ", ab " + fmtDate(time, { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" }) : ", letzte volle Woche"}</span>`;
+}
+
+function initFeeChart() {
+  feeChart = miniChart($("fee-chart"));
+  for (const [k, , color, dashed] of FEE_SERIES) {
+    feeSeries[k] = feeChart.addLineSeries({
+      color: css(color), lineWidth: 2, lineStyle: dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: true,
+      priceFormat: { type: "custom", formatter: (v) => "$" + compact(v), minMove: 1 },
+    });
+  }
+  feeChart.subscribeCrosshairMove((p) => renderFeeLegend(p && p.time != null ? p.time : null));
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    feeChart.applyOptions(themeOptions().chart);
+    for (const [k, , color] of FEE_SERIES) feeSeries[k].applyOptions({ color: css(color) });
+  });
+}
+
+async function loadFees() {
+  try {
+    const res = await fetch("/api/fees?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
+    if (!res.ok) return;   // keine Gebührendaten: Karte bleibt ausgeblendet
+    feeData = await res.json();
+    $("fees").hidden = false;
+    $("fee-source").textContent = `DefiLlama · ${feeData.name} (${feeData.kind === "chain" ? "Chain" : "Protokoll"}) · täglich aktualisiert`;
+    initFeeChart();
+    for (const [k] of FEE_SERIES) {
+      feeSeries[k].setData(feeData[k] ? feeData[k].weekly.map((x) => ({ time: x.time, value: x.value })) : []);
+    }
+    feeChart.timeScale().fitContent();
+    renderFees();
+    renderFeeLegend(null);
+  } catch (e) { /* ohne Gebührenblock weiter */ }
+}
+
 // --- Start ---------------------------------------------------------------
 
 if (!validSymbol) {
@@ -1396,6 +1517,7 @@ if (!validSymbol) {
     initChart();
     loadChart();
     loadDailyStats();
+    loadFees();
     initDerivCharts();
     loadDerivs();
     initHistChart();

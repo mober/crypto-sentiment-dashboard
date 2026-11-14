@@ -529,6 +529,86 @@ def get_defi_tvl() -> Dict[str, Any]:
     }
 
 
+# Gebühren und Einnahmen (DefiLlama): Zuordnung Coin → Protokoll oder Chain über die CoinGecko-ID
+FEE_TYPES = {"fees": "dailyFees", "revenue": "dailyRevenue", "holders": "dailyHoldersRevenue"}
+FEE_WEEKS = 52
+
+
+def _llama_slug(name: str) -> str:
+    return "".join(ch for ch in name.lower().replace(" ", "-") if ch.isalnum() or ch in "-.")
+
+
+def get_llama_index() -> Dict[str, Dict[str, Dict[str, str]]]:
+    """CoinGecko-ID bzw. Symbol → DefiLlama-Protokoll (Dachprotokoll bevorzugt) oder Chain.
+
+    Zwei Abfragen (die Protokoll-Liste ist ~7 MB); der Server cacht das Ergebnis einen Tag."""
+    lite = fetch_json("https://api.llama.fi/lite/protocols2?b=2")
+    chains = fetch_json("https://api.llama.fi/v2/chains")
+    by_gecko: Dict[str, Dict[str, str]] = {}
+    by_symbol: Dict[str, Dict[str, str]] = {}
+
+    def add(gecko: Optional[str], symbol: Optional[str], entry: Dict[str, str]) -> None:
+        if gecko:
+            by_gecko.setdefault(gecko, entry)
+        if symbol and symbol != "-":
+            # Symbole sind mehrdeutig: Chains haben hier Vorrang (BTC, ETH, SOL ohne CoinGecko-ID)
+            if entry["kind"] == "chain" and by_symbol.get(symbol.upper(), {}).get("kind") != "chain":
+                by_symbol[symbol.upper()] = entry
+            else:
+                by_symbol.setdefault(symbol.upper(), entry)
+
+    # Reihenfolge = Vorrang: Dachprotokolle (HYPE → Hyperliquid-Börse statt -Chain), dann Chains
+    # (ETH → Ethereum-Chain statt „Ethereum Foundation“), dann einzelne Protokolle
+    for p in lite.get("parentProtocols", []):
+        add(p.get("gecko_id"), p.get("symbol"),
+            {"kind": "protocol", "slug": p["id"].split("#", 1)[-1], "name": p["name"]})
+    for c in chains:
+        add(c.get("gecko_id"), c.get("tokenSymbol"), {"kind": "chain", "slug": _llama_slug(c["name"]), "name": c["name"]})
+    for p in lite.get("protocols", []):
+        if p.get("parentProtocol"):
+            continue
+        add(p.get("geckoId"), p.get("symbol"), {"kind": "protocol", "slug": _llama_slug(p["name"]), "name": p["name"]})
+    return {"gecko": by_gecko, "symbol": by_symbol}
+
+
+def get_fees(entry: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """Gebühren, Einnahmen und Einnahmen für Token-Halter eines Protokolls bzw. einer Chain.
+
+    Je Art: Summen für 24 h, 7 T, 30 T (dazu die 30 T davor), 1 J und gesamt sowie Wochensummen
+    der letzten 52 Wochen für das Chart. None, wenn DefiLlama keine Gebührendaten hat."""
+    out: Dict[str, Any] = {"name": entry["name"], "kind": entry["kind"], "slug": entry["slug"]}
+    found = False
+    for key, data_type in FEE_TYPES.items():
+        d = safe(fetch_json, f"https://api.llama.fi/summary/fees/{urllib.parse.quote(entry['slug'])}"
+                             f"?dataType={data_type}&excludeTotalDataChartBreakdown=true")
+        chart = (d or {}).get("totalDataChart") or []
+        if not chart or not any(v for _, v in chart[-FEE_WEEKS * 7:]):   # leer oder im letzten Jahr nur Nullen
+            out[key] = None
+            continue
+        found = True
+        day = 86400
+        last = chart[-1][0]
+        def window(start_days: int, end_days: int) -> float:
+            return sum(v for t, v in chart if last - start_days * day < t <= last - end_days * day)
+        weeks: Dict[int, float] = {}
+        days_in: Dict[int, int] = {}
+        for t, v in chart:
+            if t > last - (FEE_WEEKS + 1) * 7 * day:
+                w = (t - 4 * day) // (7 * day) * (7 * day) + 4 * day   # Wochenbeginn Montag (1.1.1970 war Donnerstag)
+                weeks[w] = weeks.get(w, 0.0) + v
+                days_in[w] = days_in.get(w, 0) + 1
+        # angebrochene Wochen (am Anfang und die laufende) weglassen, sonst sackt die Linie ab
+        weeks = {w: v for w, v in weeks.items() if days_in[w] == 7}
+        out[key] = {
+            "total24h": d.get("total24h"), "total7d": d.get("total7d"),
+            "total30d": window(30, 0), "prev30d": window(60, 30),
+            "total1y": d.get("total1y"), "totalAllTime": d.get("totalAllTime"),
+            "days": len(chart),
+            "weekly": [{"time": w, "value": v} for w, v in sorted(weeks.items())],
+        }
+    return out if found else None
+
+
 def get_stablecoins() -> Dict[str, Any]:
     chart = fetch_json("https://stablecoins.llama.fi/stablecoincharts/all")
     now = chart[-1]["totalCirculatingUSD"]["peggedUSD"]
