@@ -21,12 +21,14 @@ Die Schwellenwerte sind Erfahrungswerte, keine Naturgesetze. Keine Anlageberatun
 """
 
 import argparse
+import bisect
 import json
 import statistics
 import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -57,6 +59,8 @@ MA_PERIOD = 200           # Tage für den gleitenden Durchschnitt
 DVOL_SYMBOLS = {"BTC", "ETH"}  # Deribit bietet DVOL nur für diese Coins
 DVOL_WINDOW = 90          # Tage für Mittelwert und Standardabweichung
 FUNDING_HISTORY_DAYS = 90 # Funding-Verlauf auf der Detailseite
+FUNDING_BASE_HOURS = 8    # FUNDING_SCALE gilt pro 8 h; kürzere Takte werden darauf umgerechnet
+SCORE_HISTORY_DAYS = 365  # rückwirkend berechneter Score-Verlauf auf der Detailseite
 
 
 def fetch_json(url: str) -> Any:
@@ -102,14 +106,41 @@ def futures_data(url: str, symbol: str) -> List[Dict[str, Any]]:
     return data
 
 
+def normalize_funding(rates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Funding-Zahlungen mit Takt und auf 8 h umgerechnetem Satz.
+
+    Die meisten Coins zahlen alle 8 h, manche alle 4 h oder 1 h. Der Takt ergibt sich aus dem
+    Abstand zur vorherigen Zahlung (bei der ersten aus dem zur nächsten); Lücken zählen als 8 h."""
+    out = []
+    for i, r in enumerate(rates):
+        if len(rates) < 2:
+            hours = FUNDING_BASE_HOURS
+        else:
+            j = i if i > 0 else 1
+            diff_h = (rates[j]["fundingTime"] - rates[j - 1]["fundingTime"]) / 3_600_000
+            hours = min(FUNDING_BASE_HOURS, max(1, round(diff_h)))
+        rate = float(r["fundingRate"])
+        out.append({"time": r["fundingTime"] // 1000, "rate": rate, "interval_h": hours,
+                    "rate_8h": rate * FUNDING_BASE_HOURS / hours})
+    return out
+
+
+def funding_avg_7d(funding: List[Dict[str, Any]], until: float) -> Optional[float]:
+    """Ø des 8-h-Satzes über die 7 Tage bis `until` (Sekunden); None, wenn die Daten nicht reichen."""
+    if not funding or funding[0]["time"] > until - 7 * 86400 + FUNDING_BASE_HOURS * 3600:
+        return None
+    values = [f["rate_8h"] for f in funding if until - 7 * 86400 < f["time"] <= until]
+    return sum(values) / len(values) if values else None
+
+
 def get_funding(symbol: str) -> Dict[str, Any]:
-    # Nach Zeit statt nach Anzahl filtern: manche Coins zahlen alle 4 h oder 1 h statt alle 8 h
-    rates = futures_data(
+    # 200 Zahlungen reichen auch bei 1-h-Takt für 7 Tage
+    funding = normalize_funding(futures_data(
         f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=200", symbol
-    )
-    cutoff = rates[-1]["fundingTime"] - 7 * 86400 * 1000
-    values = [float(r["fundingRate"]) for r in rates if r["fundingTime"] > cutoff]
-    return {"last": values[-1], "avg_7d": sum(values) / len(values)}
+    ))
+    last = funding[-1]
+    values = [f["rate_8h"] for f in funding if f["time"] > last["time"] - 7 * 86400]
+    return {"last": last["rate"], "interval_h": last["interval_h"], "avg_7d": sum(values) / len(values)}
 
 
 def get_open_interest(symbol: str) -> Dict[str, Any]:
@@ -130,16 +161,22 @@ def get_long_short(symbol: str) -> Dict[str, Any]:
     return {"ratio": float(data[-1]["longShortRatio"])}
 
 
-def get_funding_history(symbol: str) -> List[Dict[str, Any]]:
-    """Funding-Zahlungen der letzten FUNDING_HISTORY_DAYS Tage für die Detailseite."""
-    rates = futures_data(
-        f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=1000", symbol
-    )
-    cutoff = rates[-1]["fundingTime"] - FUNDING_HISTORY_DAYS * 86400 * 1000
-    return [
-        {"time": r["fundingTime"] // 1000, "rate": float(r["fundingRate"])}
-        for r in rates if r["fundingTime"] > cutoff
-    ]
+def get_funding_history(symbol: str, days: int = FUNDING_HISTORY_DAYS) -> List[Dict[str, Any]]:
+    """Funding-Zahlungen der letzten `days` Tage (Binance liefert max. 1000 je Abfrage,
+    ältere werden mit endTime nachgeladen, höchstens 4 Abfragen)."""
+    url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=1000"
+    rates = futures_data(url, symbol)
+    cutoff = rates[-1]["fundingTime"] - days * 86400 * 1000
+    for _ in range(3):
+        if rates[0]["fundingTime"] <= cutoff:
+            break
+        older = safe(fetch_json, f"{url}&endTime={rates[0]['fundingTime'] - 1}")
+        if not older:
+            break
+        rates = older + rates
+    # eine Zahlung vor dem Zeitraum behalten, damit der Takt der ersten stimmt
+    funding = normalize_funding(rates)
+    return [f for f in funding if f["time"] * 1000 > cutoff]
 
 
 def get_open_interest_history(symbol: str) -> List[Dict[str, Any]]:
@@ -359,7 +396,9 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
     fr = d.get("funding")
     if fr:
         r = fr["avg_7d"]
-        add("Funding Rate", scale(r, FUNDING_SCALE), f"Ø {r:.4%} / 8h",
+        takt = fr.get("interval_h", FUNDING_BASE_HOURS)
+        note = f" (Takt {takt} h, umgerechnet)" if takt != FUNDING_BASE_HOURS else ""
+        add("Funding Rate", scale(r, FUNDING_SCALE), f"Ø {r:.4%} / 8h{note}",
             "Longs zahlen viel", "Shorts dominieren", "normal")
 
     oi = d.get("open_interest")
@@ -487,6 +526,96 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
     print(f"\n  Score: {total:+d} (Bereich -100 … +100, Durchschnitt aus {len(signals)} Signalen)")
     print(f"  → {verdict(total, len(signals))}")
     print(f"{line}\n  Keine Anlageberatung. Schwellenwerte sind Erfahrungswerte.\n")
+
+
+def _as_of(series: List[Tuple[int, Any]], t: float, max_age: float) -> Optional[Any]:
+    """Letzter Wert mit Zeit <= t, sofern nicht älter als max_age Sekunden."""
+    i = bisect.bisect_right(series, (t, float("inf"))) - 1
+    if i < 0 or t - series[i][0] > max_age:
+        return None
+    return series[i][1]
+
+
+def get_dvol_history(symbol: str, days: int) -> List[Tuple[int, float]]:
+    end = int(time.time() * 1000)
+    start = end - (days + DVOL_WINDOW + 3) * 86_400_000
+    data = fetch_json(
+        "https://www.deribit.com/api/v2/public/get_volatility_index_data"
+        f"?currency={symbol}&start_timestamp={start}&end_timestamp={end}&resolution=1D"
+    )["result"]["data"]
+    return [(int(c[0]) // 1000, float(c[4])) for c in data]
+
+
+def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[Dict[str, Any]]:
+    """Score je Tag, rückwirkend aus den Tageswerten berechnet, mit derselben Logik wie score().
+
+    Jeder Tag nutzt die Daten, die bis zu seinem Ende (UTC) vorlagen; der heutige Tag die bis jetzt.
+    Enthalten sind nur Signale mit Historie: Fear & Greed, Funding, Open Interest und
+    Long/Short (Binance: nur 30 Tage), Preis vs. MA200, RSI und DVOL. Die CoinGecko-Ersatzsignale
+    fehlen. None, wenn es weder Binance-Kerzen noch -Futures gibt."""
+    fut = "https://fapi.binance.com/futures/data"
+    jobs = {
+        "fng": (fetch_json, f"https://api.alternative.me/fng/?limit={days + 2}"),
+        "klines": (get_binance_klines, symbol, "1d", 1000),
+        "funding": (get_funding_history, symbol, days + 8),
+        "oi": (futures_data, f"{fut}/openInterestHist?symbol={symbol}USDT&period=1d&limit=30", symbol),
+        "ls": (futures_data, f"{fut}/globalLongShortAccountRatio?symbol={symbol}USDT&period=1d&limit=30", symbol),
+    }
+    if symbol in DVOL_SYMBOLS:
+        jobs["dvol"] = (get_dvol_history, symbol, days)
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = {k: pool.submit(safe, *job) for k, job in jobs.items()}
+        got = {k: f.result() for k, f in futures.items()}
+
+    klines = got["klines"][0] if got["klines"] else []
+    if not klines and not (got["funding"] or got["oi"] or got["ls"]):
+        return None
+    fng = sorted((int(x["timestamp"]), int(x["value"])) for x in (got["fng"] or {}).get("data", []))
+    closes = [(k[0] // 1000, float(k[4])) for k in klines]
+    funding = got["funding"] or []
+    oi = [(h["timestamp"] // 1000, float(h["sumOpenInterestValue"])) for h in got["oi"] or []]
+    ls = [(h["timestamp"] // 1000, float(h["longShortRatio"])) for h in got["ls"] or []]
+    dvol = got.get("dvol") or []
+
+    now = time.time()
+    today = int(now // 86400 * 86400)
+    out = []
+    for day in range(today - (days - 1) * 86400, today + 1, 86400):
+        end = min(day + 86400, now)
+        d: Dict[str, Any] = {}
+        v = _as_of(fng, end, 2 * 86400)
+        if v is not None:
+            d["fear_greed"] = {"value": v}
+        price = None
+        i = bisect.bisect_right(closes, (day, float("inf"))) - 1
+        if i >= 0 and closes[i][0] == day:
+            price = closes[i][1]
+            window = [c for _, c in closes[max(0, i - MA_PERIOD + 1):i + 1]]  # wie get_daily_closes
+            d["price_ma200"] = price_vs_ma200(window)
+            d["rsi"] = rsi(window)
+        avg = funding_avg_7d(funding, end)
+        if avg is not None:
+            d["funding"] = {"avg_7d": avg}
+        o1, o0 = _as_of(oi, end, 1.5 * 86400), _as_of(oi, end - 7 * 86400, 1.5 * 86400)
+        if o1 and o0:
+            d["open_interest"] = {"change_7d": (o1 - o0) / o0}
+        r = _as_of(ls, end, 1.5 * 86400)
+        if r is not None:
+            d["long_short"] = {"ratio": r}
+        j = bisect.bisect_right(dvol, (end, float("inf"))) - 1
+        if j >= DVOL_WINDOW and end - dvol[j][0] <= 2 * 86400:
+            window = [c for _, c in dvol[j - DVOL_WINDOW:j]]  # wie get_dvol: die 90 Tage davor
+            d["dvol"] = {"value": dvol[j][1], "z": (dvol[j][1] - statistics.mean(window)) / statistics.stdev(window)}
+        signals = score(d)
+        if not signals:
+            continue
+        out.append({
+            "time": day,
+            "score": total_score(signals),
+            "price": price,
+            "signals": [{"name": x["name"], "points": x["points"]} for x in signals],
+        })
+    return {"days": out, "price_source": got["klines"][1] if got["klines"] else None}
 
 
 def collect_global() -> Dict[str, Any]:

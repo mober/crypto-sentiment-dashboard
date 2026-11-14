@@ -45,6 +45,8 @@ _klines_cache: Dict[str, Dict[str, Any]] = {}
 _klines_lock = threading.Lock()
 _derivs_cache: Dict[str, Dict[str, Any]] = {}
 _derivs_lock = threading.Lock()
+_history_cache: Dict[str, Dict[str, Any]] = {}
+_history_lock = threading.Lock()
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,6 +166,18 @@ def get_derivatives(symbol: str) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def get_score_history(symbol: str) -> Optional[Dict[str, Any]]:
+    """Rückwirkend berechneter Score je Tag; None ohne Binance-Kerzen und -Futures."""
+    with _history_lock:
+        entry = _history_cache.get(symbol)
+        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
+            result = sentiment.safe(sentiment.get_score_history, symbol)
+            if result and result["days"]:
+                entry = {"time": time.time(), "payload": {"symbol": symbol, **result}}
+                _history_cache[symbol] = entry
+        return entry["payload"] if entry else None
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -222,6 +236,17 @@ class Handler(SimpleHTTPRequestHandler):
             payload = get_klines(symbol, interval)
             if payload is None:
                 self.send_json({"error": f"Keine Binance-Kursdaten für {symbol}/USDT"}, 404)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/score-history":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            if not SYMBOL_RE.match(symbol):
+                self.send_json({"error": "ungültiges Symbol"}, 400)
+                return
+            payload = get_score_history(symbol)
+            if payload is None:
+                self.send_json({"error": f"Kein Score-Verlauf für {symbol} (keine Binance-Daten)"}, 404)
                 return
             self.send_json(payload)
             return
