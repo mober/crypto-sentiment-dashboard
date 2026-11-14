@@ -255,7 +255,21 @@ let top20 = null;           // null = noch nicht geladen
 let top20Error = null;
 let top20Loading = false;
 
-// Top 20 kommt aus /api/markets (Seite 1, serverseitig 5 Min. gecacht, wie die Marktübersicht)
+// Stablecoins (USD-gebunden) ausblenden: bekannte IDs, damit sie auch bei einem kurzen Depeg
+// gefiltert bleiben, plus Kursverhalten (≈ 1 $ und praktisch keine Bewegung) für neue Stablecoins.
+// Gold-Token (XAUT, PAXG) und Fonds-Token mit Rendite (USDY, USYC) bleiben drin.
+const STABLECOIN_IDS = new Set([
+  "tether", "usd-coin", "usds", "dai", "ethena-usde", "usd1-wlfi", "ripple-usd", "global-dollar",
+  "paypal-usd", "falcon-finance", "first-digital-usd", "true-usd", "frax", "usdd", "gho",
+]);
+function isStablecoin(c) {
+  if (STABLECOIN_IDS.has(c.id)) return true;
+  const ch = c.change || {};
+  return c.price >= 0.97 && c.price <= 1.03
+    && Math.abs(ch["7d"] ?? 1) < 0.01 && Math.abs(ch["30d"] ?? 1) < 0.015;
+}
+
+// Top 20 kommt aus /api/markets (Seite 1 = Top 50, serverseitig 5 Min. gecacht, wie die Marktübersicht)
 async function loadTop20() {
   if (top20Loading) return;
   top20Loading = true;
@@ -263,7 +277,7 @@ async function loadTop20() {
     const res = await fetch("/api/markets?page=1");
     const p = await res.json();
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
-    top20 = p.coins.slice(0, TOP_COUNT).map((c) => ({
+    top20 = p.coins.filter((c) => !isStablecoin(c)).slice(0, TOP_COUNT).map((c) => ({
       id: c.id, symbol: c.symbol, name: c.name, rank: c.rank, change_24h: c.change["24h"],
     }));
     top20Error = null;
@@ -313,7 +327,7 @@ function renderChips() {
         </div>
         <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? "Nach Marktkap. (CoinGecko)" : "Meistgesucht (CoinGecko)"}</span></div>
       </div>
-      <div class="note">${isTop ? "Zahl = Marktkap.-Rang" : "Rang 1 = meistgesucht"} · rechts: Kurs 24 h · Klick = als Karte anzeigen</div>
+      <div class="note">${isTop ? "ohne Stablecoins · Zahl = Marktkap.-Rang" : "Rang 1 = meistgesucht"} · rechts: Kurs 24 h · Klick = als Karte anzeigen</div>
     </div>
     <div class="chips">${list.length ? list.map(chip).join("") : `<span class="note">${empty}</span>`}</div>`;
 }
