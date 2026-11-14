@@ -27,13 +27,23 @@
   .seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: var(--card); }
   .seg button + button { border-left: 1px solid var(--border); }
   .seg button[aria-pressed="true"] { background: var(--text); color: var(--card); }
-  .chart-tools { display: flex; gap: 8px; align-items: center; }
+  .chart-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .seg button:disabled { opacity: 1; color: var(--border); }
   .toggle { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; font-size: 13px; }
   .toggle .swatch { width: 14px; height: 2px; border-radius: 1px; background: var(--cold); }
+  .toggle .swatch.ma50 { background: var(--hot); }
+  .toggle .swatch.rsi { background: var(--text); }
   .toggle[aria-pressed="false"] { color: var(--muted); }
   .toggle[aria-pressed="false"] .swatch { background: var(--border); }
   .chart-wrap { position: relative; height: 460px; }
-  #chart { position: absolute; inset: 0; }
+  .chart-card.with-rsi .chart-wrap { height: 400px; }
+  #chart, #rsi-chart { position: absolute; inset: 0; }
+  .rsi-wrap { position: relative; height: 150px; border-top: 1px solid var(--border); }
+  .rsi-wrap[hidden] { display: none; }
+  .ohlc .ma50 { color: var(--hot); }
+  .ohlc .ma50 b { color: var(--text); }
+  .ohlc .hot b { color: var(--hot); }
+  .ohlc .cold b { color: var(--cold); }
   .ohlc { position: absolute; top: 4px; left: 6px; z-index: 2; pointer-events: none; font-size: 12px;
     display: flex; gap: 10px; flex-wrap: wrap; color: var(--muted); }
   .ohlc b { color: var(--text); font-weight: 600; }
@@ -81,7 +91,8 @@
   @media (max-width: 640px) {
     .hero { grid-template-columns: 1fr; }
     .hero .score-box { text-align: left; }
-    .chart-wrap { height: 340px; }
+    .chart-wrap, .chart-card.with-rsi .chart-wrap { height: 320px; }
+    .rsi-wrap { height: 120px; }
   }
 </style>
 </head>
@@ -104,8 +115,18 @@
     <div class="chart-head">
       <div class="pair" id="pair">Kursverlauf</div>
       <div class="chart-tools">
-        <button class="toggle" id="ma-toggle" aria-pressed="true" title="MA200-Linie ein- oder ausblenden"><span class="swatch"></span>MA200</button>
-        <div class="seg" role="group" aria-label="Zeitintervall">
+        <button class="toggle" data-show="ma50" aria-pressed="true" title="Gleitender Durchschnitt über 50 Kerzen ein- oder ausblenden"><span class="swatch ma50"></span>MA50</button>
+        <button class="toggle" data-show="ma200" aria-pressed="true" title="Gleitender Durchschnitt über 200 Kerzen ein- oder ausblenden"><span class="swatch"></span>MA200</button>
+        <button class="toggle" data-show="rsi" aria-pressed="true" title="RSI-Fenster unter dem Chart ein- oder ausblenden"><span class="swatch rsi"></span>RSI</button>
+        <div class="seg" id="range-seg" role="group" aria-label="Zeitraum">
+          <button data-range="7" title="Letzte Woche">1W</button>
+          <button data-range="30" title="Letzter Monat">1M</button>
+          <button data-range="91" title="Letzte 3 Monate">3M</button>
+          <button data-range="182" title="Letzte 6 Monate">6M</button>
+          <button data-range="365" title="Letztes Jahr">1J</button>
+          <button data-range="all" title="Alle geladenen Kerzen (max. 1000)">Alle</button>
+        </div>
+        <div class="seg" id="interval-seg" role="group" aria-label="Zeitintervall">
           <button data-interval="1d">1T</button>
           <button data-interval="4h">4h</button>
           <button data-interval="1h">1h</button>
@@ -116,6 +137,10 @@
       <div class="ohlc" id="ohlc"></div>
       <div id="chart"></div>
       <div class="chart-msg" id="chart-msg">Lade Kursdaten …</div>
+    </div>
+    <div class="rsi-wrap" id="rsi-wrap">
+      <div class="ohlc" id="rsi-legend"></div>
+      <div id="rsi-chart"></div>
     </div>
   </section>
 
@@ -146,7 +171,10 @@ const INTERVAL_LABEL = { "1d": "1T", "4h": "4h", "1h": "1h" };
 const INTERVAL_KEY = "chartInterval";
 const CHART_REFRESH_MS = 60 * 1000;   // wie KLINE_CACHE_SECONDS in server.py
 const VISIBLE_BARS = 150;             // so viele Kerzen beim Öffnen sichtbar, der Rest per Scrollen
-const MA_PERIOD = 200;                // gleitender Durchschnitt über die Kerzen des gewählten Intervalls
+const MA_PERIODS = [50, 200];         // gleitende Durchschnitte über die Kerzen des gewählten Intervalls
+const RSI_PERIOD = 14;                // wie RSI_PERIOD in sentiment.py
+const RSI_LEVELS = [70, 30];          // überkauft / überverkauft, wie die Enden von RSI_SCALE
+const PRICE_SCALE_WIDTH = 80;         // gleiche Achsenbreite in Kurs- und RSI-Chart, damit die Kerzen übereinander stehen
 
 const params = new URLSearchParams(location.search);
 const symbol = (params.get("symbol") || "").toUpperCase();
@@ -261,15 +289,23 @@ let interval = "1d";
 try { if (INTERVAL_LABEL[localStorage.getItem(INTERVAL_KEY)]) interval = localStorage.getItem(INTERVAL_KEY); } catch (e) { /* ignorieren */ }
 if (INTERVAL_LABEL[params.get("interval")]) interval = params.get("interval");  // Link mit ?interval=… hat Vorrang
 
-const MA_KEY = "chartShowMa";
-let showMa = true;
-try { showMa = localStorage.getItem(MA_KEY) !== "0"; } catch (e) { /* ignorieren */ }
+// Ein-/Ausblenden von MA50, MA200 und RSI-Fenster, gemerkt im Browser
+const SHOW_KEY = "chartShow";
+const show = { ma50: true, ma200: true, rsi: true };
+try {
+  Object.assign(show, JSON.parse(localStorage.getItem(SHOW_KEY) || "{}"));
+  if (localStorage.getItem("chartShowMa") === "0") show.ma200 = false;  // alte Einstellung übernehmen
+} catch (e) { /* ignorieren */ }
 
-let chart = null, candleSeries = null, volumeSeries = null, maSeries = null;
+let chart = null, candleSeries = null, volumeSeries = null;
+let rsiChart = null, rsiSeries = null;
+const maSeries = {};     // Periode → Linienserie
 let candles = [];        // aktuelle Kerzen (Zeit in UTC-Sekunden)
-let maByTime = new Map(); // MA-Wert je Kerzenzeit, für die OHLC-Zeile
+const maByTime = {};     // Periode → Map(Kerzenzeit → MA-Wert), für die OHLC-Zeile
+let rsiByTime = new Map();
 let precision = 2;
 let loadToken = 0;       // verwirft Antworten, wenn inzwischen ein anderes Intervall gewählt wurde
+let pointerOn = null;    // "main" | "rsi": welches Chart Maus/Finger gerade bedient (für den Gleichlauf)
 
 const fmtPrice = (v) => v.toLocaleString("de-DE", { minimumFractionDigits: precision, maximumFractionDigits: precision });
 
@@ -290,34 +326,61 @@ function themeOptions() {
     candles: { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false },
     volUp: alpha(up, 0.35),
     volDown: alpha(down, 0.35),
-    ma: { color: css("--cold") },
+    ma: { 50: { color: css("--hot") }, 200: { color: css("--cold") } },
+    rsi: { color: css("--text") },
+    rsiLevel: { 70: css("--hot"), 30: css("--cold") },
   };
 }
 
-// Einfacher gleitender Durchschnitt der Schlusskurse; die ersten MA_PERIOD − 1 Kerzen haben keinen Wert
-function maData() {
+// Einfacher gleitender Durchschnitt der Schlusskurse; die ersten period − 1 Kerzen haben keinen Wert
+function maData(period) {
   const out = [];
   let sum = 0;
   candles.forEach((c, i) => {
     sum += c.close;
-    if (i >= MA_PERIOD) sum -= candles[i - MA_PERIOD].close;
-    if (i >= MA_PERIOD - 1) out.push({ time: c.time, value: sum / MA_PERIOD });
+    if (i >= period) sum -= candles[i - period].close;
+    if (i >= period - 1) out.push({ time: c.time, value: sum / period });
   });
-  maByTime = new Map(out.map((p) => [p.time, p.value]));
+  maByTime[period] = new Map(out.map((p) => [p.time, p.value]));
+  return out;
+}
+
+// RSI nach Wilder wie rsi() in sentiment.py, aber für jede Kerze. Die ersten Kerzen bekommen
+// Leerpunkte (nur time), damit beide Charts gleich viele Punkte haben und synchron scrollen.
+function rsiData() {
+  const out = [];
+  let avgGain = 0, avgLoss = 0;
+  candles.forEach((c, i) => {
+    if (i === 0) { out.push({ time: c.time }); return; }
+    const d = c.close - candles[i - 1].close;
+    const g = Math.max(d, 0), l = Math.max(-d, 0);
+    if (i <= RSI_PERIOD) {
+      avgGain += g / RSI_PERIOD;
+      avgLoss += l / RSI_PERIOD;
+      if (i < RSI_PERIOD) { out.push({ time: c.time }); return; }
+    } else {
+      avgGain = (avgGain * (RSI_PERIOD - 1) + g) / RSI_PERIOD;
+      avgLoss = (avgLoss * (RSI_PERIOD - 1) + l) / RSI_PERIOD;
+    }
+    out.push({ time: c.time, value: avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss) });
+  });
+  rsiByTime = new Map(out.filter((p) => p.value != null).map((p) => [p.time, p.value]));
   return out;
 }
 
 function initChart() {
   const LC = LightweightCharts;
   const t = themeOptions();
-  chart = LC.createChart($("chart"), {
+  const common = {
     ...t.chart,
     autoSize: true,
     crosshair: { ...t.chart.crosshair, mode: LC.CrosshairMode.Normal },
+    rightPriceScale: { ...t.chart.rightPriceScale, minimumWidth: PRICE_SCALE_WIDTH },
     timeScale: { ...t.chart.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 5, tickMarkFormatter: tickLabel },
     layout: { ...t.chart.layout, attributionLogo: false },  // Namensnennung mit Link steht im Footer
     localization: { locale: "de-DE", priceFormatter: fmtPrice, timeFormatter: crosshairLabel },
-  });
+  };
+  chart = LC.createChart($("chart"), common);
   candleSeries = chart.addCandlestickSeries({ ...t.candles, priceLineVisible: true });
   candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.22 } });
   // Volumen unten im Chart, eigene unsichtbare Skala (keine zweite Preisachse)
@@ -325,25 +388,89 @@ function initChart() {
     priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false,
   });
   chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
-  maSeries = chart.addLineSeries({
-    ...t.ma, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
-    title: "MA200", visible: showMa,
+  for (const p of MA_PERIODS) {
+    maSeries[p] = chart.addLineSeries({
+      ...t.ma[p], lineWidth: p === 200 ? 2 : 1.5, priceLineVisible: false, lastValueVisible: true,
+      crosshairMarkerVisible: false, title: "MA" + p, visible: show["ma" + p],
+    });
+  }
+
+  // RSI in eigenem Chart darunter (Lightweight Charts 4 kennt keine Unterfenster)
+  rsiChart = LC.createChart($("rsi-chart"), {
+    ...common,
+    localization: { ...common.localization, priceFormatter: (v) => v.toFixed(0) },
   });
-  $("ma-toggle").setAttribute("aria-pressed", String(showMa));
+  rsiSeries = rsiChart.addLineSeries({
+    ...t.rsi, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+    autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+    priceFormat: { type: "custom", formatter: (v) => v.toFixed(1).replace(".", ","), minMove: 0.1 },
+  });
+  rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
+  const rsiLines = RSI_LEVELS.map((level) => rsiSeries.createPriceLine({
+    price: level, color: t.rsiLevel[level], lineWidth: 1, lineStyle: LC.LineStyle.Dashed, axisLabelVisible: true, title: "",
+  }));
+
+  // Gleichlauf: Scrollen/Zoomen und Fadenkreuz gehen von dem Chart aus, das gerade bedient wird
+  for (const [id, name] of [["chart", "main"], ["rsi-chart", "rsi"]]) {
+    $(id).addEventListener("pointerenter", () => { pointerOn = name; });
+    $(id).addEventListener("pointerdown", () => { pointerOn = name; });
+    $(id).addEventListener("pointerleave", () => {
+      if (pointerOn === name) pointerOn = null;
+      (name === "main" ? rsiChart : chart).clearCrosshairPosition();
+    });
+  }
+  chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+    if (r && pointerOn !== "rsi") rsiChart.timeScale().setVisibleLogicalRange(r);
+  });
+  rsiChart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+    if (r && pointerOn === "rsi") chart.timeScale().setVisibleLogicalRange(r);
+  });
 
   chart.subscribeCrosshairMove((p) => {
     const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
     renderOhlc(bar || candles[candles.length - 1]);
+    renderRsiLegend(bar ? bar.time : null);
+    if (pointerOn === "main" && show.rsi) {
+      const v = bar ? rsiByTime.get(bar.time) : null;
+      if (v != null) rsiChart.setCrosshairPosition(v, bar.time, rsiSeries); else rsiChart.clearCrosshairPosition();
+    }
   });
+  rsiChart.subscribeCrosshairMove((p) => {
+    if (pointerOn !== "rsi") return;
+    const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
+    renderOhlc(bar || candles[candles.length - 1]);
+    renderRsiLegend(bar ? bar.time : null);
+    if (bar) chart.setCrosshairPosition(bar.close, bar.time, candleSeries); else chart.clearCrosshairPosition();
+  });
+
+  applyShow();
 
   // Hell/Dunkel folgt dem System
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     const n = themeOptions();
-    chart.applyOptions(n.chart);
+    for (const c of [chart, rsiChart]) c.applyOptions(n.chart);
     candleSeries.applyOptions(n.candles);
-    maSeries.applyOptions(n.ma);
+    for (const p of MA_PERIODS) maSeries[p].applyOptions(n.ma[p]);
+    rsiSeries.applyOptions(n.rsi);
+    rsiLines.forEach((line, i) => line.applyOptions({ color: n.rsiLevel[RSI_LEVELS[i]] }));
     volumeSeries.setData(volumeData(n));
   });
+}
+
+// Schalter-Zustand auf Charts, Buttons und Layout übertragen
+function applyShow() {
+  document.querySelectorAll(".toggle[data-show]").forEach((b) => b.setAttribute("aria-pressed", String(show[b.dataset.show])));
+  for (const p of MA_PERIODS) maSeries[p].applyOptions({ visible: show["ma" + p] });
+  $("rsi-wrap").hidden = !show.rsi;
+  document.querySelector(".chart-card").classList.toggle("with-rsi", show.rsi);
+  // Zeitachse nur einmal, ganz unten
+  chart.timeScale().applyOptions({ visible: !show.rsi });
+  if (show.rsi) {
+    const r = chart.timeScale().getVisibleLogicalRange();
+    if (r) rsiChart.timeScale().setVisibleLogicalRange(r);
+  }
+  renderOhlc(candles[candles.length - 1]);
+  renderRsiLegend(null);
 }
 
 const volumeData = (t = themeOptions()) =>
@@ -353,6 +480,11 @@ function renderOhlc(c) {
   if (!c) { $("ohlc").innerHTML = ""; return; }
   const chg = (c.close - c.open) / c.open;
   const cls = chg >= 0 ? "up" : "down";
+  const ma = (p) => {
+    if (!show["ma" + p]) return "";
+    const v = maByTime[p] && maByTime[p].get(c.time);
+    return `<span class="${p === 50 ? "ma50" : "ma"}">MA${p} <b>${v != null ? fmtPrice(v) : "–"}</b></span>`;
+  };
   $("ohlc").innerHTML = `
     <span>O <b>${fmtPrice(c.open)}</b></span>
     <span>H <b>${fmtPrice(c.high)}</b></span>
@@ -360,7 +492,18 @@ function renderOhlc(c) {
     <span>C <b>${fmtPrice(c.close)}</b></span>
     <span class="${cls}">${chg >= 0 ? "+" : "−"}${Math.abs(chg * 100).toFixed(2).replace(".", ",")} %</span>
     <span>Vol <b>$${compact(c.volume)}</b></span>
-    ${showMa ? `<span class="ma">MA200 <b>${maByTime.has(c.time) ? fmtPrice(maByTime.get(c.time)) : "–"}</b></span>` : ""}`;
+    ${MA_PERIODS.map(ma).join("")}`;
+}
+
+function renderRsiLegend(time) {
+  const t = time ?? (candles.length ? candles[candles.length - 1].time : null);
+  const v = t != null ? rsiByTime.get(t) : null;
+  const cls = v == null ? "" : v >= RSI_LEVELS[0] ? "hot" : v <= RSI_LEVELS[1] ? "cold" : "";
+  const note = v == null ? "" : v >= RSI_LEVELS[0] ? " überkauft" : v <= RSI_LEVELS[1] ? " überverkauft" : "";
+  $("rsi-legend").innerHTML = candles.length
+    ? `<span class="${cls}">RSI (${RSI_PERIOD}) <b>${v != null ? v.toFixed(1).replace(".", ",") : "–"}</b>${note}</span>`
+      + `<span>Linien bei ${RSI_LEVELS.join(" / ")}</span>`
+    : "";
 }
 
 function setPrecision(price) {
@@ -383,10 +526,31 @@ async function fetchKlines(iv) {
   return p;  // { source, candles }
 }
 
+// Zeitraum-Buttons: sichtbaren Bereich auf die letzten N Tage setzen
+function setRange(range) {
+  if (!candles.length) return;
+  const n = candles.length;
+  let from = 0;
+  if (range !== "all") {
+    const start = candles[n - 1].time - Number(range) * 86400;
+    from = Math.max(0, candles.findIndex((c) => c.time > start) - 0.5);
+  }
+  chart.timeScale().setVisibleLogicalRange({ from, to: n - 1 + 5 });
+}
+
+// Zeiträume, die länger sind als die geladenen Kerzen, abschalten (z. B. 1J bei 1h-Kerzen)
+function updateRangeButtons() {
+  const span = candles.length ? candles[candles.length - 1].time - candles[0].time : 0;
+  document.querySelectorAll("#range-seg button").forEach((b) => {
+    const days = b.dataset.range;
+    b.disabled = !candles.length || (days !== "all" && span < Number(days) * 86400 * 0.95);
+  });
+}
+
 async function loadChart() {
   const token = ++loadToken;
   const iv = interval;
-  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.interval === iv)));
+  document.querySelectorAll("#interval-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.interval === iv)));
   $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]}</span>`;
   chartMessage("Lade Kursdaten …");
   try {
@@ -397,9 +561,12 @@ async function loadChart() {
     setPrecision(candles[candles.length - 1].close);
     candleSeries.setData(candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
     volumeSeries.setData(volumeData());
-    maSeries.setData(maData());
+    for (const p of MA_PERIODS) maSeries[p].setData(maData(p));
+    rsiSeries.setData(rsiData());
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - VISIBLE_BARS), to: candles.length + 5 });
+    updateRangeButtons();
     renderOhlc(candles[candles.length - 1]);
+    renderRsiLegend(null);
     fillHeroPrice();
     chartMessage("");
   } catch (e) {
@@ -407,9 +574,12 @@ async function loadChart() {
     candles = [];
     candleSeries.setData([]);
     volumeSeries.setData([]);
-    maSeries.setData([]);
-    maByTime = new Map();
+    for (const p of MA_PERIODS) { maSeries[p].setData([]); maByTime[p] = new Map(); }
+    rsiSeries.setData([]);
+    rsiByTime = new Map();
+    updateRangeButtons();
     renderOhlc(null);
+    renderRsiLegend(null);
     chartMessage(e.status === 404
       ? `Für ${symbol} gibt es kein USDT-Paar auf Binance (weder Spot noch Futures) – daher vorerst kein Chart.`
       : `Kursdaten konnten nicht geladen werden (${e.message}).`, e.status !== 404);
@@ -431,9 +601,11 @@ async function refreshChart() {
       const i = candles.findIndex((x) => x.time === c.time);
       if (i >= 0) candles[i] = c; else candles.push(c);
     }
-    // MA neu berechnen und nur die betroffenen Punkte nachziehen
-    for (const p of maData().filter((p) => p.time >= lastTime)) maSeries.update(p);
+    // Indikatoren neu berechnen und nur die betroffenen Punkte nachziehen
+    for (const p of MA_PERIODS) for (const pt of maData(p).filter((pt) => pt.time >= lastTime)) maSeries[p].update(pt);
+    for (const pt of rsiData().filter((pt) => pt.time >= lastTime)) rsiSeries.update(pt);
     renderOhlc(candles[candles.length - 1]);
+    renderRsiLegend(null);
     fillHeroPrice();
   } catch (e) { /* beim nächsten Intervall erneut versuchen */ }
 }
@@ -444,15 +616,19 @@ function fillHeroPrice() {
   if (el && el.textContent === "–" && candles.length) el.textContent = usd(candles[candles.length - 1].close);
 }
 
-$("ma-toggle").addEventListener("click", () => {
-  showMa = !showMa;
-  try { localStorage.setItem(MA_KEY, showMa ? "1" : "0"); } catch (err) { /* ignorieren */ }
-  $("ma-toggle").setAttribute("aria-pressed", String(showMa));
-  if (maSeries) maSeries.applyOptions({ visible: showMa });
-  renderOhlc(candles[candles.length - 1]);
+document.querySelectorAll(".toggle[data-show]").forEach((btn) => btn.addEventListener("click", () => {
+  const key = btn.dataset.show;
+  show[key] = !show[key];
+  try { localStorage.setItem(SHOW_KEY, JSON.stringify(show)); } catch (err) { /* ignorieren */ }
+  if (chart) applyShow();
+}));
+
+$("range-seg").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-range]");
+  if (btn && !btn.disabled) setRange(btn.dataset.range);
 });
 
-document.querySelector(".seg").addEventListener("click", (e) => {
+$("interval-seg").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-interval]");
   if (!btn || btn.dataset.interval === interval) return;
   interval = btn.dataset.interval;
@@ -467,6 +643,7 @@ if (!validSymbol) {
   $("hero").textContent = "Kein gültiger Coin angegeben.";
   $("updated").textContent = "";
   chartMessage("Kein Coin gewählt.", true);
+  $("rsi-wrap").hidden = true;
   $("breakdown").hidden = true;
 } else {
   document.title = symbol + " – Details";
@@ -474,6 +651,7 @@ if (!validSymbol) {
   loadHero();
   if (typeof LightweightCharts === "undefined") {
     chartMessage("Chart-Bibliothek konnte nicht geladen werden (keine Internetverbindung?).", true);
+    $("rsi-wrap").hidden = true;
   } else {
     initChart();
     loadChart();
