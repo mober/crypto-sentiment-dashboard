@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparten</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  section.card { margin-bottom: 20px; }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 16px 20px 6px; }
+  .card-head .note { color: var(--muted); font-size: 13px; }
+
+  /* Rotation: divergierende Balken um 0 */
+  .bars { padding: 4px 20px 14px; }
+  .bar-row { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 76px; gap: 14px; align-items: center;
+    padding: 5px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; text-decoration: none; color: inherit; }
+  .bar-row[data-tip] { text-decoration: none; cursor: pointer; }
+  .bar-row:hover, .bar-row:focus-visible { background: var(--row-hover); outline: none; }
+  .bar-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-name .grp { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .bar-track { position: relative; height: 20px; }
+  .bar-track::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .bar { position: absolute; top: 5px; height: 10px; }
+  .bar.pos { left: 50%; border-radius: 0 4px 4px 0; background: var(--up); }
+  .bar.neg { right: 50%; border-radius: 4px 0 0 4px; background: var(--down); }
+  .bar-val { text-align: right; font-weight: 700; font-size: 14px; }
+  .bar-axis { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 76px; gap: 14px; color: var(--muted); font-size: 11px; padding-top: 4px; }
+  .bar-axis .ticks { display: flex; justify-content: space-between; }
+  .market-ref { color: var(--muted); font-size: 13px; padding: 0 20px 14px; }
+  .market-ref b { color: var(--text); }
+
+  /* Tabelle */
+  .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 20px 12px; }
+  .tools input { flex: 1 1 220px; max-width: 320px; padding: 7px 12px; font: inherit; font-size: 14px; color: var(--text);
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  .tools input:focus { outline: none; border-color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 12px; font-size: 13px; background: var(--card); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--text); color: var(--card); }
+  .count { color: var(--muted); font-size: 13px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 9px 12px; text-align: right; white-space: nowrap; }
+  th { border-bottom: 1px solid var(--border); padding: 0; }
+  th button { width: 100%; border: 0; border-radius: 0; background: none; padding: 9px 12px; text-align: inherit;
+    color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+  th button[aria-sort="descending"]::after { content: " ↓"; }
+  th button[aria-sort="ascending"]::after { content: " ↑"; }
+  th button[aria-sort]:not([aria-sort="none"]) { color: var(--text); }
+  th.static { padding: 9px 12px; color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+  td { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--row-hover); }
+  th.left, td.left { text-align: left; }
+  td.rank { color: var(--muted); width: 1%; }
+  .sname { font-weight: 600; }
+  .sname .orig { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .tops { display: inline-flex; gap: 4px; vertical-align: middle; }
+  .tops img { width: 20px; height: 20px; border-radius: 50%; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  .muted { color: var(--muted); }
+  .status { padding: 32px; text-align: center; color: var(--muted); }
+  .status.error { color: var(--down); }
+
+  @media (max-width: 640px) {
+    .bar-row, .bar-axis { grid-template-columns: 110px 1fr 64px; gap: 8px; }
+    .bar-name .grp { display: none; }
+    .opt-mid { display: none; }
+  }
+  @media (max-width: 900px) { .opt-wide { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Sparten</h1>
+      <div class="sub" id="updated">Lade Daten …</div>
+    </div>
+    <nav class="actions">
+      <a class="navlink" href="markets.html">Marktübersicht</a>
+      <a class="navlink" href="/">← Sentiment-Dashboard</a>
+    </nav>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="label"><span data-tip="sectorChart" tabindex="0">Rotation: Hauptsparten in 24 h</span></div>
+      <div class="note">Veränderung der Marktkap. · Klick zeigt die Coins der Sparte</div>
+    </div>
+    <div class="bars" id="bars"><div class="status">Lade …</div></div>
+    <div class="market-ref" id="market-ref"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="label">Alle Sparten</div>
+      <div class="note">Sparten überschneiden sich: ein Coin steht oft in mehreren</div>
+    </div>
+    <div class="tools">
+      <input type="search" id="filter" placeholder="Sparte filtern …" autocomplete="off" aria-label="Sparte filtern">
+      <div class="seg" role="group" aria-label="Auswahl">
+        <button data-scope="main" aria-pressed="true">Hauptsparten</button>
+        <button data-scope="all" aria-pressed="false">Alle</button>
+      </div>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="static">#</th>
+            <th class="left"><button data-sort="name">Sparte</button></th>
+            <th><button data-sort="market_cap">Marktkap.</button></th>
+            <th><button data-sort="change_24h">24h</button></th>
+            <th class="opt-mid"><button data-sort="volume_24h">Volumen 24h</button></th>
+            <th class="opt-wide"><button data-sort="turnover"><span data-tip="sectorTurnover">Umschlag</span></button></th>
+            <th class="static left opt-mid">Größte Coins</th>
+          </tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="7" class="status">Lade Daten …</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>Daten: CoinGecko (Kategorien) · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
+</main>
+
+<script src="tips.js"></script>
+<script>
+const REFRESH_MS = 5 * 60 * 1000;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const dash = '<span class="muted">–</span>';
+const usd6 = (v) => {
+  if (v == null || v === 0) return dash;
+  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
+  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 4, maximumSignificantDigits: 4 }) + unit;
+};
+const pct = (v, digits = 1) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(digits).replace(".", ",") + " %";
+const change = (v) => v == null ? dash : `<span class="${v > 0 ? "up" : v < 0 ? "down" : "muted"}">${pct(v)}</span>`;
+
+// Hauptsparten mit deutschem Namen (CoinGecko-IDs). Fehlt eine ID künftig, fällt sie still weg.
+const MAIN = [
+  ["layer-1", "Layer 1", "Infrastruktur"],
+  ["layer-2", "Layer 2", "Infrastruktur"],
+  ["zero-knowledge-zk", "Zero Knowledge", "Infrastruktur"],
+  ["cross-chain-communication", "Interoperabilität", "Infrastruktur"],
+  ["oracle", "Oracles", "Infrastruktur"],
+  ["storage", "Speicher", "Infrastruktur"],
+  ["stablecoins", "Stablecoins", "Finanzen"],
+  ["exchange-based-tokens", "Börsen-Token", "Finanzen"],
+  ["decentralized-finance-defi", "DeFi gesamt", "Finanzen"],
+  ["decentralized-exchange", "DEX", "Finanzen"],
+  ["lending-borrowing", "Kredite", "Finanzen"],
+  ["decentralized-perpetuals", "Perpetuals", "Finanzen"],
+  ["liquid-staking", "Liquid Staking", "Finanzen"],
+  ["restaking", "Restaking", "Finanzen"],
+  ["real-world-assets-rwa", "RWA", "Finanzen"],
+  ["payment-solutions", "Payments", "Finanzen"],
+  ["privacy-coins", "Privacy", "Finanzen"],
+  ["meme-token", "Memecoins", "Anwendungen"],
+  ["artificial-intelligence", "KI", "Anwendungen"],
+  ["ai-agents", "KI-Agenten", "Anwendungen"],
+  ["gaming", "Gaming", "Anwendungen"],
+  ["metaverse", "Metaverse", "Anwendungen"],
+  ["non-fungible-tokens-nft", "NFT", "Anwendungen"],
+  ["depin", "DePIN", "Anwendungen"],
+  ["socialfi", "SocialFi", "Anwendungen"],
+];
+const MAIN_INFO = new Map(MAIN.map(([id, name, group]) => [id, { name, group }]));
+const NOT_IN_CHART = new Set(["stablecoins"]);  // Marktkap. folgt der Menge, nicht dem Kurs
+const MARKET_REF = "layer-1";                    // Bezugsgröße für „der Gesamtmarkt“ (enthält BTC und ETH)
+
+let cats = [];
+let scope = "main";
+let sort = { key: "market_cap", dir: -1 };
+try {
+  const saved = JSON.parse(localStorage.getItem("sectorView") || "{}");
+  if (saved.scope === "all" || saved.scope === "main") scope = saved.scope;
+  if (saved.sort && saved.sort.key) sort = saved.sort;
+} catch (e) { /* ignorieren */ }
+
+const displayName = (c) => (MAIN_INFO.get(c.id) || {}).name || c.name;
+const categoryHref = (c) => `markets.html?category=${encodeURIComponent(c.id)}&name=${encodeURIComponent(displayName(c))}`;
+
+function rowTip(c) {
+  return `${displayName(c)}${MAIN_INFO.has(c.id) ? ` (CoinGecko: ${c.name})` : ""}\n`
+    + `24 h: ${c.change_24h != null ? pct(c.change_24h, 2) : "–"} · Marktkap. ${usd6(c.market_cap).replace(/<[^>]+>/g, "")}`
+    + (c.volume_24h ? `\nVolumen 24 h: ${usd6(c.volume_24h).replace(/<[^>]+>/g, "")} · Umschlag ${pct(c.turnover).replace("+", "")}` : "");
+}
+
+function renderBars() {
+  const list = cats.filter((c) => MAIN_INFO.has(c.id) && !NOT_IN_CHART.has(c.id) && c.change_24h != null)
+    .sort((a, b) => b.change_24h - a.change_24h);
+  if (!list.length) { $("bars").innerHTML = '<div class="status">Keine Daten.</div>'; return; }
+  // Skala symmetrisch auf die größte Bewegung, auf glatte Prozent gerundet
+  const maxAbs = Math.max(0.01, ...list.map((c) => Math.abs(c.change_24h)));
+  const lim = Math.ceil(maxAbs * 100) / 100;
+  $("bars").innerHTML = list.map((c) => {
+    const w = Math.abs(c.change_24h) / lim * 50;
+    const info = MAIN_INFO.get(c.id);
+    return `<a class="bar-row" href="${esc(categoryHref(c))}" data-tip="row" data-tip-now="${esc(rowTip(c))}">
+        <div class="bar-name">${esc(info.name)}<span class="grp">${esc(info.group)}</span></div>
+        <div class="bar-track" role="img" aria-label="${esc(info.name)}: ${pct(c.change_24h)}">
+          <div class="bar ${c.change_24h >= 0 ? "pos" : "neg"}" style="width:${w}%"></div></div>
+        <div class="bar-val">${change(c.change_24h)}</div>
+      </a>`;
+  }).join("") + `<div class="bar-axis"><span></span><div class="ticks"><span>${pct(-lim, 0)}</span><span>0</span><span>${pct(lim, 0)}</span></div><span></span></div>`;
+
+  // Einordnung: Sparten besser/schlechter als Layer 1 (≈ Gesamtmarkt, dominiert von BTC und ETH)
+  const ref = cats.find((c) => c.id === MARKET_REF);
+  if (ref && ref.change_24h != null) {
+    const better = list.filter((c) => c.id !== MARKET_REF && c.change_24h > ref.change_24h).length;
+    $("market-ref").innerHTML = `Bezug: Layer 1 (enthält BTC und ETH, ≈ Gesamtmarkt) ${change(ref.change_24h)} · `
+      + `<b>${better}</b> von ${list.length - 1} Sparten laufen besser, ${list.length - 1 - better} schlechter.`;
+  }
+}
+
+function renderTable() {
+  const q = $("filter").value.trim().toLowerCase();
+  let list = scope === "main" ? cats.filter((c) => MAIN_INFO.has(c.id)) : cats.slice();
+  if (q) list = list.filter((c) => displayName(c).toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+  const { key, dir } = sort;
+  list.sort((a, b) => {
+    if (key === "name") return dir * displayName(a).localeCompare(displayName(b), "de");
+    const va = a[key], vb = b[key];
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return dir * (va - vb);
+  });
+  document.querySelectorAll("th button[data-sort]").forEach((b) =>
+    b.setAttribute("aria-sort", b.dataset.sort === key ? (dir < 0 ? "descending" : "ascending") : "none"));
+  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scope === scope)));
+  $("count").textContent = `${list.length} von ${scope === "main" ? MAIN_INFO.size : cats.length}`;
+  if (!list.length) { $("rows").innerHTML = '<tr><td colspan="7" class="status">Keine Sparte gefunden.</td></tr>'; return; }
+  $("rows").innerHTML = list.map((c, i) => {
+    const main = MAIN_INFO.has(c.id);
+    return `<tr data-href="${esc(categoryHref(c))}" title="Coins der Sparte ${esc(displayName(c))} anzeigen">
+      <td class="rank">${i + 1}</td>
+      <td class="left"><span class="sname">${esc(displayName(c))}${main ? `<span class="orig">${esc(c.name)}</span>` : ""}</span></td>
+      <td>${usd6(c.market_cap)}</td>
+      <td>${change(c.change_24h)}</td>
+      <td class="opt-mid">${usd6(c.volume_24h)}</td>
+      <td class="opt-wide">${c.turnover != null ? pct(c.turnover).replace("+", "") : dash}</td>
+      <td class="left opt-mid"><span class="tops">${c.top_coins.map((t) => `<img src="${esc(t.image)}" alt="${esc(t.id)}" title="${esc(t.id)}" loading="lazy">`).join("")}</span></td>
+    </tr>`;
+  }).join("");
+}
+
+function saveView() {
+  try { localStorage.setItem("sectorView", JSON.stringify({ scope, sort })); } catch (e) { /* ignorieren */ }
+}
+
+async function load() {
+  try {
+    const res = await fetch("/api/categories");
+    const p = await res.json();
+    if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
+    cats = p.categories.map((c) => ({ ...c, turnover: c.volume_24h && c.market_cap ? c.volume_24h / c.market_cap : null }));
+    renderBars();
+    renderTable();
+    $("updated").textContent = `${cats.length} Sparten nach CoinGecko · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+  } catch (e) {
+    if (e.retryIn) {
+      // CoinGecko-Limit: nach der Pause automatisch erneut laden
+      if (!cats.length) $("bars").innerHTML = `<div class="status">CoinGecko-Limit erreicht (kostenlose API ohne Key). Neuer Versuch in ${e.retryIn} s …</div>`;
+      setTimeout(load, e.retryIn * 1000);
+      return;
+    }
+    $("bars").innerHTML = `<div class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</div>`;
+    if (!cats.length) $("rows").innerHTML = '<tr><td colspan="7" class="status error">Keine Daten.</td></tr>';
+  }
+}
+
+document.querySelector("thead").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-sort]");
+  if (!b) return;
+  const key = b.dataset.sort;
+  sort = sort.key === key ? { key, dir: -sort.dir } : { key, dir: key === "name" ? 1 : -1 };
+  saveView();
+  renderTable();
+});
+document.querySelector(".seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-scope]");
+  if (!b || b.dataset.scope === scope) return;
+  scope = b.dataset.scope;
+  saveView();
+  renderTable();
+});
+$("filter").addEventListener("input", () => {
+  if ($("filter").value.trim() && scope === "main" && !cats.some((c) => MAIN_INFO.has(c.id) && displayName(c).toLowerCase().includes($("filter").value.trim().toLowerCase()))) {
+    scope = "all";  // nichts in den Hauptsparten: automatisch in allen suchen
+  }
+  renderTable();
+});
+$("rows").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-href]");
+  if (tr) location.href = tr.dataset.href;
+});
+
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>

@@ -45,8 +45,14 @@ _klines_cache: Dict[str, Dict[str, Any]] = {}
 _klines_lock = threading.Lock()
 _derivs_cache: Dict[str, Dict[str, Any]] = {}
 _derivs_lock = threading.Lock()
+_liq_cache: Dict[str, Dict[str, Any]] = {}
+_liq_lock = threading.Lock()
 _history_cache: Dict[str, Dict[str, Any]] = {}
 _history_lock = threading.Lock()
+_categories_cache: Dict[str, Any] = {"time": 0.0, "payload": None}
+_categories_lock = threading.Lock()
+CATEGORY_PER_PAGE = 100   # Coins einer Sparte: eine Seite, die größten 100
+CATEGORY_RE = re.compile(r"^[a-z0-9-]{1,100}$")
 _search_cache: Dict[str, Dict[str, Any]] = {}
 _search_lock = threading.Lock()
 SEARCH_MAX_LEN = 40
@@ -72,7 +78,9 @@ def build_payload() -> Dict[str, Any]:
         symbol_futures = {s: pool.submit(sentiment.collect_symbol, s) for s in SYMBOLS}
         global_data = global_future.result()
         mcaps = mcap_future.result() or {}
-        symbol_data = {s: {**f.result(), "market_cap": mcaps.get(s)} for s, f in symbol_futures.items()}
+        symbol_data = {s: {**f.result(), "market_cap": (mcaps.get(s) or {}).get("market_cap"),
+                           "market_stats": (mcaps.get(s) or {}).get("market_stats")}
+                       for s, f in symbol_futures.items()}
 
     # Fehlgeschlagene Abfragen (z. B. Rate-Limit) durch den letzten erfolgreichen Wert ersetzen
     previous = _cache["payload"]
@@ -116,22 +124,41 @@ def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) ->
         return entry["coin"]
 
 
-def get_markets(page: int) -> Optional[Dict[str, Any]]:
-    """Eine Seite der Rangliste; bei Fehlern die zuletzt erfolgreich geladene Fassung."""
+def get_markets(page: int, category: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Eine Seite der Rangliste (oder die größten Coins einer Sparte);
+    bei Fehlern die zuletzt erfolgreich geladene Fassung."""
+    key = f"{category}:1" if category else str(page)
     with _markets_lock:
-        entry = _markets_cache.get(page)
+        entry = _markets_cache.get(key)
         if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            coins = sentiment.safe(sentiment.get_markets, page, MARKETS_PER_PAGE)
+            if category:
+                coins = sentiment.safe(sentiment.get_markets, 1, CATEGORY_PER_PAGE, category)
+            else:
+                coins = sentiment.safe(sentiment.get_markets, page, MARKETS_PER_PAGE)
             if coins is not None:
                 entry = {"time": time.time(), "payload": {
-                    "page": page,
-                    "per_page": MARKETS_PER_PAGE,
-                    "max_page": MARKETS_MAX_PAGE,
+                    "page": 1 if category else page,
+                    "per_page": CATEGORY_PER_PAGE if category else MARKETS_PER_PAGE,
+                    "max_page": 1 if category else MARKETS_MAX_PAGE,
+                    "category": category,
                     "updated": datetime.now().isoformat(timespec="seconds"),
                     "coins": coins,
                 }}
-                _markets_cache[page] = entry
+                _markets_cache[key] = entry
         return entry["payload"] if entry else None
+
+
+def get_categories() -> Optional[Dict[str, Any]]:
+    """Alle Sparten; eine CoinGecko-Abfrage, 5 Min. gecacht."""
+    with _categories_lock:
+        if _categories_cache["payload"] is None or time.time() - _categories_cache["time"] > CACHE_SECONDS:
+            cats = sentiment.safe(sentiment.get_categories)
+            if cats:
+                _categories_cache.update(time=time.time(), payload={
+                    "updated": datetime.now().isoformat(timespec="seconds"),
+                    "categories": cats,
+                })
+        return _categories_cache["payload"]
 
 
 def search_markets(query: str) -> Optional[Dict[str, Any]]:
@@ -189,6 +216,18 @@ def get_derivatives(symbol: str) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
+    """Kerzen und OI je Stunde (Binance Futures) für die Liquidations-Heatmap; 5 Min. gecacht."""
+    with _liq_lock:
+        entry = _liq_cache.get(symbol)
+        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
+            result = sentiment.safe(sentiment.get_liquidation_inputs, symbol)
+            if result and result["candles"] and result["open_interest"]:
+                entry = {"time": time.time(), "payload": {"symbol": symbol, **result}}
+                _liq_cache[symbol] = entry
+        return entry["payload"] if entry else None
+
+
 def get_score_history(symbol: str) -> Optional[Dict[str, Any]]:
     """Rückwirkend berechneter Score je Tag; None ohne Binance-Kerzen und -Futures."""
     with _history_lock:
@@ -199,6 +238,15 @@ def get_score_history(symbol: str) -> Optional[Dict[str, Any]]:
                 entry = {"time": time.time(), "payload": {"symbol": symbol, **result}}
                 _history_cache[symbol] = entry
         return entry["payload"] if entry else None
+
+
+def coingecko_error() -> Dict[str, Any]:
+    """Fehlerantwort für CoinGecko-Ausfälle, mit Wartezeit, wenn gerade eine Limit-Pause läuft."""
+    wait = sentiment.coingecko_retry_in()
+    if wait > 0:
+        return {"error": f"CoinGecko-Limit erreicht (kostenlose API), neuer Versuch in {round(wait)} s",
+                "retry_in": round(wait) + 1}
+    return {"error": "CoinGecko nicht erreichbar"}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -230,12 +278,23 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if url.path == "/api/markets":
             page = (query.get("page") or ["1"])[0]
+            category = (query.get("category") or [""])[0] or None
             if not page.isdigit() or not 1 <= int(page) <= MARKETS_MAX_PAGE:
                 self.send_json({"error": "ungültige Seite"}, 400)
                 return
-            payload = get_markets(int(page))
+            if category and not CATEGORY_RE.match(category):
+                self.send_json({"error": "ungültige Sparte"}, 400)
+                return
+            payload = get_markets(int(page), category)
             if payload is None:
-                self.send_json({"error": "CoinGecko nicht erreichbar"}, 502)
+                self.send_json(coingecko_error(), 502)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/categories":
+            payload = get_categories()
+            if payload is None:
+                self.send_json(coingecko_error(), 502)
                 return
             self.send_json(payload)
             return
@@ -246,7 +305,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             payload = search_markets(q)
             if payload is None:
-                self.send_json({"error": "CoinGecko nicht erreichbar"}, 502)
+                self.send_json(coingecko_error(), 502)
                 return
             self.send_json(payload)
             return
@@ -281,6 +340,17 @@ class Handler(SimpleHTTPRequestHandler):
             payload = get_score_history(symbol)
             if payload is None:
                 self.send_json({"error": f"Kein Score-Verlauf für {symbol} (keine Binance-Daten)"}, 404)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/liquidations":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            if not SYMBOL_RE.match(symbol):
+                self.send_json({"error": "ungültiges Symbol"}, 400)
+                return
+            payload = get_liquidation_inputs(symbol)
+            if payload is None:
+                self.send_json({"error": f"Keine Binance-Futures für {symbol}/USDT"}, 404)
                 return
             self.send_json(payload)
             return

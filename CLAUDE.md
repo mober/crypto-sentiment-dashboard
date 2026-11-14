@@ -13,14 +13,20 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 
 - `sentiment.py` – Datenabfragen, Score-Skalen und Bewertung (auch als CLI nutzbar)
 - `server.py` – HTTP-Server mit Cache (5 Min.) und den Endpoints `/api/sentiment`,
-  `/api/coin?symbol=…&id=…`, `/api/markets?page=…`, `/api/klines?symbol=…&interval=1d|4h|1h`
+  `/api/coin?symbol=…&id=…`, `/api/markets?page=…` (oder `?category=…`: größte 100 einer Sparte),
+  `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/liquidations?symbol=…`
+  (Futures-Kerzen und OI je Stunde, ~21 Tage, für die Liquidations-Heatmap; das Modell selbst
+  rechnet `buildLiqModel` in `coin.html`), `/api/klines?symbol=…&interval=1d|4h|1h`
   (Binance-Kerzen, Cache 60 s), `/api/derivatives?symbol=…` (Funding 90 T, Open Interest 30 T
   von Binance Futures, Cache 5 Min.), `/api/score-history?symbol=…` (Score je Tag, rückwirkend
   aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/search?q=…` (CoinGecko-Suche plus
   Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.); liefert `web/` statisch aus
-- `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000),
+- `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
+  `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
+  Namen und CoinGecko-IDs) und Tabelle aller Sparten,
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
-  mit Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),
+  mit Kennzahlen (Allzeithoch, Menge, FDV …; Felder `market_stats` aus der ohnehin laufenden
+  CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),
   Funding-/OI-Charts und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
   bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln), `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
   `web/tips.js` – gemeinsame Tooltip-Texte und -Logik
@@ -54,6 +60,12 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   einen Eintrag in `TIPS` und `SIGNAL_TIPS`.
 - Symbole sind nicht eindeutig: Für Einzelabfragen bei CoinGecko die Coin-ID verwenden,
   wenn sie bekannt ist (Trending und Marktübersicht liefern sie mit).
+- **CoinGecko-Abfragen laufen nacheinander** (`fetch_json`, Mindestabstand `COINGECKO_MIN_INTERVAL`).
+  Nach HTTP 429 pausieren alle CoinGecko-Abfragen; währenddessen bricht `fetch_json` sofort mit
+  `RateLimited` ab, der Server antwortet 502 mit `retry_in`, und die Seiten laden danach selbst neu.
+- Die Liquidations-Heatmap ist ein **Modell** (OI-Zuwachs × angenommene Hebel), keine echten
+  Aufträge; sie liegt als Canvas unter einem transparenten Lightweight-Chart und wird bei
+  Bereichsänderungen neu gezeichnet. Die Preisachse ist dort nicht von Hand skalierbar.
 - Es gibt kein Node.js; JS-Syntax lässt sich mit `osascript -l JavaScript` prüfen.
 
 ## Arbeitsweise

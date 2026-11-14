@@ -25,6 +25,7 @@ import bisect
 import json
 import statistics
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -36,6 +37,19 @@ from typing import Any, Dict, List, Optional, Tuple
 TIMEOUT = 15
 RATE_LIMIT_RETRIES = 2    # erneute Versuche bei HTTP 429 (v. a. CoinGecko ohne API-Key)
 USER_AGENT = "Mozilla/5.0 (sentiment-script)"
+# CoinGecko ohne API-Key: wenige Abfragen pro Minute, und Bursts lösen schnell HTTP 429 aus.
+# Daher alle CoinGecko-Abfragen nacheinander mit Mindestabstand, nach 429 eine längere Pause.
+COINGECKO_HOST = "api.coingecko.com"
+COINGECKO_MIN_INTERVAL = 4     # Sekunden zwischen zwei Abfragen (ohne Key etwa 5–15 pro Minute erlaubt)
+COINGECKO_COOLDOWN = 30        # Pause nach 429 ohne Retry-After (CoinGecko zählt pro Minute)
+COINGECKO_MAX_WAIT = 8         # steht eine längere Pause an (nach 429): sofort abbrechen, die Seite versucht es erneut
+
+
+class RateLimited(ValueError):
+    """CoinGecko pausiert gerade; retry_in = Sekunden bis zum nächsten Versuch."""
+    def __init__(self, retry_in: float):
+        super().__init__(f"CoinGecko-Limit erreicht, neuer Versuch in {round(retry_in)} s möglich")
+        self.retry_in = retry_in
 
 # Skalen für den Score: Ankerpunkte (Messwert, Punkte). Zwischen den Punkten
 # wird linear interpoliert, außerhalb auf -100 / +100 begrenzt.
@@ -64,16 +78,50 @@ FUNDING_BASE_HOURS = 8    # FUNDING_SCALE gilt pro 8 h; kürzere Takte werden da
 SCORE_HISTORY_DAYS = 365  # rückwirkend berechneter Score-Verlauf auf der Detailseite
 
 
+_cg_lock = threading.Lock()
+_cg_next = 0.0   # frühester Zeitpunkt für die nächste CoinGecko-Abfrage
+
+
+def _coingecko_wait() -> None:
+    """Reiht CoinGecko-Abfragen ein (unter Sperre, also der Reihe nach, je COINGECKO_MIN_INTERVAL).
+    Läuft gerade eine Pause nach HTTP 429, wird sofort abgebrochen statt minutenlang zu blockieren."""
+    global _cg_next
+    with _cg_lock:
+        wait = _cg_next - time.time()
+        if wait > COINGECKO_MAX_WAIT:
+            raise RateLimited(wait)
+        if wait > 0:
+            time.sleep(wait)
+        _cg_next = time.time() + COINGECKO_MIN_INTERVAL
+
+
+def coingecko_retry_in() -> float:
+    """Sekunden, bis CoinGecko wieder abgefragt werden kann (0 = sofort)."""
+    return max(0.0, _cg_next - time.time())
+
+
 def fetch_json(url: str) -> Any:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    coingecko = COINGECKO_HOST in url
     for attempt in range(RATE_LIMIT_RETRIES + 1):
+        if coingecko:
+            _coingecko_wait()
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+            if exc.code != 429:
                 raise
             retry_after = exc.headers.get("Retry-After", "")
+            if coingecko:
+                # Pause für alle folgenden CoinGecko-Abfragen setzen und nicht selbst warten
+                pause = min(int(retry_after), 60) if retry_after.isdigit() else COINGECKO_COOLDOWN
+                global _cg_next
+                with _cg_lock:
+                    _cg_next = max(_cg_next, time.time() + pause)
+                raise RateLimited(pause) from exc
+            if attempt == RATE_LIMIT_RETRIES:
+                raise
             time.sleep(min(int(retry_after), 10) if retry_after.isdigit() else 3 * (attempt + 1))
 
 
@@ -275,25 +323,49 @@ def get_dvol(symbol: str) -> Optional[Dict[str, Any]]:
     return {"value": current, "mean": mean, "z": (current - mean) / statistics.stdev(window)}
 
 
+def market_stats(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Kennzahlen für die Detailseite aus einem coins/markets-Eintrag (keine eigene Abfrage)."""
+    def frac(key: str) -> Optional[float]:
+        v = c.get(key)
+        return v / 100 if v is not None else None
+
+    return {
+        "ath": c.get("ath"), "ath_date": c.get("ath_date"), "ath_change": frac("ath_change_percentage"),
+        "atl": c.get("atl"), "atl_date": c.get("atl_date"), "atl_change": frac("atl_change_percentage"),
+        "high_24h": c.get("high_24h"), "low_24h": c.get("low_24h"),
+        "volume_24h": c.get("total_volume"),
+        "fdv": c.get("fully_diluted_valuation"),
+        "circulating_supply": c.get("circulating_supply"),
+        "total_supply": c.get("total_supply"),
+        "max_supply": c.get("max_supply"),
+        "change": {p: frac(f"price_change_percentage_{p}_in_currency") for p in ("24h", "7d", "30d", "1y")},
+    }
+
+
+STATS_CHANGES = "&price_change_percentage=24h,7d,30d,1y"
+
+
 def get_market_caps(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-    """Marktkapitalisierung mehrerer Coins in einer Abfrage (CoinGecko limitiert stark)."""
+    """Marktkapitalisierung und Kennzahlen mehrerer Coins in einer Abfrage (CoinGecko limitiert stark)."""
     # include_tokens=top: bei mehrdeutigen Symbolen den Coin mit der höchsten Marktkapitalisierung
     coins = fetch_json(
         "https://api.coingecko.com/api/v3/coins/markets"
-        f"?vs_currency=usd&symbols={','.join(symbols).lower()}&include_tokens=top"
+        f"?vs_currency=usd&symbols={','.join(symbols).lower()}&include_tokens=top" + STATS_CHANGES
     )
-    return {c["symbol"].upper(): {"usd": float(c["market_cap"]), "rank": c.get("market_cap_rank")}
-            for c in coins}
+    return {c["symbol"].upper(): {
+        "market_cap": {"usd": float(c["market_cap"]), "rank": c.get("market_cap_rank")},
+        "market_stats": market_stats(c),
+    } for c in coins}
 
 
 def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, Any]:
-    """Marktkapitalisierung und Kursmomentum eines Coins (CoinGecko).
+    """Marktkapitalisierung, Kennzahlen und Kursmomentum eines Coins (CoinGecko).
 
     Mit coin_id eindeutig, sonst per Symbol (bei Mehrdeutigkeit der größte Coin)."""
     query = f"ids={coin_id}" if coin_id else f"symbols={symbol.lower()}&include_tokens=top"
     c = fetch_json(
         "https://api.coingecko.com/api/v3/coins/markets"
-        f"?vs_currency=usd&{query}&sparkline=true&price_change_percentage=7d,30d"
+        f"?vs_currency=usd&{query}&sparkline=true" + STATS_CHANGES
     )[0]
     mcap, volume = c.get("market_cap"), c.get("total_volume")
     change_7d = c.get("price_change_percentage_7d_in_currency")
@@ -302,6 +374,7 @@ def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, 
     rsi_hourly = rsi(hourly)
     return {
         "market_cap": {"usd": float(mcap), "rank": c.get("market_cap_rank")} if mcap else None,
+        "market_stats": market_stats(c),
         "momentum": {
             "change_7d": change_7d / 100 if change_7d is not None else None,
             "change_30d": change_30d / 100 if change_30d is not None else None,
@@ -332,11 +405,12 @@ def _market_row(c: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def get_markets(page: int, per_page: int = 50) -> List[Dict[str, Any]]:
-    """Rangliste nach Marktkapitalisierung, seitenweise (CoinGecko)."""
+def get_markets(page: int, per_page: int = 50, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Rangliste nach Marktkapitalisierung, seitenweise (CoinGecko); optional nur eine Sparte."""
+    cat = f"&category={urllib.parse.quote(category)}" if category else ""
     coins = fetch_json(
         "https://api.coingecko.com/api/v3/coins/markets"
-        f"?vs_currency=usd&order=market_cap_desc&per_page={per_page}&page={page}" + MARKETS_FIELDS
+        f"?vs_currency=usd&order=market_cap_desc&per_page={per_page}&page={page}{cat}" + MARKETS_FIELDS
     )
     return [_market_row(c) for c in coins]
 
@@ -361,6 +435,29 @@ def search_markets(query: str) -> List[Dict[str, Any]]:
         "rank": c.get("market_cap_rank"), "id": c["id"], "symbol": c["symbol"].upper(), "name": c["name"],
         "image": c.get("thumb"), "price": None, "market_cap": None, "volume": None, "change": empty,
     } for c in found]
+
+
+def get_categories() -> List[Dict[str, Any]]:
+    """Alle Sparten (Kategorien) mit Marktkap., 24-h-Änderung und Volumen – eine Abfrage (CoinGecko).
+
+    Kategorien überschneiden sich (ein Coin steht oft in mehreren). Ohne Marktkap. ausgelassen."""
+    cats = fetch_json("https://api.coingecko.com/api/v3/coins/categories")
+    out = []
+    for c in cats:
+        mcap = c.get("market_cap")
+        if not mcap:
+            continue
+        change = c.get("market_cap_change_24h")
+        out.append({
+            "id": c["id"],
+            "name": c["name"],
+            "market_cap": float(mcap),
+            "change_24h": change / 100 if change is not None else None,
+            "volume_24h": c.get("volume_24h"),
+            "top_coins": [{"id": i, "image": img} for i, img in
+                          zip(c.get("top_3_coins_id") or [], c.get("top_3_coins") or [])],
+        })
+    return out
 
 
 def get_stablecoins() -> Dict[str, Any]:
@@ -556,6 +653,28 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
     print(f"{line}\n  Keine Anlageberatung. Schwellenwerte sind Erfahrungswerte.\n")
 
 
+LIQ_MODEL_HOURS = 500    # Binance liefert OI-Historie höchstens 500 Punkte (1 h ≈ 21 Tage)
+
+
+def get_liquidation_inputs(symbol: str) -> Dict[str, Any]:
+    """Futures-Kerzen und Open Interest je Stunde für das Liquidations-Modell der Detailseite.
+
+    Beides von Binance Futures (Perpetual), damit Kurs und OI zum selben Markt gehören."""
+    klines = futures_data(
+        f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}USDT&interval=1h&limit={LIQ_MODEL_HOURS}", symbol
+    )
+    oi = futures_data(
+        "https://fapi.binance.com/futures/data/openInterestHist"
+        f"?symbol={symbol}USDT&period=1h&limit={LIQ_MODEL_HOURS}", symbol
+    )
+    return {
+        "candles": [{"time": k[0] // 1000, "open": float(k[1]), "high": float(k[2]),
+                     "low": float(k[3]), "close": float(k[4])} for k in klines],
+        # Zeitstempel = Stand zu Beginn der Stunde → der Kerze zuordnen, die dort beginnt
+        "open_interest": [{"time": h["timestamp"] // 1000, "usd": float(h["sumOpenInterestValue"])} for h in oi],
+    }
+
+
 def _as_of(series: List[Tuple[int, Any]], t: float, max_age: float) -> Optional[Any]:
     """Letzter Wert mit Zeit <= t, sofern nicht älter als max_age Sekunden."""
     i = bisect.bisect_right(series, (t, float("inf"))) - 1
@@ -677,6 +796,7 @@ def collect_symbol(symbol: str, coin_id: Optional[str] = None,
         cg = safe(get_coingecko_coin, symbol, coin_id) or {}
         if with_market:
             data["market_cap"] = cg.get("market_cap")
+            data["market_stats"] = cg.get("market_stats")
         if no_futures or not closes:
             data["momentum"] = cg.get("momentum")
     return data

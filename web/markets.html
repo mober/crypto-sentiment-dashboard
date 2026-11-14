@@ -44,6 +44,12 @@
   .search .clear[hidden], .search kbd[hidden] { display: none; }
   .search-info { color: var(--muted); font-size: 13px; }
   .pager[hidden] { display: none; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cat-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 16px;
+    background: var(--cold-bg); color: var(--text); font-size: 13px; }
+  .cat-chip[hidden] { display: none; }
+  .cat-chip a { color: inherit; }
+  .cat-chip button { border: 0; background: none; padding: 0 6px; font-size: 16px; line-height: 1; color: var(--muted); }
 
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
@@ -60,7 +66,10 @@
       <h1>Marktübersicht</h1>
       <div class="sub" id="updated">Top 1000 nach Marktkapitalisierung</div>
     </div>
-    <a class="navlink" href="/">← Sentiment-Dashboard</a>
+    <nav class="actions">
+      <a class="navlink" href="sectors.html">Sparten</a>
+      <a class="navlink" href="/">← Sentiment-Dashboard</a>
+    </nav>
   </header>
 
   <div class="toolbar">
@@ -71,6 +80,8 @@
       <button class="clear" id="search-clear" type="button" aria-label="Suche löschen" hidden>×</button>
     </div>
     <div class="search-info" id="search-info"></div>
+    <span class="cat-chip" id="cat-chip" hidden><span>Sparte: <b id="cat-name"></b> · <a href="sectors.html">alle Sparten</a></span>
+      <button type="button" id="cat-clear" aria-label="Sparte verlassen" title="Zurück zur Gesamt-Rangliste">×</button></span>
   </div>
   <nav class="pager" id="pager-top"></nav>
   <section class="card table-wrap">
@@ -167,18 +178,55 @@ function renderRows(coins) {
     </tr>`).join("");
 }
 
+// CoinGecko-Limit: Hinweis mit Countdown und automatischer neuer Versuch (fn), solange der Aufruf noch aktuell ist
+let retryTimer = null;
+function showRateLimit(e, fn, token) {
+  clearInterval(retryTimer);
+  let left = e.retryIn;
+  const draw = () => {
+    $("rows").innerHTML = `<tr><td colspan="10" class="status">CoinGecko-Limit erreicht (kostenlose API ohne Key). `
+      + `Neuer Versuch in ${left} s …</td></tr>`;
+  };
+  draw();
+  retryTimer = setInterval(() => {
+    if (token !== loadToken) { clearInterval(retryTimer); return; }  // inzwischen etwas anderes gewählt
+    left -= 1;
+    if (left > 0) { draw(); return; }
+    clearInterval(retryTimer);
+    $("rows").innerHTML = '<tr><td colspan="10" class="status">Lade Daten …</td></tr>';
+    fn();
+  }, 1000);
+}
+
 // --- Rangliste, seitenweise ---------------------------------------------------
 
 let loadToken = 0;   // verwirft veraltete Antworten (Seite gewechselt oder Suche begonnen)
 
+// Sparte (aus sectors.html): die größten Coins einer CoinGecko-Kategorie, eine Seite ohne Blättern
+let category = null, categoryName = "";
+
+function setCategoryMode() {
+  const on = !!category && !query;
+  $("cat-chip").hidden = !on;
+  $("cat-name").textContent = categoryName || category || "";
+  if (on) { $("pager-top").hidden = true; $("pager-bottom").hidden = true; }
+}
+
 async function load() {
   const token = ++loadToken;
-  renderPager();
+  setCategoryMode();
+  if (!category) renderPager();
   try {
-    const res = await fetch("/api/markets?page=" + page);
+    const res = await fetch(category ? "/api/markets?category=" + encodeURIComponent(category) : "/api/markets?page=" + page);
     const p = await res.json();
-    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
-    if (token !== loadToken || p.page !== page) return;  // inzwischen andere Seite oder Suche
+    if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
+    if (token !== loadToken || (!category && p.page !== page)) return;  // inzwischen andere Seite oder Suche
+    if (category) {
+      renderRows(p.coins);
+      if (!p.coins.length) $("rows").innerHTML = '<tr><td colspan="10" class="status">Keine Coins in dieser Sparte.</td></tr>';
+      $("updated").textContent = `Sparte „${categoryName || category}“ · die ${p.coins.length} größten Coins nach Marktkapitalisierung · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+      return;
+    }
     maxPage = p.max_page;
     renderPager();
     renderRows(p.coins);
@@ -186,6 +234,7 @@ async function load() {
     $("updated").textContent = `Top ${p.max_page * p.per_page} nach Marktkapitalisierung · Platz ${from}–${from + p.coins.length - 1} · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
   } catch (e) {
     if (token !== loadToken) return;
+    if (e.retryIn) { showRateLimit(e, load, token); return; }
     $("rows").innerHTML = `<tr><td colspan="10" class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</td></tr>`;
   }
 }
@@ -211,8 +260,9 @@ let searchTimer = null;
 const normQuery = (q) => q.trim().replace(/\s+/g, " ");
 
 function setSearchMode(on) {
-  $("pager-top").hidden = on;
-  $("pager-bottom").hidden = on;
+  $("pager-top").hidden = on || !!category;
+  $("pager-bottom").hidden = on || !!category;
+  $("cat-chip").hidden = on || !category;
   $("search-clear").hidden = !$("search").value;
   $("search-kbd").hidden = !!$("search").value || document.activeElement === $("search");
   if (!on) $("search-info").textContent = "";
@@ -227,7 +277,7 @@ async function runSearch() {
   try {
     const res = await fetch("/api/search?q=" + encodeURIComponent(q));
     const p = await res.json();
-    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     if (token !== loadToken) return;
     if (!p.coins.length) {
       $("rows").innerHTML = `<tr><td colspan="10" class="status">Kein Coin gefunden für „${esc(q)}“.</td></tr>`;
@@ -240,6 +290,7 @@ async function runSearch() {
   } catch (e) {
     if (token !== loadToken) return;
     $("search-info").textContent = "";
+    if (e.retryIn) { showRateLimit(e, runSearch, token); return; }
     $("rows").innerHTML = `<tr><td colspan="10" class="status error">Suche fehlgeschlagen (${esc(e.message)}). CoinGecko ist ohne API-Key stark limitiert – kurz warten und erneut versuchen.</td></tr>`;
   }
 }
@@ -252,7 +303,10 @@ function applyQuery(q, { immediate = false } = {}) {
   const active = q.length >= SEARCH_MIN_LEN;
   const changed = (active ? q : "") !== query;
   query = active ? q : "";
-  const url = query ? `markets.html?q=${encodeURIComponent(query)}` : page === 1 ? "markets.html" : `markets.html?page=${page}`;
+  if (query) category = null;  // die Suche geht immer über alle Coins
+  const url = query ? `markets.html?q=${encodeURIComponent(query)}`
+    : category ? `markets.html?category=${encodeURIComponent(category)}&name=${encodeURIComponent(categoryName)}`
+    : page === 1 ? "markets.html" : `markets.html?page=${page}`;
   history.replaceState(null, "", url);
   setSearchMode(active);
   if (!changed) return;
@@ -280,6 +334,17 @@ $("search-clear").addEventListener("click", () => {
   applyQuery("");
   $("search").focus();
 });
+$("cat-clear").addEventListener("click", () => {
+  category = null;
+  categoryName = "";
+  page = 1;
+  history.pushState(null, "", "markets.html");
+  document.title = "Marktübersicht";
+  $("rows").innerHTML = '<tr><td colspan="10" class="status">Lade Daten …</td></tr>';
+  setSearchMode(false);
+  load();
+});
+
 // "/" springt ins Suchfeld (außer beim Tippen in einem Eingabefeld)
 document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
@@ -298,8 +363,13 @@ document.addEventListener("click", (e) => {
 });
 
 function fromUrl() {
-  const q = normQuery(new URLSearchParams(location.search).get("q") || "");
-  page = pageFromUrl();
+  const params = new URLSearchParams(location.search);
+  const q = normQuery(params.get("q") || "");
+  const cat = params.get("category") || "";
+  category = /^[a-z0-9-]{1,100}$/.test(cat) ? cat : null;
+  categoryName = category ? (params.get("name") || category).slice(0, 80) : "";
+  document.title = category ? `${categoryName} – Marktübersicht` : "Marktübersicht";
+  page = category ? 1 : pageFromUrl();
   $("search").value = q;
   query = "";
   if (q.length >= SEARCH_MIN_LEN) applyQuery(q, { immediate: true });
