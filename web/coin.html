@@ -73,6 +73,7 @@
     .bd-axis > :first-child { display: none; }
   }
 
+  .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .placeholder { padding: 48px 24px; text-align: center; color: var(--muted); border-style: dashed; }
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
@@ -91,7 +92,10 @@
       <h1 id="title">Coin-Details</h1>
       <div class="sub" id="updated">Lade Daten …</div>
     </div>
-    <a class="navlink" href="/">← Sentiment-Dashboard</a>
+    <nav class="actions">
+      <a class="navlink" href="markets.html">Marktübersicht</a>
+      <a class="navlink" href="/">← Sentiment-Dashboard</a>
+    </nav>
   </header>
 
   <section id="hero"></section>
@@ -119,7 +123,7 @@
     <div class="status">Lade Score …</div>
   </section>
 
-  <footer>Chart: Binance Spot (USDT-Paar), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
+  <footer>Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
     Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Keine Anlageberatung.</footer>
 </main>
 
@@ -127,7 +131,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const usd = (v) => "$" + v.toLocaleString("de-DE", v < 1 ? { maximumSignificantDigits: 4 } : { maximumFractionDigits: v < 100 ? 2 : 0 });
+const usd = (v) => "$" + v.toLocaleString("de-DE", v < 1 ? { maximumSignificantDigits: 4 } : (v < 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 }));
 const usd6 = (v) => {
   const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
   return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
@@ -157,7 +161,7 @@ function renderHero(c) {
   $("hero").className = "card hero";
   $("hero").innerHTML = `
     <div>
-      <div class="price" id="hero-price">${ma ? usd(ma.price) : "–"}</div>
+      <div class="price" id="hero-price">${ma ? usd(ma.price) : c.data.price != null ? usd(c.data.price) : "–"}</div>
       <div class="mcap">${mc ? `Marktkap. ${usd6(mc.usd)}${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "Marktkap. n/a"}</div>
     </div>
     <div class="score-box">
@@ -376,18 +380,19 @@ async function fetchKlines(iv) {
   const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${iv}`);
   const p = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { status: res.status });
-  return p.candles;
+  return p;  // { source, candles }
 }
 
 async function loadChart() {
   const token = ++loadToken;
   const iv = interval;
   document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.interval === iv)));
-  $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]} · Binance</span>`;
+  $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]}</span>`;
   chartMessage("Lade Kursdaten …");
   try {
-    const data = await fetchKlines(iv);
+    const { candles: data, source } = await fetchKlines(iv);
     if (token !== loadToken) return;
+    $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]} · ${esc(source)}</span>`;
     candles = data;
     setPrecision(candles[candles.length - 1].close);
     candleSeries.setData(candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
@@ -406,7 +411,7 @@ async function loadChart() {
     maByTime = new Map();
     renderOhlc(null);
     chartMessage(e.status === 404
-      ? `Für ${symbol} gibt es kein USDT-Paar auf Binance – daher vorerst kein Chart.`
+      ? `Für ${symbol} gibt es kein USDT-Paar auf Binance (weder Spot noch Futures) – daher vorerst kein Chart.`
       : `Kursdaten konnten nicht geladen werden (${e.message}).`, e.status !== 404);
   }
 }
@@ -416,7 +421,7 @@ async function refreshChart() {
   if (!candles.length || document.hidden) return;
   const iv = interval, token = loadToken;
   try {
-    const data = await fetchKlines(iv);
+    const { candles: data } = await fetchKlines(iv);
     if (token !== loadToken) return;
     const t = themeOptions();
     const lastTime = candles[candles.length - 1].time;

@@ -53,6 +53,7 @@ VERDICT_HOT = 40          # Gesamtscore ab +40 = überhitzt, ab -40 = extreme An
 VERDICT_WARM = 15         # ab ±15 = leicht gierig / ängstlich
 
 RSI_PERIOD = 14
+MA_PERIOD = 200           # Tage für den gleitenden Durchschnitt
 DVOL_SYMBOLS = {"BTC", "ETH"}  # Deribit bietet DVOL nur für diese Coins
 DVOL_WINDOW = 90          # Tage für Mittelwert und Standardabweichung
 
@@ -118,33 +119,50 @@ def get_long_short(symbol: str) -> Dict[str, Any]:
     return {"ratio": float(data[-1]["longShortRatio"])}
 
 
-def get_klines(symbol: str, interval: str, limit: int = 1000) -> List[Dict[str, Any]]:
-    """Kerzen von Binance Spot (USDT-Paar) für das Chart auf der Detailseite."""
-    klines = fetch_json(
-        f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit={limit}"
-    )
-    return [
-        {
-            "time": k[0] // 1000,  # Öffnungszeit in Sekunden (UTC)
-            "open": float(k[1]),
-            "high": float(k[2]),
-            "low": float(k[3]),
-            "close": float(k[4]),
-            "volume": float(k[7]),  # Quote-Volumen, also in USDT
-        }
-        for k in klines
-    ]
+def get_binance_klines(symbol: str, interval: str, limit: int) -> Tuple[List[list], str]:
+    """Rohkerzen vom USDT-Paar: Spot, oder Perpetual-Futures, wenn Spot fehlt oder die
+    Spot-Historie kürzer ist (z. B. HYPE: Spot erst seit Kurzem, Futures deutlich länger)."""
+    spot = safe(fetch_json,
+                f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit={limit}")
+    if spot and len(spot) >= limit:
+        return spot, "Binance Spot"
+    futures = safe(fetch_json,
+                   f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}USDT&interval={interval}&limit={limit}")
+    if futures and len(futures) > len(spot or []):
+        return futures, "Binance Futures"
+    if spot:
+        return spot, "Binance Spot"
+    raise ValueError(f"keine Binance-Kerzen für {symbol}USDT")
+
+
+def get_klines(symbol: str, interval: str, limit: int = 1000) -> Dict[str, Any]:
+    """Kerzen für das Chart auf der Detailseite, mit Angabe der Quelle."""
+    klines, source = get_binance_klines(symbol, interval, limit)
+    return {
+        "source": source,
+        "candles": [
+            {
+                "time": k[0] // 1000,  # Öffnungszeit in Sekunden (UTC)
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[7]),  # Quote-Volumen, also in USDT
+            }
+            for k in klines
+        ],
+    }
 
 
 def get_daily_closes(symbol: str) -> List[float]:
-    klines = fetch_json(
-        f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval=1d&limit=200"
-    )
+    klines, _ = get_binance_klines(symbol, "1d", MA_PERIOD)
     return [float(k[4]) for k in klines]
 
 
-def price_vs_ma200(closes: List[float]) -> Dict[str, Any]:
-    ma200 = sum(closes) / len(closes)
+def price_vs_ma200(closes: List[float]) -> Optional[Dict[str, Any]]:
+    if len(closes) < MA_PERIOD:  # zu junge Historie: kein MA200 vortäuschen
+        return None
+    ma200 = sum(closes[-MA_PERIOD:]) / MA_PERIOD
     price = closes[-1]
     return {"price": price, "ma200": ma200, "distance": (price - ma200) / ma200}
 
@@ -455,6 +473,7 @@ def collect_symbol(symbol: str, coin_id: Optional[str] = None,
         "funding": safe(get_funding, symbol),
         "open_interest": safe(get_open_interest, symbol),
         "long_short": safe(get_long_short, symbol),
+        "price": closes[-1] if closes else None,
         "price_ma200": price_vs_ma200(closes) if closes else None,
         "rsi": rsi(closes) if closes else None,
         "dvol": safe(get_dvol, symbol),

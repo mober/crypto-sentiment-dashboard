@@ -14,7 +14,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `sentiment.py` – Datenabfragen, Score-Skalen und Bewertung (auch als CLI nutzbar)
 - `server.py` – HTTP-Server mit Cache (5 Min.) und den Endpoints `/api/sentiment`,
   `/api/coin?symbol=…&id=…`, `/api/markets?page=…`, `/api/klines?symbol=…&interval=1d|4h|1h`
-  (Binance-Spot-Kerzen, Cache 60 s); liefert `web/` statisch aus
+  (Binance-Kerzen, Cache 60 s); liefert `web/` statisch aus
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000),
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
   mit Candlestick-Chart und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
@@ -29,6 +29,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   linear in −100 … +100 um; der Score ist der **Durchschnitt** aller vorhandenen Signale,
   damit Coins mit unterschiedlich vielen Signalen vergleichbar bleiben.
 - DVOL gibt es nur für BTC und ETH.
+- Kerzen (Chart und MA200/RSI) kommen von Binance Spot; fehlt das Spot-Paar oder ist die
+  Spot-Historie kürzer, von Binance Futures (Perpetual), siehe `get_binance_klines`. Der MA200
+  wird nur bei mindestens 200 Tageskerzen berechnet, sonst `price_ma200 = None` (kein MA52 o. ä.).
 - Fehlen Binance-Futures oder -Tageskerzen, kommen Ersatz-Signale aus CoinGecko
   (Momentum 7T/30T, Umschlag, RSI auf Stundenbasis).
 

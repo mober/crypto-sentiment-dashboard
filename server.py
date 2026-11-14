@@ -128,18 +128,18 @@ def get_markets(page: int) -> Optional[Dict[str, Any]]:
 
 
 def get_klines(symbol: str, interval: str) -> Optional[Dict[str, Any]]:
-    """Kerzen für das Chart; None, wenn Binance kein USDT-Paar für den Coin hat."""
+    """Kerzen für das Chart (Spot, sonst Futures); None, wenn Binance kein USDT-Paar hat."""
     key = f"{symbol}:{interval}"
     with _klines_lock:
         entry = _klines_cache.get(key)
         if entry is None or time.time() - entry["time"] > KLINE_CACHE_SECONDS:
-            candles = sentiment.safe(sentiment.get_klines, symbol, interval)
-            if candles:
+            result = sentiment.safe(sentiment.get_klines, symbol, interval)
+            if result and result["candles"]:
                 entry = {"time": time.time(), "payload": {
                     "symbol": symbol,
                     "interval": interval,
-                    "source": "Binance",
-                    "candles": candles,
+                    "source": result["source"],
+                    "candles": result["candles"],
                 }}
                 _klines_cache[key] = entry
         return entry["payload"] if entry else None

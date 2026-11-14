@@ -71,7 +71,7 @@
   </section>
   <nav class="pager" id="pager-bottom"></nav>
 
-  <footer>Klick auf einen Coin zeigt ihn im Sentiment-Dashboard als zusätzliche Karte.<br>
+  <footer>Klick auf einen Coin öffnet seine Detailseite (Chart und Score).<br>
     Daten: CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
 </main>
 
@@ -122,12 +122,12 @@ function renderPager() {
   $("pager-bottom").innerHTML = html;
 }
 
-// Nur Symbole, die das Dashboard verarbeiten kann (Binance-/API-taugliche Zeichen)
+// Nur Symbole, die Detailseite und API verarbeiten können (Binance-/API-taugliche Zeichen)
 const linkable = (c) => /^[A-Z0-9]{1,15}$/.test(c.symbol);
 
 function renderRows(coins) {
   $("rows").innerHTML = coins.map((c) => `
-    <tr${linkable(c) ? ` data-symbol="${esc(c.symbol)}" data-id="${esc(c.id)}" title="${esc(c.name)} im Sentiment-Dashboard als Karte anzeigen"` : ""}>
+    <tr${linkable(c) ? ` data-symbol="${esc(c.symbol)}" data-id="${esc(c.id)}" title="Detailseite für ${esc(c.name)} öffnen"` : ""}>
       <td class="rank">${c.rank ?? "–"}</td>
       <td class="left"><div class="coin">
         ${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : ""}
@@ -174,7 +174,7 @@ document.addEventListener("click", (e) => {
   const btn = e.target.closest(".pager button[data-page]");
   if (btn && !btn.disabled) goTo(parseInt(btn.dataset.page, 10));
   const row = e.target.closest("tr[data-symbol]");
-  if (row) location.href = `/?coin=${encodeURIComponent(row.dataset.symbol)}&id=${encodeURIComponent(row.dataset.id)}`;
+  if (row) location.href = `coin.html?symbol=${encodeURIComponent(row.dataset.symbol)}&id=${encodeURIComponent(row.dataset.id)}`;
 });
 window.addEventListener("popstate", () => { page = pageFromUrl(); load(); });
 
