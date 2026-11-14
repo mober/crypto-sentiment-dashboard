@@ -1,0 +1,27 @@
+[Unit]
+Description=Crypto-Sentiment-Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Eigener Benutzer ohne Login; die App lauscht nur auf 127.0.0.1:8000, nach außen geht es über Caddy
+User=dashboard
+Group=dashboard
+WorkingDirectory=/opt/crypto-dashboard
+ExecStart=/usr/bin/python3 server.py --no-browser --port 8000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Härtung: die App schreibt nichts auf die Platte (Caches liegen im Speicher)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

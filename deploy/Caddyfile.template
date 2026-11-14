@@ -1,0 +1,19 @@
+# Wird von setup.sh nach /etc/caddy/Caddyfile geschrieben (Platzhalter in __GROSS__ werden ersetzt).
+# Caddy holt das HTTPS-Zertifikat automatisch (Let's Encrypt) und verlangt Benutzername/Passwort.
+__DOMAIN__ {
+	encode zstd gzip
+
+	basic_auth {
+		__USER__ __HASH__
+	}
+
+	reverse_proxy 127.0.0.1:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+}

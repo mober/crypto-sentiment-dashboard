@@ -9,6 +9,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `start.command` per Doppelklick im Finder macht dasselbe
 - `python3 sentiment.py --symbol ETH` → Bericht im Terminal (`--json` für Rohdaten)
 
+- Deployment auf einen eigenen Server (HTTPS + Passwort über Caddy, systemd): `deploy/README.md`,
+  Aktualisieren mit `deploy/deploy.sh root@<server-ip>`
 
 ## Aufbau
 
