@@ -64,3 +64,16 @@ button:disabled { opacity: .5; cursor: default; }
 .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 
 footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
+
+/* Tooltips (tips.js) */
+[data-tip] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--border);
+  text-underline-offset: 3px; }
+[data-tip]:hover, [data-tip]:focus { text-decoration-color: var(--muted); outline: none; }
+#tip {
+  position: fixed; z-index: 10; max-width: 300px; padding: 8px 11px; border-radius: 8px; white-space: pre-line;
+  background: var(--text); color: var(--bg); font-size: 13px; line-height: 1.45;
+  text-transform: none; letter-spacing: normal; font-weight: 400;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .18); pointer-events: none;
+  opacity: 0; transition: opacity .12s;
+}
+#tip.show { opacity: 1; }

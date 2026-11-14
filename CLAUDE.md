@@ -18,7 +18,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000),
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
   mit Candlestick-Chart und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
-  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln), `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel)
+  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln), `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
+  `web/tips.js` – gemeinsame Tooltip-Texte und -Logik
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 
@@ -40,7 +41,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   letzten erfolgreichen Wert. Neue Features nicht mit zusätzlichen CoinGecko-Abfragen pro
   Seitenaufruf bauen.
 - **Skalen stehen an zwei Stellen:** Ändert sich ein Ankerpunkt in `sentiment.py`, auch den
-  Tooltip-Text im Objekt `TIPS` in `web/index.html` anpassen. Neue Signale brauchen dort
+  Tooltip-Text im Objekt `TIPS` in `web/tips.js` anpassen (gemeinsam für Dashboard und Detailseite). Neue Signale brauchen dort
   einen Eintrag in `TIPS` und `SIGNAL_TIPS`.
 - Symbole sind nicht eindeutig: Für Einzelabfragen bei CoinGecko die Coin-ID verwenden,
   wenn sie bekannt ist (Trending und Marktübersicht liefern sie mit).
