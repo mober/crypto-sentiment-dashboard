@@ -30,6 +30,14 @@
   .lage-cols li.none { color: var(--muted); padding-left: 0; }
   .lage-cols li.none::before { content: none; }
   .lage-foot { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  /* Handlungsempfehlung im Lagebild */
+  .lage-action { margin-top: 10px; padding: 10px 12px; border-radius: 8px; border-left: 4px solid var(--neutral); background: var(--neutral-bg); }
+  .lage-action .act { font-weight: 700; }
+  .lage-action .why { font-size: 13px; margin-top: 2px; }
+  .lage-action.act-buy { border-left-color: var(--up); background: color-mix(in srgb, var(--up) 12%, transparent); }
+  .lage-action.act-buy .act { color: var(--up); }
+  .lage-action.act-sell { border-left-color: var(--down); background: color-mix(in srgb, var(--down) 12%, transparent); }
+  .lage-action.act-sell .act { color: var(--down); }
   .lage-foot b { color: var(--text); font-weight: 600; }
   /* News zum Coin */
   .news { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }
@@ -324,7 +332,7 @@
   </section>
 
   <footer>Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
-    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · News: RSS-Feeds deutschsprachiger Krypto-Medien · Keine Anlageberatung.</footer>
+    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · News: RSS-Feeds deutschsprachiger Krypto-Medien.</footer>
 </main>
 
 <script src="format.js"></script>
@@ -350,7 +358,7 @@ const validSymbol = /^[A-Z0-9]{1,15}$/.test(symbol);
 
 // --- Kopfbereich ---------------------------------------------------------
 
-// Lagebild unter Kurs und Score: Einordnung, ein Satz zur Lage, Für und Wider (kommt fertig vom Server,
+// Lagebild unter Kurs und Score: Einordnung, ein Satz zur Lage, Empfehlung, Für und Wider (kommt fertig vom Server,
 // siehe situation() in sentiment.py)
 const MOOD_TONE = { fear: "tone-cold", greed: "tone-hot", neutral: "tone-neutral" };
 
@@ -369,11 +377,15 @@ function lageBlock(c) {
       </div>
       <div class="lage-sum">${esc(s.summary)}</div>
       <div class="lage-text">${esc(s.text)}</div>
+      ${s.action ? `<div class="lage-action act-${esc(s.action_tone || "wait")}">
+        <div><span class="label"><span${tipAttr("action")}>Empfehlung</span></span> <span class="act">${esc(s.action)}</span></div>
+        <div class="why">${esc(s.action_text)}</div>
+      </div>` : ""}
       <div class="lage-cols">
         <div class="pro"><div class="label">Für steigende Kurse spricht</div><ul>${list(s.pro)}</ul></div>
         <div class="contra"><div class="label">Dagegen spricht</div><ul>${list(s.contra)}</ul></div>
       </div>
-      <div class="lage-foot">${drivers ? `Stärkste Signale im Score: ${drivers} · ` : ""}Einordnung nach Erfahrungswerten, keine Anlageberatung.</div>
+      <div class="lage-foot">${drivers ? `Stärkste Signale im Score: ${drivers} · ` : ""}Einordnung nach Erfahrungswerten.</div>
     </div>`;
 }
 

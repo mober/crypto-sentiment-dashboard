@@ -17,7 +17,7 @@ Aufruf:
   python3 sentiment.py --symbol ETH # anderer Coin (Binance-Futures-Symbol)
   python3 sentiment.py --json       # Rohdaten als JSON
 
-Die Schwellenwerte sind Erfahrungswerte, keine Naturgesetze. Keine Anlageberatung.
+Die Schwellenwerte sind Erfahrungswerte, keine Naturgesetze.
 """
 
 import argparse
@@ -854,7 +854,7 @@ def _pct_de(v: float, digits: int = 1, sign: bool = True) -> str:
 
 
 # Lagebild: Stimmung (Score) × Trend (Kurs zum MA200). Titel und Einordnung je Feld sind
-# Erfahrungswerte, keine Regeln und keine Anlageberatung.
+# Erfahrungswerte, keine Regeln.
 SITUATIONS = {
     ("fear", "up"): ("Rücksetzer im Aufwärtstrend",
                      "Ängstliche Stimmung bei intaktem Aufwärtstrend. Solche Phasen waren historisch oft günstig."),
@@ -874,9 +874,48 @@ SITUATIONS = {
 }
 
 
+# Handlungsempfehlung je Lagebild-Feld: (Aktion, Ton, Begründung). Ton steuert die Farbe auf der
+# Detailseite: buy = grün, sell = rot, hold/wait = neutral. Bei extremer Stimmung (ab ±VERDICT_HOT)
+# gelten die Varianten in ACTIONS_EXTREME. Erfahrungswerte, keine Regeln.
+ACTIONS = {
+    ("fear", "up"): ("Nachkaufen", "buy",
+                     "Rücksetzer im intakten Aufwärtstrend schrittweise zukaufen; "
+                     "Absicherung knapp unter dem MA200."),
+    ("fear", "down"): ("Abwarten", "wait",
+                       "Nicht ins fallende Messer greifen: Einstieg erst, wenn der Kurs den MA200 "
+                       "zurückerobert oder die Angst nachlässt."),
+    ("greed", "up"): ("Halten, nicht nachkaufen", "hold",
+                      "Der Trend trägt, aber Einstiege sind jetzt teuer. Bestehende Positionen halten "
+                      "und Absicherung nachziehen."),
+    ("greed", "down"): ("Reduzieren", "sell",
+                        "Die Erholung gegen den Abwärtstrend zum Abbau von Positionen nutzen."),
+    ("neutral", "up"): ("Halten", "hold",
+                        "Trend intakt, kein Extrem: Positionen laufen lassen, "
+                        "Nachkäufe am besten bei Rücksetzern."),
+    ("neutral", "down"): ("Nicht kaufen", "sell",
+                          "Abwärtstrend ohne Übertreibung: kein Einstieg, "
+                          "bestehende Positionen eher verkleinern."),
+    ("fear", None): ("Kleine Tranchen", "buy",
+                     "Angst spricht für einen Einstieg, ohne Trend aber nur in kleinen Schritten."),
+    ("greed", None): ("Nicht nachkaufen", "hold",
+                      "Gier spricht gegen neue Käufe; ohne Trend fehlt die Bestätigung für mehr."),
+    ("neutral", None): ("Abwarten", "wait",
+                        "Weder Stimmung noch Trend geben ein klares Signal."),
+}
+ACTIONS_EXTREME = {
+    ("fear", "down"): ("Vorsichtig zukaufen", "buy",
+                       "Extreme Angst markiert oft die Nähe von Tiefs: kleine, gestaffelte Käufe, "
+                       "der Großteil erst nach einer Trendwende."),
+    ("greed", "up"): ("Gewinne sichern", "sell",
+                      "Überhitzt: einen Teil der Gewinne mitnehmen, der Rest läuft mit enger Absicherung."),
+    ("greed", "down"): ("Verkaufen", "sell",
+                        "Überhitzte Erholung im Abwärtstrend: Positionen abbauen."),
+}
+
+
 def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> Optional[Dict[str, Any]]:
-    """Lagebild für den Kopf der Detailseite: Einordnung aus Stimmung und Trend, ein Satz zur Lage
-    und was für bzw. gegen steigende Kurse spricht.
+    """Lagebild für den Kopf der Detailseite: Einordnung aus Stimmung und Trend, ein Satz zur Lage,
+    eine Handlungsempfehlung (ACTIONS) und was für bzw. gegen steigende Kurse spricht.
 
     Stimmung: Score ab ±VERDICT_WARM. Trend: Kurs über/unter dem MA200, ohne MA200 die Kursänderung
     über 30 Tage. Ausgeprägte Signale (ab ±SIGNAL_STRONG) werden antizyklisch gelesen: Angst und
@@ -979,8 +1018,11 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> O
     words = [w for w in words if w]
     summary = ", ".join(x for x in (trend_text, mood_text) if x) + ("; " + ", ".join(words[:3]) if words else "") + "."
     title, text = SITUATIONS[(mood, trend)]
+    extreme = abs(total) >= VERDICT_HOT
+    action, tone, reason = (extreme and ACTIONS_EXTREME.get((mood, trend))) or ACTIONS[(mood, trend)]
     return {"mood": mood, "trend": trend, "trend_basis": basis, "title": title, "text": text,
-            "summary": summary, "pro": pro, "contra": contra}
+            "summary": summary, "pro": pro, "contra": contra,
+            "action": action, "action_tone": tone, "action_text": reason}
 
 
 def fmt_usd(v: float) -> str:
@@ -1040,12 +1082,13 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
     sit = situation(d, signals, total)
     if sit:
         print(f"\n  Lage: {sit['title']} – {sit['summary']}")
+        print(f"  Empfehlung: {sit['action']} – {sit['action_text']}")
         for label, items in (("Für steigende Kurse spricht", sit["pro"]), ("Dagegen spricht", sit["contra"])):
             if items:
                 print(f"  {label}:")
                 for item in items:
                     print(f"    · {item}")
-    print(f"{line}\n  Keine Anlageberatung. Schwellenwerte sind Erfahrungswerte.\n")
+    print(f"{line}\n  Schwellenwerte sind Erfahrungswerte.\n")
 
 
 LIQ_MODEL_HOURS = 500    # Binance liefert OI-Historie höchstens 500 Punkte (1 h ≈ 21 Tage)

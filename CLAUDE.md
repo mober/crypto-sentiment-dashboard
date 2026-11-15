@@ -65,7 +65,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - Lagebild im Kopf der Detailseite: `situation()` in `sentiment.py` ordnet Stimmung (Score ab
   ±`VERDICT_WARM`) × Trend (Kurs zum MA200, sonst 30-T-Änderung) in ein Feld der Tabelle `SITUATIONS`
   ein und sortiert ausgeprägte Signale (ab ±`SIGNAL_STRONG`) in „spricht dafür / dagegen“
-  (antizyklisch gelesen). Bewusst Einordnung statt Kauf-/Verkaufsempfehlung; Tooltip `situation`.
+  (antizyklisch gelesen). Dazu eine Handlungsempfehlung je Feld aus `ACTIONS` (bei Score ab
+  ±`VERDICT_HOT` Varianten aus `ACTIONS_EXTREME`), Felder `action`, `action_tone`
+  (buy/hold/sell/wait), `action_text`; Tooltips `situation` und `action`.
 
 ## Fallstricke
 
@@ -92,4 +94,3 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 
 - Oberfläche und Texte auf Deutsch, Commit-Nachrichten auf Englisch.
 - Änderungen erst im Browser prüfen lassen, **committen nur auf ausdrückliche Anweisung**.
-- Keine Anlageberatung: Schwellenwerte sind Erfahrungswerte und so zu kennzeichnen.
