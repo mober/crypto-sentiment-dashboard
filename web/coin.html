@@ -153,11 +153,24 @@
     border: 0; border-radius: 0; background: none; padding: 11px 16px; text-align: left; }
   .stats-toggle:hover .label, .stats-toggle:hover .chev { color: var(--text); }
   .stats-toggle .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
-  .stats-toggle .chev { color: var(--muted); font-size: 12px; transition: transform .15s; }
+  .stats-toggle .chev { color: var(--muted); font-size: 12px; margin-right: -4px; }
   .stats-toggle[aria-expanded="false"] .chev { transform: rotate(-90deg); }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px;
     background: var(--border); border-top: 1px solid var(--border); }
   .stats[hidden] { display: none; }
+
+  /* Übrige Karten ein- und ausklappen: Klick auf die Kopfzeile oder den Pfeil */
+  .collapse-btn { border: 0; border-radius: 0; background: none; padding: 0 8px 0 0; color: var(--muted); font-size: 12px;
+    line-height: 1; vertical-align: baseline; }
+  .collapse-btn .chev, .stats-toggle .chev { display: inline-block; transition: transform .15s; }
+  .collapsible.collapsed .collapse-btn .chev { transform: rotate(-90deg); }
+  .collapsible > .card-head { cursor: pointer; }
+  .collapsible > .card-head:hover > .label, .collapsible > .card-head.label:hover, .collapsible > .card-head:hover .pair,
+  .collapsible > .card-head:hover .collapse-btn { color: var(--text); }
+  .collapsible.collapsed > :not(.card-head) { display: none; }
+  .collapsible.collapsed > .card-head { margin-bottom: 0; }
+  .collapsible.collapsed .chart-tools, .collapsible.collapsed .mini-legend { display: none; }
+  .chart-card.collapsed { padding-bottom: 14px; }
   .stat { background: var(--card); padding: 14px 16px; min-width: 0; }
   .stat .val { font-size: 17px; font-weight: 700; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stat .det { color: var(--muted); font-size: 12px; margin-top: 3px; }
@@ -234,14 +247,14 @@
   <section id="hero"></section>
   <section class="card stats-card" id="stats" hidden aria-label="Kennzahlen">
     <button class="stats-toggle" id="stats-toggle" aria-expanded="true" aria-controls="stats-grid" title="Kennzahlen ein- oder ausklappen">
-      <span class="label">Kennzahlen</span><span class="hint" id="stats-hint"></span><span class="chev" aria-hidden="true">▼</span>
+      <span class="label"><span class="chev" aria-hidden="true">▼</span> Kennzahlen</span><span class="hint" id="stats-hint"></span>
     </button>
     <div class="stats" id="stats-grid"></div>
   </section>
 
-  <section class="card chart-card">
+  <section class="card chart-card" id="chart-card">
     <div class="chart-head">
-      <div class="pair" id="pair">Kursverlauf</div>
+      <div><span class="pair" id="pair">Kursverlauf</span></div>
       <div class="chart-tools">
         <button class="toggle" data-show="ma50" aria-pressed="true" title="Gleitender Durchschnitt über 50 Kerzen ein- oder ausblenden"><span class="swatch ma50"></span>MA50</button>
         <button class="toggle" data-show="ma200" aria-pressed="true" title="Gleitender Durchschnitt über 200 Kerzen ein- oder ausblenden"><span class="swatch"></span>MA200</button>
@@ -370,7 +383,7 @@ function lageBlock(c) {
   const drivers = [...c.signals].sort((a, b) => Math.abs(b.points) - Math.abs(a.points)).slice(0, 2)
     .map((x) => `${esc(x.name)} <b>${signed(x.points)}</b>`).join(", ");
   return `
-    <div class="lage">
+    <div class="lage" id="hero-lage">
       <div class="lage-head">
         <span class="label"><span${tipAttr("situation")}>Lage</span></span>
         <span class="verdict ${MOOD_TONE[s.mood] || "tone-neutral"}">${esc(s.title)}</span>
@@ -405,9 +418,10 @@ function renderNews() {
   const who = esc(newsName || symbol);
   el.hidden = !items.length;
   el.innerHTML = !items.length ? "" : `
-    <div class="label"><span${tipAttr("news")}>${newsData.general ? `Keine aktuellen Meldungen zu ${who} – neueste Krypto-News` : `News zu ${who}`}</span></div>
+    <div class="label news-head"><span${tipAttr("news")}>${newsData.general ? `Keine aktuellen Meldungen zu ${who} – neueste Krypto-News` : `News zu ${who}`}</span></div>
     <ul>${items.map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="${esc(i.teaser)}">${esc(i.title)}</a>`
       + `<span class="meta">${esc(i.source)} · ${ago(i.time)}</span></li>`).join("")}</ul>`;
+  setupCollapse(el);
 }
 
 async function loadNews(name) {
@@ -450,6 +464,7 @@ function renderHero(c) {
     </div>
     ${lageBlock(c)}
     <div class="news" id="hero-news" hidden></div>`;
+  if ($("hero-lage")) setupCollapse($("hero-lage"));
   renderNews();
   fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
   renderStats(c);
@@ -490,6 +505,7 @@ function renderBreakdown(c) {
     ${c.signals.map((s) => bdRow(s.name, s.reason, s.points, s.points / n, false, n)).join("")}
     ${bdRow("Überhitzungs-Score", c.verdict, c.score, null, true, n)}
     <div class="bd-axis"><span></span><div class="ticks"><span>−100 Angst</span><span>0</span><span>Gier +100</span></div><span></span></div>`;
+  setupCollapse($("breakdown"));  // Kopfzeile wurde neu geschrieben
 }
 
 // Kennzahlen aus den CoinGecko-Marktdaten (kommen mit dem Score, keine eigene Abfrage)
@@ -692,6 +708,45 @@ $("stats-toggle").addEventListener("click", () => {
   hideTip();
   applyStatsOpen();
 });
+
+// Übrige Karten ein- und ausklappen; eingeklappte Karten (IDs) werden im Browser gemerkt
+const COLLAPSED_KEY = "collapsedCards";
+let collapsedCards = new Set();
+try { collapsedCards = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]")); } catch (e) { /* ignorieren */ }
+// Kopfzeilen: Karten, dazu Lage und News im Kopf (dort bleiben Kurs und Score immer sichtbar)
+const CARD_HEAD = ":scope > .breakdown-head, :scope > .chart-head, :scope > .lage-head, :scope > .news-head";
+
+// Pfeil in die Kopfzeile setzen (falls noch nicht da) und gemerkten Zustand anwenden
+function setupCollapse(sec) {
+  const head = sec.querySelector(CARD_HEAD);
+  if (!head) { sec.classList.remove("collapsible", "collapsed"); return; }  // z. B. nur Statuszeile
+  sec.classList.add("collapsible");
+  head.classList.add("card-head");
+  let btn = head.querySelector(".collapse-btn");
+  if (!btn) {
+    // Pfeil vor den Titel; ist die Kopfzeile selbst das Label (News), direkt hinein
+    (head.classList.contains("label") ? head : head.firstElementChild).insertAdjacentHTML("afterbegin",
+      '<button class="collapse-btn" type="button" title="Karte ein- oder ausklappen"><span class="chev" aria-hidden="true">▼</span></button>');
+    btn = head.querySelector(".collapse-btn");
+  }
+  const open = !collapsedCards.has(sec.id);
+  sec.classList.toggle("collapsed", !open);
+  btn.setAttribute("aria-expanded", String(open));
+}
+
+// Klick auf Pfeil oder freie Fläche der Kopfzeile; Schalter, Links und Tooltips behalten ihre Funktion
+document.addEventListener("click", (e) => {
+  const head = e.target.closest(".collapsible > .card-head");
+  if (!head) return;
+  if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, [data-tip]")) return;
+  const sec = head.parentElement;
+  if (collapsedCards.has(sec.id)) collapsedCards.delete(sec.id); else collapsedCards.add(sec.id);
+  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedCards])); } catch (e) { /* ignorieren */ }
+  hideTip();
+  setupCollapse(sec);
+});
+
+["chart-card", "fees", "derivs", "liq", "history"].forEach((id) => setupCollapse($(id)));
 
 async function loadDailyStats() {
   try {
