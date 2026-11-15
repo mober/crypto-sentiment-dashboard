@@ -472,6 +472,355 @@ def get_categories() -> List[Dict[str, Any]]:
     return out
 
 
+# --- Coin-Profil (Seite „Über den Coin“) ---------------------------------------
+# Eine CoinGecko-Abfrage je Coin (coins/{id}), vom Server einen Tag gecacht: Beschreibung,
+# Kategorien, Links, Angebot. Die Einschätzung daraus ist regelbasiert (coin_assessment).
+
+# Kategorien: Stichwort im CoinGecko-Namen (klein geschrieben) → deutscher Name und kurze Erklärung.
+# Reihenfolge zählt: der erste Treffer gilt (z. B. „liquid restaking“ vor „restaking“).
+CATEGORY_DE = [
+    ("stablecoin", "Stablecoin", "An einen festen Wert gekoppelt, meist den US-Dollar. Soll nicht schwanken; "
+     "das Risiko liegt in der Deckung und beim Herausgeber."),
+    ("meme", "Memecoin", "Kaum oder kein technischer Nutzen. Der Kurs lebt von Aufmerksamkeit, Community und "
+     "Trends – entsprechend stark schwankt er."),
+    ("layer 1", "Layer 1", "Eigene Blockchain mit eigenem Konsens. Der Coin bezahlt die Gebühren im Netz und "
+     "sichert es (Staking oder Mining)."),
+    ("layer 2", "Layer 2", "Baut auf einer anderen Blockchain auf (meist Ethereum), bündelt Transaktionen und "
+     "macht sie schneller und günstiger."),
+    ("layer 0", "Layer 0", "Infrastruktur, auf der eigene Blockchains aufgesetzt und verbunden werden."),
+    ("smart contract platform", "Smart-Contract-Plattform", "Auf der Chain laufen Programme (Smart Contracts), "
+     "etwa für DeFi, NFTs oder Spiele. Je mehr Anwendungen, desto mehr Nachfrage nach dem Coin für Gebühren."),
+    ("proof of work", "Proof of Work", "Das Netz wird durch Mining gesichert: Rechenleistung gegen neue Coins."),
+    ("proof of stake", "Proof of Stake", "Das Netz wird durch hinterlegte Coins (Staking) gesichert; "
+     "Staker erhalten dafür Belohnungen."),
+    ("liquid restaking", "Liquid Restaking", "Quittung für erneut eingesetzte (restakte) Coins; folgt dem "
+     "Kurs des zugrunde liegenden Coins, mit zusätzlichem Protokollrisiko."),
+    ("liquid staking", "Liquid Staking", "Handelbare Quittung für gestakte Coins; folgt dem Kurs des "
+     "zugrunde liegenden Coins plus Staking-Ertrag."),
+    ("restaking", "Restaking", "Bereits gestakte Coins sichern zusätzlich weitere Dienste ab – mehr Ertrag, "
+     "mehr Risiko."),
+    ("wrapped", "Wrapped Token", "Abbild eines anderen Coins auf einer fremden Blockchain; folgt dessen Kurs. "
+     "Risiko: die Verwahrung bzw. Brücke dahinter."),
+    ("bridged", "Bridged Token", "Über eine Brücke auf eine andere Chain gebrachtes Abbild; folgt dem Original. "
+     "Risiko: die Brücke."),
+    ("decentralized exchange", "DEX", "Dezentrale Börse: Handel direkt aus der eigenen Wallet. Der Token "
+     "profitiert meist vom Handelsvolumen (Gebühren, Stimmrechte)."),
+    ("perpetual", "Perpetuals", "Handel mit gehebelten Terminkontrakten ohne Laufzeit. Einnahmen hängen am "
+     "Handelsvolumen, also an der Marktaktivität."),
+    ("derivative", "Derivate", "Handel mit Terminkontrakten, Optionen o. Ä. auf der Blockchain."),
+    ("lending", "Kredite", "Verleihen und Leihen von Coins gegen Sicherheiten; Einnahmen aus Zinsen."),
+    ("yield", "Rendite-Protokoll", "Bündelt Anlagestrategien, um Ertrag auf Coins zu erzielen."),
+    ("decentralized finance", "DeFi", "Finanzdienste ohne Bank: Handel, Kredite, Zinsen – als Smart Contracts."),
+    ("oracle", "Oracle", "Bringt Daten von außen (Kurse, Ereignisse) auf die Blockchain, damit Smart Contracts "
+     "darauf reagieren können."),
+    ("real world asset", "RWA", "Bringt reale Werte wie Anleihen, Immobilien oder Rohstoffe als Token auf die "
+     "Blockchain."),
+    ("rwa", "RWA", "Bringt reale Werte wie Anleihen, Immobilien oder Rohstoffe als Token auf die Blockchain."),
+    ("tokenized gold", "Gold-Token", "Token, die durch physisches Gold gedeckt sind; folgen dem Goldpreis."),
+    ("gold", "Gold-Token", "Token, die durch physisches Gold gedeckt sind; folgen dem Goldpreis."),
+    ("ai agent", "KI-Agenten", "Software-Agenten mit künstlicher Intelligenz, die selbstständig auf der "
+     "Blockchain handeln. Junges, sehr spekulatives Feld."),
+    ("artificial intelligence", "KI", "Projekte rund um künstliche Intelligenz, etwa Rechenleistung, Daten oder "
+     "Modelle. Stark von Trends getrieben."),
+    ("gaming", "Gaming", "Spiele oder Spiele-Plattformen; der Token dient als Spielwährung oder Belohnung."),
+    ("play to earn", "Play to Earn", "Spieler verdienen Token durch Spielen. Das Modell hängt am Zustrom neuer "
+     "Spieler."),
+    ("metaverse", "Metaverse", "Virtuelle Welten mit eigenen Grundstücken, Gegenständen und Währung."),
+    ("non-fungible", "NFT", "Einzigartige digitale Objekte (Kunst, Sammlerstücke, Rechte) auf der Blockchain."),
+    ("nft", "NFT", "Einzigartige digitale Objekte (Kunst, Sammlerstücke, Rechte) auf der Blockchain."),
+    ("depin", "DePIN", "Dezentrale physische Infrastruktur: Nutzer stellen Hardware bereit (Funk, Speicher, "
+     "Rechenleistung) und werden in Token bezahlt."),
+    ("storage", "Speicher", "Dezentraler Datenspeicher, bezahlt in Token."),
+    ("privacy coin", "Privacy-Coin", "Transaktionen sind (teilweise) anonym. Technisch interessant, regulatorisch "
+     "heikel (Delistings an Börsen möglich)."),
+    ("privacy", "Privatsphäre", "Technik für vertrauliche Transaktionen oder Daten."),
+    ("zero knowledge", "Zero Knowledge", "Kryptografische Beweise, mit denen sich etwas belegen lässt, ohne die "
+     "Daten offenzulegen – Grundlage für Skalierung und Privatsphäre."),
+    ("cross-chain", "Interoperabilität", "Verbindet verschiedene Blockchains, damit Werte und Daten zwischen "
+     "ihnen fließen können."),
+    ("interoperability", "Interoperabilität", "Verbindet verschiedene Blockchains, damit Werte und Daten "
+     "zwischen ihnen fließen können."),
+    ("exchange-based", "Börsen-Token", "Token einer Krypto-Börse; bringt oft Gebührenrabatte. Hängt stark am "
+     "Geschäft und an der Regulierung der Börse."),
+    ("centralized exchange", "Börsen-Token", "Token einer Krypto-Börse; bringt oft Gebührenrabatte. Hängt stark "
+     "am Geschäft und an der Regulierung der Börse."),
+    ("payment", "Zahlungen", "Für schnelle und günstige Zahlungen gedacht."),
+    ("socialfi", "SocialFi", "Soziale Netzwerke mit eigenem Token, z. B. für Belohnungen oder Mitgliedschaften."),
+    ("governance", "Governance", "Der Token gibt Stimmrechte über die Weiterentwicklung des Protokolls."),
+    ("launchpad", "Launchpad", "Plattform für Verkäufe neuer Token; Inhaber erhalten oft Vorkaufsrechte."),
+    ("infrastructure", "Infrastruktur", "Grundlegende Technik, auf der andere Projekte aufbauen."),
+    ("rollup", "Rollup", "Bündelt Transaktionen und schreibt sie gesammelt auf eine Basis-Blockchain."),
+]
+# Kategorien, die nichts über den Coin selbst sagen (Ökosysteme, Indizes, Portfolios von Investoren …)
+CATEGORY_SKIP = re.compile(r"ecosystem|index|portfolio|holdings|made in|hodler|alpha|binance|coinbase|"
+                           r"world liberty|launchpool|native$|tokens? list|^fdv|x402|-themed|inspired", re.I)
+CATEGORY_MAX = 12
+
+# Chain-IDs von CoinGecko → Anzeigename (für „Token auf …“); andere werden aus der ID abgeleitet
+PLATFORM_NAMES = {
+    "ethereum": "Ethereum", "solana": "Solana", "binance-smart-chain": "BNB Chain", "base": "Base",
+    "arbitrum-one": "Arbitrum", "optimistic-ethereum": "Optimism", "polygon-pos": "Polygon", "avalanche": "Avalanche",
+    "tron": "Tron", "the-open-network": "TON", "sui": "Sui", "aptos": "Aptos", "hyperliquid": "Hyperliquid",
+    "hyperevm": "HyperEVM", "near-protocol": "NEAR", "cardano": "Cardano", "stellar": "Stellar", "xrp": "XRP Ledger",
+    "cosmos": "Cosmos", "osmosis": "Osmosis", "zksync": "zkSync", "linea": "Linea", "scroll": "Scroll",
+    "mantle": "Mantle", "sonic": "Sonic", "berachain": "Berachain", "blast": "Blast", "fantom": "Fantom",
+}
+
+PROFILE_DESC_MAX = 8000   # Zeichen der Beschreibung (manche Projekte schreiben Romane)
+
+
+def _plain_paragraphs(text: str) -> List[str]:
+    """CoinGecko-Beschreibung (HTML mit Links) als reine Absätze."""
+    text = re.sub(r"<br\s*/?>", "\n", text or "", flags=re.I)
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))[:PROFILE_DESC_MAX]
+    return [p.strip() for p in re.split(r"\n\s*\n|\r\n\r\n", text) if p.strip()]
+
+
+def _categories_de(names: List[str]) -> List[Dict[str, Any]]:
+    """Aussagekräftige Kategorien, deutsch benannt, ohne Doppelungen (gleicher deutscher Name)."""
+    out, seen = [], set()
+    for name in names or []:
+        if not name or CATEGORY_SKIP.search(name):
+            continue
+        low = name.lower()
+        de = next(((n, t) for key, n, t in CATEGORY_DE if key in low), None)
+        label = de[0] if de else name
+        if label in seen:
+            continue
+        seen.add(label)
+        out.append({"name": name, "de": label, "text": de[1] if de else None})
+    return out[:CATEGORY_MAX]
+
+
+def _platform_name(pid: str) -> str:
+    return PLATFORM_NAMES.get(pid) or pid.replace("-", " ").title()
+
+
+def coin_type(cats: List[Dict[str, Any]], platform: Optional[str]) -> Dict[str, str]:
+    """Grobe Art des Coins: bestimmt, wovon der Kurs im Kern abhängt."""
+    labels = {c["de"] for c in cats}
+    on = f" auf {_platform_name(platform)}" if platform else ""
+    own = on or " mit eigener Blockchain"
+    if "Stablecoin" in labels:
+        return {"key": "stable", "label": "Stablecoin" + on,
+                "text": "Soll den Wert seiner Kopplung (meist 1 US-Dollar) halten. Kein Anlageobjekt für Kursgewinne; "
+                        "entscheidend sind Deckung, Transparenz und Herausgeber."}
+    if labels & {"Wrapped Token", "Bridged Token", "Liquid Staking", "Liquid Restaking", "Gold-Token"}:
+        return {"key": "derivative", "label": "Abgeleiteter Token" + on,
+                "text": "Bildet einen anderen Wert ab (einen Coin, gestakte Coins oder Gold) und folgt dessen Kurs. "
+                        "Zusätzliches Risiko: Verwahrung, Brücke oder Protokoll dahinter."}
+    if "Memecoin" in labels:
+        return {"key": "meme", "label": "Memecoin" + own,
+                "text": "Kein nennenswerter Nutzen hinter dem Token; der Kurs hängt fast nur an Stimmung, "
+                        "Community und Aufmerksamkeit."}
+    if "Börsen-Token" in labels:
+        return {"key": "exchange", "label": "Börsen-Token" + own,
+                "text": "Der Wert hängt am Geschäft der Börse (Handelsvolumen, Gebührenrabatte, Rückkäufe) und an "
+                        "deren Regulierung."}
+    if not platform:
+        return {"key": "native", "label": "Nativer Coin einer eigenen Blockchain",
+                "text": "Der Coin ist die Grundwährung seiner Blockchain: Mit ihm werden Gebühren bezahlt und das Netz "
+                        "gesichert. Sein Wert hängt an der Nutzung dieses Netzes."}
+    return {"key": "token", "label": "Token" + on,
+            "text": f"Läuft als Token{on} und nutzt deren Sicherheit. Sein Wert hängt am Erfolg der Anwendung "
+                    "dahinter und daran, welchen Nutzen der Token darin hat (Gebühren, Stimmrechte, Anteil an "
+                    "Einnahmen)."}
+
+
+def _frac(v: Optional[float]) -> Optional[float]:
+    return v / 100 if v is not None else None
+
+
+def coin_assessment(kind: str, f: Dict[str, Any]) -> Dict[str, Any]:
+    """Regelbasierte Einschätzung aus Größe, Art, Angebot, Handel und Kursgeschichte.
+
+    Ergebnis: Risikostufe (für Krypto-Verhältnisse) mit Punkten je Faktor, Stärken, Risiken.
+    Erfahrungswerte, keine Bewertung des Projekts selbst."""
+    pro, contra, notes = [], [], []
+    risk = 0
+    rank = f.get("rank")
+    if rank is None:
+        risk += 4
+        contra.append("Ohne Rang bei CoinGecko: sehr klein oder kaum gehandelt.")
+    elif rank <= 10:
+        pro.append(f"Einer der zehn größten Coins (Rang {rank}): etabliert, viel Liquidität, breite Börsenlistung.")
+    elif rank <= 50:
+        risk += 1
+        pro.append(f"Große Marktkapitalisierung (Rang {rank}): bekannt und gut handelbar.")
+    elif rank <= 200:
+        risk += 2
+        notes.append(f"Mittlere Größe (Rang {rank}): mehr Potenzial, aber auch deutlich größere Schwankungen als "
+                     "bei den Großen.")
+    elif rank <= 500:
+        risk += 3
+        contra.append(f"Kleiner Coin (Rang {rank}): stark schwankend, kann leicht bewegt werden.")
+    else:
+        risk += 4
+        contra.append(f"Sehr kleiner Coin (Rang {rank}): hohes Risiko, Kurse lassen sich leicht bewegen.")
+
+    if kind == "meme":
+        risk += 2
+        contra.append("Memecoin: kein fundamentaler Wert dahinter; Einbrüche von 80–90 % sind üblich, wenn die "
+                      "Aufmerksamkeit nachlässt.")
+
+    mc_fdv = f.get("mc_fdv")   # Anteil der Marktkap. am voll verwässerten Wert = Anteil im Umlauf
+    if mc_fdv is not None and kind not in ("stable", "derivative"):
+        if mc_fdv < 0.5:
+            risk += 2
+            contra.append(f"Erst {round(mc_fdv * 100)} % der Coins im Umlauf: Freigaben (Unlocks) für Team und "
+                          "Investoren können den Kurs über Jahre drücken.")
+        elif mc_fdv < 0.8:
+            risk += 1
+            contra.append(f"{round(mc_fdv * 100)} % der Coins im Umlauf: weitere Freigaben verwässern noch.")
+        elif mc_fdv >= 0.95:
+            pro.append("Fast alle Coins sind bereits im Umlauf: kaum Verwässerung durch neue Freigaben.")
+    if kind not in ("stable", "derivative"):
+        if f.get("max_supply"):
+            pro.append("Feste Obergrenze der Menge: Es können nicht beliebig viele Coins entstehen.")
+        elif f.get("max_supply_infinite") or f.get("total_supply"):
+            notes.append("Keine feste Obergrenze: Neue Coins können laufend hinzukommen (Inflation). Entscheidend "
+                         "ist, ob Gebühren-Verbrennung oder Nachfrage das ausgleichen.")
+
+    turnover = f.get("turnover")
+    if turnover is not None and kind != "stable":
+        if turnover < 0.01:
+            risk += 1
+            contra.append("Wenig Handel (unter 1 % der Marktkap. am Tag): größere Käufe oder Verkäufe bewegen den "
+                          "Kurs spürbar.")
+        elif turnover > 0.5:
+            risk += 1
+            contra.append(f"Sehr reger Handel ({round(turnover * 100)} % der Marktkap. am Tag): spricht für "
+                          "kurzfristige Spekulation.")
+        elif turnover >= 0.03:
+            pro.append("Gesunder Handel: genug Umsatz, um ohne große Kurssprünge zu kaufen oder zu verkaufen.")
+
+    ath_change = f.get("ath_change")
+    if ath_change is not None and kind not in ("stable", "derivative"):
+        if ath_change <= -0.9:
+            risk += 1
+            contra.append(f"{round(-ath_change * 100)} % unter dem Allzeithoch: Viele frühere Käufer liegen im Minus; "
+                          "eine Rückkehr zum Hoch ist bei so tiefen Abstürzen selten.")
+        elif ath_change <= -0.7:
+            notes.append(f"{round(-ath_change * 100)} % unter dem Allzeithoch: Der Kurs hat einen großen Teil "
+                         "seines früheren Werts verloren.")
+        elif ath_change >= -0.1:
+            notes.append("Nahe am Allzeithoch: starke Phase, aber Käufe hier sind historisch teuer.")
+
+    change_1y = f.get("change_1y")
+    if change_1y is not None and kind not in ("stable", "derivative") and change_1y <= -0.7:
+        risk += 1
+        contra.append(f"Im letzten Jahr {pct_word(change_1y)}: anhaltender Abwärtstrend.")
+
+    age_days = f.get("age_days")
+    if age_days is not None:
+        if age_days < 365:
+            risk += 1
+            contra.append("Jünger als ein Jahr: wenig Erfahrung, wie sich der Coin in schwachen Marktphasen hält.")
+        elif age_days > 5 * 365:
+            pro.append(f"Seit über {int(age_days // 365)} Jahren am Markt: hat schon mehrere Marktzyklen überstanden.")
+
+    if f.get("notice"):
+        risk += 1
+        contra.append("CoinGecko zeigt einen Warnhinweis zu diesem Coin (siehe oben).")
+
+    if kind == "stable":
+        level = {"key": "stable", "label": "Stablecoin",
+                 "text": "Kursrisiko gering, solange die Kopplung hält. Das eigentliche Risiko sind Deckung und "
+                         "Herausgeber: Bricht die Kopplung, kann der Wert schnell fallen."}
+    else:
+        if kind == "derivative":
+            notes.append("Folgt einem anderen Wert: Für die Einschätzung zählt vor allem der zugrunde liegende Coin.")
+        levels = [(1, "moderat", "Für Krypto-Verhältnisse vergleichsweise solide. Schwankungen von 50 % und mehr "
+                                 "sind trotzdem möglich."),
+                  (3, "erhöht", "Deutlich schwankungsanfälliger als die großen Coins; nur mit Geld, auf das man "
+                                "länger verzichten kann."),
+                  (5, "hoch", "Spekulativ: hohe Gewinne wie Verluste möglich; höchstens als kleine Beimischung."),
+                  (99, "sehr hoch", "Hochspekulativ: Totalverlust ist ein realistisches Szenario.")]
+        key, text = next((k, t) for limit, k, t in levels if risk <= limit)
+        level = {"key": key.replace(" ", "-"), "label": key, "text": text}
+    return {"risk": level, "risk_points": risk, "pro": pro, "contra": contra, "notes": notes}
+
+
+def pct_word(v: float) -> str:
+    """Änderung als Wort, z. B. „−72 %“ → „72 % verloren“."""
+    return f"{round(-v * 100)} % verloren" if v < 0 else f"{round(v * 100)} % gewonnen"
+
+
+def resolve_coin_id(symbol: str) -> Optional[str]:
+    """CoinGecko-ID zu einem Symbol (bei Mehrdeutigkeit der größte Coin); eine Abfrage."""
+    coins = fetch_json("https://api.coingecko.com/api/v3/coins/markets"
+                       f"?vs_currency=usd&symbols={symbol.lower()}&include_tokens=top")
+    return coins[0]["id"] if coins else None
+
+
+def get_coin_profile(coin_id: str) -> Dict[str, Any]:
+    """Beschreibung, Kategorien, Fakten, Links und Einschätzung eines Coins (eine CoinGecko-Abfrage)."""
+    d = fetch_json(f"https://api.coingecko.com/api/v3/coins/{urllib.parse.quote(coin_id)}"
+                   "?localization=true&tickers=false&market_data=true&community_data=false"
+                   "&developer_data=false&sparkline=false")
+    md = d.get("market_data") or {}
+    usd = lambda key: (md.get(key) or {}).get("usd")   # noqa: E731
+    desc = d.get("description") or {}
+    de, en = _plain_paragraphs(desc.get("de", "")), _plain_paragraphs(desc.get("en", ""))
+    # CoinGecko füllt „de“ oft nicht oder kopiert den englischen Text hinein
+    lang = "de" if de and de != en else "en"
+    platform = d.get("asset_platform_id")
+    cats = _categories_de(d.get("categories") or [])
+    kind = coin_type(cats, platform)
+    mcap, volume = usd("market_cap"), usd("total_volume")
+    genesis = d.get("genesis_date")
+    age_days = None
+    if genesis:
+        try:
+            age_days = (datetime.now() - datetime.strptime(genesis, "%Y-%m-%d")).days
+        except ValueError:
+            genesis = None
+    links = d.get("links") or {}
+    first = lambda xs: next((x for x in xs or [] if x), None)   # noqa: E731
+    twitter = links.get("twitter_screen_name")
+    notice = re.sub(r"<[^>]+>", "", html.unescape(d.get("public_notice") or "")).strip() or None
+    facts = {
+        "rank": d.get("market_cap_rank") or md.get("market_cap_rank"),
+        "market_cap": mcap, "fdv": usd("fully_diluted_valuation"), "volume_24h": volume,
+        "turnover": volume / mcap if mcap and volume else None,
+        "mc_fdv": md.get("market_cap_fdv_ratio"),
+        "circulating_supply": md.get("circulating_supply"), "total_supply": md.get("total_supply"),
+        "max_supply": md.get("max_supply"), "max_supply_infinite": md.get("max_supply_infinite"),
+        "price": usd("current_price"),
+        "ath": usd("ath"), "ath_date": (md.get("ath_date") or {}).get("usd"), "ath_change": _frac(usd("ath_change_percentage")),
+        "atl": usd("atl"), "atl_date": (md.get("atl_date") or {}).get("usd"), "atl_change": _frac(usd("atl_change_percentage")),
+        "change_1y": _frac(md.get("price_change_percentage_1y")),
+        "tvl": usd("total_value_locked"),
+        "genesis_date": genesis, "age_days": age_days,
+        "hashing_algorithm": d.get("hashing_algorithm"),
+        "block_time_minutes": d.get("block_time_in_minutes") or None,
+        "platform": _platform_name(platform) if platform else None,
+        "chains": len([p for p in (d.get("platforms") or {}) if p]),
+        "country": d.get("country_origin") or None,
+        "watchlists": d.get("watchlist_portfolio_users"),
+        "votes_up": _frac(d.get("sentiment_votes_up_percentage")),
+        "notice": notice,
+    }
+    return {
+        "id": d.get("id"), "symbol": (d.get("symbol") or "").upper(), "name": d.get("name"),
+        "image": (d.get("image") or {}).get("large"),
+        "description": {"lang": lang, "paragraphs": de if lang == "de" else en},
+        "categories": cats,
+        "type": kind,
+        "facts": facts,
+        "links": {
+            "homepage": first(links.get("homepage")),
+            "whitepaper": links.get("whitepaper") or None,
+            "github": first((links.get("repos_url") or {}).get("github")),
+            "explorer": first(links.get("blockchain_site")),
+            "twitter": f"https://x.com/{twitter}" if twitter else None,
+            "reddit": links.get("subreddit_url") if (links.get("subreddit_url") or "").rstrip("/").count("/") > 3 else None,
+            "coingecko": f"https://www.coingecko.com/en/coins/{d.get('id')}",
+        },
+        "assessment": coin_assessment(kind["key"], facts),
+    }
+
+
 # DefiLlama: TVL je Kategorie und Chain, aus der Protokoll-Liste summiert (eine Abfrage, ~10 MB, ohne Key).
 # Ohne Börsen (CEX), Chains selbst und Bridges (deren TVL liegt doppelt auch auf den Ziel-Chains).
 DEFI_EXCLUDED = {"CEX", "Chain", "Bridge", "Canonical Bridge", "Cross Chain Bridge"}

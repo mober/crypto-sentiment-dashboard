@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coin-Profil</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .card { padding: 20px 24px; margin-bottom: 20px; }
+  .card h2 { margin: 0 0 10px; font-size: 17px; }
+  .status { padding: 24px; color: var(--muted); }
+  .status.error { color: var(--down); }
+
+  .profile-head { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .profile-head img { width: 56px; height: 56px; border-radius: 50%; }
+  .profile-head .name { font-size: 22px; font-weight: 700; }
+  .profile-head .kind { color: var(--muted); }
+  .profile-head .risk-box { margin-left: auto; text-align: right; }
+  .risk-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 14px;
+    background: var(--neutral-bg); color: var(--neutral); }
+  .risk-moderat { background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
+  .risk-erhöht { background: var(--hot-bg); color: var(--hot); }
+  .risk-hoch { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
+  .risk-sehr-hoch { background: var(--down); color: var(--card); }
+  .risk-stable { background: var(--cold-bg); color: var(--cold); }
+  .summary { margin-top: 14px; }
+  .summary p { margin: 0 0 6px; }
+  .cats { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; }
+  .cats li { font-size: 14px; }
+  .cats b { font-weight: 600; }
+  .cats .orig { color: var(--muted); font-size: 12px; }
+  .cats .text { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--neutral-bg); color: var(--muted); }
+  .notice { margin-top: 14px; padding: 10px 12px; border-radius: 8px; border-left: 4px solid var(--hot); background: var(--hot-bg); font-size: 14px; }
+
+  .assess-text { margin: 4px 0 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; margin-top: 14px; }
+  .cols ul { list-style: none; margin: 4px 0 0; padding: 0; font-size: 14px; }
+  .cols li { position: relative; padding: 4px 0 4px 18px; }
+  .cols li::before { position: absolute; left: 0; font-weight: 700; }
+  .cols .pro li::before { content: "+"; color: var(--up); }
+  .cols .contra li::before { content: "−"; color: var(--down); }
+  .cols .notes li::before { content: "•"; color: var(--muted); }
+  .cols li.none { color: var(--muted); padding-left: 0; }
+  .cols li.none::before { content: none; }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 12px; }
+
+  .market { display: flex; gap: 12px 32px; flex-wrap: wrap; align-items: baseline; }
+  .market .big { font-size: 24px; font-weight: 700; }
+  .market .act { font-weight: 700; }
+  .act-buy { color: var(--up); }
+  .act-sell { color: var(--down); }
+  .tone-hot { color: var(--hot); }
+  .tone-cold { color: var(--cold); }
+  .tone-neutral { color: var(--neutral); }
+
+  .desc p { margin: 0 0 10px; }
+  .desc .lang-note { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .desc .lang-note a { color: inherit; }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px 24px; }
+  .fact .val { font-weight: 600; margin-top: 2px; }
+  .fact .det { color: var(--muted); font-size: 12px; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+  @media (max-width: 720px) {
+    .card { padding: 16px; }
+    .cats, .cols { grid-template-columns: 1fr; }
+    .profile-head .risk-box { margin-left: 0; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 id="title">Coin-Profil</h1>
+      <div class="sub" id="updated">Lade Daten …</div>
+    </div>
+    <nav class="actions">
+      <a class="navlink" id="back" href="coin.html">← Details</a>
+      <a class="navlink" href="markets.html">Marktübersicht</a>
+      <a class="navlink" href="/">Sentiment-Dashboard</a>
+    </nav>
+  </header>
+
+  <div id="content"><section class="card status">Lade Profil …</section></div>
+
+  <footer>Daten: CoinGecko (Beschreibung, Kategorien, Angebot, Links) · Einschätzung regelbasiert nach Erfahrungswerten,
+    keine Anlageberatung · Profil wird einen Tag zwischengespeichert.</footer>
+</main>
+
+<script src="format.js"></script>
+<script src="tips.js"></script>
+<script>
+// $, esc, dash, pct, change, usd, usd6, signed, tone kommen aus format.js; tipAttr aus tips.js
+const params = new URLSearchParams(location.search);
+const symbol = (params.get("symbol") || "").toUpperCase();
+const coinId = params.get("id") || "";
+const MAIN_SYMBOLS = ["BTC", "ETH", "SOL"];  // wie SYMBOLS in server.py
+const query = "symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : "");
+$("back").href = "coin.html?" + query;
+
+// Mengen kompakt, z. B. 766,8 Mio.
+const amount = (v) => {
+  if (v == null) return dash;
+  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
+  return (v / div).toLocaleString("de-DE", { maximumFractionDigits: div === 1 ? 0 : 2 }) + unit;
+};
+const date = (s) => s ? new Date(s).toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" }) : "";
+const list = (items, empty = "nichts Ausgeprägtes") =>
+  items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="none">${empty}</li>`;
+
+function fact(label, val, det = "", tip = "") {
+  return `<div class="fact"><div class="label"><span${tipAttr(tip)}>${label}</span></div>`
+    + `<div class="val">${val}</div>${det ? `<div class="det">${det}</div>` : ""}</div>`;
+}
+
+// --- Abschnitte ------------------------------------------------------------
+
+function profileCard(p) {
+  const a = p.assessment;
+  const explained = p.categories.filter((c) => c.text);
+  const other = p.categories.filter((c) => !c.text);
+  const catNames = p.categories.map((c) => c.de);
+  return `
+    <section class="card">
+      <div class="profile-head">
+        ${p.image ? `<img src="${esc(p.image)}" alt="">` : ""}
+        <div>
+          <div class="name">${esc(p.name)} <span class="muted">${esc(p.symbol)}</span></div>
+          <div class="kind">${esc(p.type.label)}${p.facts.rank ? ` · Rang ${p.facts.rank}` : ""}</div>
+        </div>
+        <div class="risk-box">
+          <div class="label"><span${tipAttr("risk")}>Risiko</span></div>
+          <span class="risk-badge risk-${esc(a.risk.key)}">${esc(a.risk.label)}</span>
+        </div>
+      </div>
+      <div class="summary">
+        <p><b>Kurz gesagt:</b> ${esc(p.name)} ist ein ${esc(p.type.label.replace(/^(Nativer|Abgeleiteter)/, (m) => m.toLowerCase()))}${catNames.length
+          ? ` aus den Bereichen ${esc(catNames.slice(0, 4).join(", "))}` : ""}. ${esc(p.type.text)}</p>
+      </div>
+      ${explained.length ? `<div class="label" style="margin-top:14px">Kategorien – was der Coin macht</div>
+        <ul class="cats">${explained.map((c) => `<li><b>${esc(c.de)}</b>${c.de !== c.name
+          ? ` <span class="orig">(${esc(c.name)})</span>` : ""}<div class="text">${esc(c.text)}</div></li>`).join("")}</ul>` : ""}
+      ${other.length ? `<div class="chips">${other.map((c) => `<span class="chip">${esc(c.name)}</span>`).join("")}</div>` : ""}
+      ${p.facts.notice ? `<div class="notice"><b>Hinweis von CoinGecko:</b> ${esc(p.facts.notice)}</div>` : ""}
+    </section>`;
+}
+
+function assessmentCard(p) {
+  const a = p.assessment;
+  return `
+    <section class="card">
+      <h2>Wie ist ${esc(p.name)} einzuschätzen?</h2>
+      <div><span class="risk-badge risk-${esc(a.risk.key)}">Risiko ${esc(a.risk.label)}</span></div>
+      <p class="assess-text">${esc(a.risk.text)}</p>
+      <div class="cols">
+        <div class="pro"><div class="label">Stärken</div><ul>${list(a.pro)}</ul></div>
+        <div class="contra"><div class="label">Risiken</div><ul>${list(a.contra)}</ul></div>
+      </div>
+      ${a.notes.length ? `<div class="cols"><div class="notes"><div class="label">Gut zu wissen</div><ul>${list(a.notes)}</ul></div></div>` : ""}
+      <div class="foot">Regelbasiert aus Größe, Art des Coins, Angebot und Verwässerung, Handel und Kursgeschichte.
+        Bewertet nicht die Technik oder das Team – dafür Whitepaper und Website lesen. Keine Anlageberatung.</div>
+    </section>`;
+}
+
+function marketCard(c) {
+  const s = c.situation;
+  return `
+    <section class="card">
+      <h2>Aktuelle Marktlage</h2>
+      <div class="market">
+        <div><div class="label"><span${tipAttr("score")}>Überhitzungs-Score</span></div>
+          <span class="big">${signed(c.score)}</span> <span class="${tone(c.score)}">${esc(c.verdict)}</span></div>
+        ${s ? `<div><div class="label"><span${tipAttr("situation")}>Lage</span></div>${esc(s.title)}</div>` : ""}
+        ${s && s.action ? `<div><div class="label"><span${tipAttr("action")}>Empfehlung</span></div>
+          <span class="act act-${esc(s.action_tone || "wait")}">${esc(s.action)}</span></div>` : ""}
+      </div>
+      ${s ? `<p class="assess-text">${esc(s.summary)}</p>` : ""}
+      <div class="foot">Kurzfristige Stimmung, unabhängig von der Einschätzung oben.
+        <a href="coin.html?${query}">Chart, Signale und Begründung auf der Detailseite →</a></div>
+    </section>`;
+}
+
+function descriptionCard(p) {
+  const d = p.description;
+  if (!d.paragraphs.length) return "";
+  const text = d.paragraphs.join("\n\n");
+  // Google Übersetzer nimmt den Text per URL; sehr lange Beschreibungen kürzen
+  const translate = "https://translate.google.com/?sl=en&tl=de&op=translate&text=" + encodeURIComponent(text.slice(0, 4500));
+  return `
+    <section class="card desc">
+      <h2>Was ist ${esc(p.name)}?</h2>
+      ${d.lang === "en" ? `<div class="lang-note">Die Projektbeschreibung gibt es bei CoinGecko nur auf Englisch.
+        <a href="${esc(translate)}" target="_blank" rel="noopener noreferrer">Im Google Übersetzer auf Deutsch lesen →</a></div>` : ""}
+      ${d.paragraphs.map((x) => `<p lang="${esc(d.lang)}">${esc(x)}</p>`).join("")}
+    </section>`;
+}
+
+function factsCard(p) {
+  const f = p.facts, l = p.links;
+  const inCirc = f.max_supply ? f.circulating_supply / f.max_supply : f.total_supply ? f.circulating_supply / f.total_supply : null;
+  const tiles = [
+    fact("Blockchain", f.platform ? `Token auf ${esc(f.platform)}` : "eigene Blockchain",
+      f.chains > 1 ? `auf ${f.chains} Chains verfügbar` : ""),
+    f.genesis_date ? fact("Start", date(f.genesis_date), `vor ${Math.floor(f.age_days / 365)} Jahren`) : "",
+    f.hashing_algorithm ? fact("Algorithmus", esc(f.hashing_algorithm)) : "",
+    f.block_time_minutes ? fact("Blockzeit", `${String(f.block_time_minutes).replace(".", ",")} Min.`) : "",
+    fact("Marktkapitalisierung", usd6(f.market_cap), f.rank ? `Rang ${f.rank}` : "", "mcap"),
+    f.fdv ? fact("Voll verwässert (FDV)", usd6(f.fdv), f.mc_fdv != null ? `Marktkap. = ${Math.round(f.mc_fdv * 100)} % davon` : "", "fdv") : "",
+    fact("Im Umlauf", amount(f.circulating_supply),
+      inCirc != null ? `${Math.round(inCirc * 100)} % der ${f.max_supply ? "Höchstmenge" : "Gesamtmenge"}` : "", "supply"),
+    fact("Höchstmenge", f.max_supply ? amount(f.max_supply) : "keine Obergrenze",
+      f.total_supply ? `bisher geschaffen: ${amount(f.total_supply)}` : "", "supply"),
+    fact("Volumen 24 h", usd6(f.volume_24h), f.turnover != null ? `Umschlag ${pct(f.turnover).replace("+", "")} der Marktkap.` : "", "volume"),
+    f.tvl ? fact("Gebundenes Kapital (TVL)", usd6(f.tvl)) : "",
+    f.ath ? fact("Allzeithoch", usd(f.ath), `${f.ath_change != null ? change(f.ath_change) + " · " : ""}${date(f.ath_date)}`, "ath") : "",
+    f.atl ? fact("Allzeittief", usd(f.atl), `${f.atl_change != null ? change(f.atl_change) + " · " : ""}${date(f.atl_date)}`, "atl") : "",
+    f.change_1y != null ? fact("1 Jahr", change(f.change_1y)) : "",
+    f.country ? fact("Herkunft", esc(f.country)) : "",
+    f.watchlists ? fact("Auf Watchlists", amount(f.watchlists), f.votes_up != null ? `${Math.round(f.votes_up * 100)} % positive Stimmen` : "", "watchlists") : "",
+  ].filter(Boolean).join("");
+  const link = (url, label) => url ? `<a class="navlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : "";
+  return `
+    <section class="card">
+      <h2>Was ${esc(p.name)} hat – Fakten</h2>
+      <div class="facts">${tiles}</div>
+      <div class="links">${[link(l.homepage, "Website"), link(l.whitepaper, "Whitepaper"), link(l.github, "GitHub"),
+        link(l.explorer, "Explorer"), link(l.twitter, "X / Twitter"), link(l.reddit, "Reddit"), link(l.coingecko, "CoinGecko")].join("")}</div>
+    </section>`;
+}
+
+// --- Laden -------------------------------------------------------------------
+
+let profile = null, market = null;
+
+function render() {
+  if (!profile) return;
+  $("content").innerHTML = profileCard(profile) + assessmentCard(profile)
+    + (market ? marketCard(market) : "") + descriptionCard(profile) + factsCard(profile);
+}
+
+function showRateLimit(retryIn) {
+  let left = retryIn;
+  const draw = () => {
+    $("content").innerHTML = `<section class="card status">CoinGecko-Limit erreicht (kostenlose API ohne Key). Neuer Versuch in ${left} s …</section>`;
+  };
+  draw();
+  const timer = setInterval(() => {
+    left -= 1;
+    if (left > 0) { draw(); return; }
+    clearInterval(timer);
+    loadProfile();
+  }, 1000);
+}
+
+async function loadProfile() {
+  try {
+    const res = await fetch("/api/coin-info?" + query);
+    const p = await res.json();
+    if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
+    profile = p;
+    document.title = `${p.name} – Profil`;
+    $("title").textContent = `Über ${p.name}`;
+    $("updated").textContent = "Profil-Stand: " + new Date(p.updated).toLocaleString("de-DE");
+    render();
+  } catch (e) {
+    if (e.retryIn) { showRateLimit(e.retryIn); return; }
+    $("content").innerHTML = `<section class="card status error">Profil für ${esc(symbol)} konnte nicht geladen werden (${esc(e.message)}). Läuft server.py?</section>`;
+    $("updated").textContent = "";
+  }
+}
+
+// Marktlage wie auf der Detailseite (der Server hat sie meist schon im Cache); ohne sie fehlt nur der Abschnitt
+async function loadMarket() {
+  try {
+    if (MAIN_SYMBOLS.includes(symbol)) {
+      const res = await fetch("/api/sentiment");
+      if (!res.ok) return;
+      market = (await res.json()).coins.find((c) => c.symbol === symbol) || null;
+    } else {
+      const res = await fetch("/api/coin?" + query);
+      if (!res.ok) return;
+      market = await res.json();
+    }
+    render();
+  } catch (e) { /* ohne Marktlage weiter */ }
+}
+
+if (!/^[A-Z0-9]{1,15}$/.test(symbol)) {
+  $("content").innerHTML = '<section class="card status error">Kein gültiges Symbol in der Adresse (z. B. about.html?symbol=BTC).</section>';
+  $("updated").textContent = "";
+} else {
+  loadProfile();
+  loadMarket();
+}
+</script>
+</body>
+</html>

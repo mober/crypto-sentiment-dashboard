@@ -70,6 +70,10 @@ _news_cache: Dict[str, Any] = {"time": 0.0, "items": None}
 _news_lock = threading.Lock()
 NEWS_CACHE_SECONDS = 900          # RSS-Feeds: alle 15 Min. reicht
 NAME_RE = re.compile(r"^[\w .&'+-]{1,40}$")   # Coin-Name für die News-Suche, z. B. "Bitcoin Cash"
+_profile_cache: Dict[str, Dict[str, Any]] = {}   # Schlüssel: CoinGecko-ID
+_profile_ids: Dict[str, str] = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana"}   # Symbol → ID (ohne ID-Parameter)
+_profile_lock = threading.Lock()
+PROFILE_CACHE_SECONDS = 24 * 3600   # Beschreibung, Kategorien und Angebot ändern sich selten
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -320,10 +324,33 @@ def get_score_history(symbol: str) -> Optional[Dict[str, Any]]:
         return entry["payload"] if entry else None
 
 
+def get_coin_profile(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Profil eines Coins (Seite „Über den Coin“): eine CoinGecko-Abfrage, einen Tag gecacht.
+    Ohne ID wird sie einmal über das Symbol ermittelt (eine Abfrage mehr). Bei Fehlern der letzte Stand."""
+    with _profile_lock:
+        if not coin_id:
+            coin_id = _profile_ids.get(symbol)
+            if not coin_id:
+                coin_id = sentiment.safe(sentiment.resolve_coin_id, symbol)
+                if not coin_id:
+                    return None
+                _profile_ids[symbol] = coin_id
+        entry = _profile_cache.get(coin_id)
+        if entry is None or time.time() - entry["time"] > PROFILE_CACHE_SECONDS:
+            profile = sentiment.safe(sentiment.get_coin_profile, coin_id)
+            if profile:
+                entry = {"time": time.time(), "payload": {
+                    "updated": datetime.now().isoformat(timespec="seconds"), **profile}}
+                _profile_cache[coin_id] = entry
+        return entry["payload"] if entry else None
+
+
 def coingecko_error() -> Dict[str, Any]:
     """Fehlerantwort für CoinGecko-Ausfälle, mit Wartezeit, wenn gerade eine Limit-Pause läuft."""
+    # Nur eine echte Limit-Pause (nach HTTP 429) melden, nicht den normalen Abstand zwischen zwei Abfragen;
+    # sonst erscheint z. B. eine unbekannte Coin-ID als Limit, und die Seite versucht es endlos erneut
     wait = sentiment.coingecko_retry_in()
-    if wait > 0:
+    if wait > sentiment.COINGECKO_MIN_INTERVAL:
         return {"error": f"CoinGecko-Limit erreicht (kostenlose API), neuer Versuch in {round(wait)} s",
                 "retry_in": round(wait) + 1}
     return {"error": "CoinGecko nicht erreichbar"}
@@ -399,6 +426,18 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "ungültige Coin-ID"}, 400)
                 return
             self.send_json(get_coin(symbol, coin_id, force=force))
+            return
+        if url.path == "/api/coin-info":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            coin_id = (query.get("id") or [""])[0] or None
+            if not SYMBOL_RE.match(symbol) or (coin_id and not COIN_ID_RE.match(coin_id)):
+                self.send_json({"error": "ungültiges Symbol oder ungültige Coin-ID"}, 400)
+                return
+            payload = get_coin_profile(symbol, coin_id)
+            if payload is None:
+                self.send_json(coingecko_error(), 502)
+                return
+            self.send_json(payload)
             return
         if url.path == "/api/klines":
             symbol = (query.get("symbol") or [""])[0].upper()

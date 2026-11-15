@@ -29,7 +29,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/news?symbol=…&name=…` (deutschsprachige Schlagzeilen aus den RSS-Feeds `NEWS_FEEDS`, nach Symbol/Name
   gefiltert in `match_news`, Feeds gemeinsam 15 Min. gecacht; Anzeige im Kopf der Detailseite),
   `/api/search?q=…` (CoinGecko-Suche plus
-  Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.); liefert `web/` statisch aus
+  Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.), `/api/coin-info?symbol=…&id=…`
+  (Profil für `about.html`: eine CoinGecko-Abfrage `coins/{id}`, Cache 1 Tag; Kategorien deutsch über
+  `CATEGORY_DE`, Art über `coin_type`, regelbasierte Risikostufe in `coin_assessment`); liefert `web/` statisch aus
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
   Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten
@@ -38,9 +40,12 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   mit Kennzahlen (Allzeithoch, Menge, FDV …; Felder `market_stats` aus der ohnehin laufenden
   CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),
   Funding-/OI-Charts und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
-  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln), `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
+  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln),
+  `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):
+  Art und Kategorien mit Erklärung, Risikostufe mit Stärken/Risiken, aktuelle Marktlage, Beschreibung
+  (CoinGecko meist nur englisch, Link zum Google Übersetzer), Fakten und Links, `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
   `web/tips.js` – gemeinsame Tooltip-Texte und -Logik, `web/format.js` – gemeinsame Hilfsfunktionen
-  (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle vier Seiten; Formate dort ändern,
+  (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle Seiten; Formate dort ändern,
   nicht in den Seiten
 - Live-Kurs im Chart der Detailseite: `coin.html` verbindet sich direkt per WebSocket mit Binance
   (`connectLive`, Spot oder Futures je nach Quelle der Kerzen) und zieht die laufende Kerze samt

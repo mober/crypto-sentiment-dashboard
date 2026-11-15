@@ -15,6 +15,8 @@
   .hero .chg span span { font-weight: 600; }
   .hero .mcap { color: var(--muted); font-size: 13px; margin-top: 2px; }
   .hero .mcap b { color: var(--text); font-weight: 600; }
+  .hero .about-link { display: inline-block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--cold); text-decoration: none; }
+  .hero .about-link:hover { text-decoration: underline; }
   /* Lagebild: Einordnung aus Stimmung und Trend */
   .lage { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }
   .lage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -448,9 +450,12 @@ function renderHero(c) {
     st.ath_change == null ? "" : st.ath_change < 0 ? `<b>${pct(-st.ath_change).replace("+", "")}</b> unter dem Allzeithoch` : "<b>auf dem Allzeithoch</b>",
     fng ? `Fear &amp; Greed <b>${fng.value}</b> (${fngZone(fng.value).name})` : "",
   ].filter(Boolean).join(" · ");
+  const coinName = c.data.name || symbol;
+  const aboutHref = "about.html?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : "");
   $("hero").className = "card hero";
   $("hero").innerHTML = `
     <div>
+      <a class="about-link" href="${esc(aboutHref)}" title="Beschreibung, Kategorie, Fakten und Einschätzung">Was ist ${esc(coinName)}? Profil &amp; Einschätzung →</a>
       <div class="price-line">
         <div class="price" id="hero-price">${ma ? usd(ma.price) : c.data.price != null ? usd(c.data.price) : "–"}</div>
         ${changes ? `<div class="chg">${changes}</div>` : ""}
