@@ -40,6 +40,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `web/tips.js` – gemeinsame Tooltip-Texte und -Logik, `web/format.js` – gemeinsame Hilfsfunktionen
   (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle vier Seiten; Formate dort ändern,
   nicht in den Seiten
+- Live-Kurs im Chart der Detailseite: `coin.html` verbindet sich direkt per WebSocket mit Binance
+  (`connectLive`, Spot oder Futures je nach Quelle der Kerzen) und zieht die laufende Kerze samt
+  MA/RSI und Kurs im Kopf nach; der Server ist nicht beteiligt. Rückfall ist `refreshChart` (60 s).
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 

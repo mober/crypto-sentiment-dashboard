@@ -23,6 +23,8 @@
   .chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
   .chart-head .pair { font-weight: 600; }
   .chart-head .pair .note { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  /* Live-Kurs läuft (Binance-WebSocket) */
+  .chart-card.is-live .pair::after { content: "● live"; color: var(--up); font-weight: 500; font-size: 12px; margin-left: 10px; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: var(--card); }
   .seg button + button { border-left: 1px solid var(--border); }
@@ -272,7 +274,7 @@
     <div class="status">Lade Score …</div>
   </section>
 
-  <footer>Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
+  <footer>Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
     Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Keine Anlageberatung.</footer>
 </main>
 
@@ -613,6 +615,7 @@ let rsiByTime = new Map();
 let precision = 2;
 let loadToken = 0;       // verwirft Antworten, wenn inzwischen ein anderes Intervall gewählt wurde
 let pointerOn = null;    // "main" | "rsi": welches Chart Maus/Finger gerade bedient (für den Gleichlauf)
+let hoverTime = null;    // Kerze unter dem Fadenkreuz (null = keine): die OHLC-Zeile zeigt sie statt der letzten
 
 const fmtPrice = (v) => v.toLocaleString("de-DE", { minimumFractionDigits: precision, maximumFractionDigits: precision });
 
@@ -735,8 +738,9 @@ function initChart() {
 
   chart.subscribeCrosshairMove((p) => {
     const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
+    hoverTime = bar ? bar.time : null;
     renderOhlc(bar || candles[candles.length - 1]);
-    renderRsiLegend(bar ? bar.time : null);
+    renderRsiLegend(hoverTime);
     if (pointerOn === "main" && show.rsi) {
       const v = bar ? rsiByTime.get(bar.time) : null;
       if (v != null) rsiChart.setCrosshairPosition(v, bar.time, rsiSeries); else rsiChart.clearCrosshairPosition();
@@ -745,8 +749,9 @@ function initChart() {
   rsiChart.subscribeCrosshairMove((p) => {
     if (pointerOn !== "rsi") return;
     const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
+    hoverTime = bar ? bar.time : null;
     renderOhlc(bar || candles[candles.length - 1]);
-    renderRsiLegend(bar ? bar.time : null);
+    renderRsiLegend(hoverTime);
     if (bar) chart.setCrosshairPosition(bar.close, bar.time, candleSeries); else chart.clearCrosshairPosition();
   });
 
@@ -857,6 +862,7 @@ function updateRangeButtons() {
 async function loadChart() {
   const token = ++loadToken;
   const iv = interval;
+  closeLive();
   document.querySelectorAll("#interval-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.interval === iv)));
   $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]}</span>`;
   chartMessage("Lade Kursdaten …");
@@ -876,6 +882,7 @@ async function loadChart() {
     renderRsiLegend(null);
     fillHeroPrice();
     chartMessage("");
+    connectLive(source);
   } catch (e) {
     if (token !== loadToken) return;
     candles = [];
@@ -893,35 +900,126 @@ async function loadChart() {
   }
 }
 
-// Nur die letzten Kerzen aktualisieren, damit Zoom und Scrollposition erhalten bleiben
+// Neue Stände der letzten Kerze(n) übernehmen (vom Server oder live von Binance). Nur die
+// betroffenen Punkte werden nachgezogen, damit Zoom und Scrollposition erhalten bleiben.
+function applyCandles(list) {
+  if (!candles.length) return;
+  const t = themeOptions();
+  const lastTime = candles[candles.length - 1].time;
+  for (const c of list) {
+    if (c.time < candles[candles.length - 1].time) continue;
+    candleSeries.update({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close });
+    volumeSeries.update({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown });
+    if (c.time === candles[candles.length - 1].time) candles[candles.length - 1] = c; else candles.push(c);
+  }
+  // Indikatoren neu berechnen und nur die betroffenen Punkte nachziehen
+  for (const p of MA_PERIODS) for (const pt of maData(p).filter((pt) => pt.time >= lastTime)) maSeries[p].update(pt);
+  for (const pt of rsiData().filter((pt) => pt.time >= lastTime)) rsiSeries.update(pt);
+  // Zeile über dem Chart: die Kerze unter dem Fadenkreuz stehen lassen, sonst die letzte
+  const last = candles[candles.length - 1];
+  renderOhlc((hoverTime != null && candles.find((c) => c.time === hoverTime)) || last);
+  renderRsiLegend(hoverTime);
+  fillHeroPrice(true);
+}
+
+// Rückfall ohne Live-Kurs: die letzten Kerzen alle 60 s vom Server holen
 async function refreshChart() {
   if (!candles.length || document.hidden) return;
+  if (Date.now() - liveLast < LIVE_STALE_MS) return;   // Live-Kurs läuft und ist aktueller als der Server-Cache
+  setLive(false);
   const iv = interval, token = loadToken;
   try {
     const { candles: data } = await fetchKlines(iv);
     if (token !== loadToken) return;
-    const t = themeOptions();
-    const lastTime = candles[candles.length - 1].time;
-    for (const c of data.filter((c) => c.time >= lastTime)) {
-      candleSeries.update({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close });
-      volumeSeries.update({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown });
-      const i = candles.findIndex((x) => x.time === c.time);
-      if (i >= 0) candles[i] = c; else candles.push(c);
-    }
-    // Indikatoren neu berechnen und nur die betroffenen Punkte nachziehen
-    for (const p of MA_PERIODS) for (const pt of maData(p).filter((pt) => pt.time >= lastTime)) maSeries[p].update(pt);
-    for (const pt of rsiData().filter((pt) => pt.time >= lastTime)) rsiSeries.update(pt);
-    renderOhlc(candles[candles.length - 1]);
-    renderRsiLegend(null);
-    fillHeroPrice();
+    applyCandles(data);
   } catch (e) { /* beim nächsten Intervall erneut versuchen */ }
 }
 
-// Coins ohne MA200-Daten: Preis im Kopf aus der letzten Kerze
-function fillHeroPrice() {
+// Preis im Kopf aus der letzten Kerze: immer, wenn sie neuer ist als der Score (force),
+// sonst nur für Coins ohne MA200-Daten (dort steht noch „–“)
+function fillHeroPrice(force = false) {
   const el = $("hero-price");
-  if (el && el.textContent === "–" && candles.length) el.textContent = usd(candles[candles.length - 1].close);
+  if (el && (force || el.textContent === "–") && candles.length) el.textContent = usd(candles[candles.length - 1].close);
 }
+
+// --- Live-Kurs -------------------------------------------------------------
+// Die laufende Kerze kommt direkt von Binance in den Browser (WebSocket, ohne API-Key, der Server
+// ist nicht beteiligt): Spot oder Futures, je nachdem, woher die Kerzen des Charts stammen.
+// Bricht die Verbindung ab, springt refreshChart wieder ein, und es wird neu verbunden.
+
+// Futures: Kursdaten laufen über /market/ws/ (das frühere /ws/ verbindet zwar, sendet aber nichts mehr)
+const LIVE_URLS = { "Binance Spot": "wss://stream.binance.com:9443/ws/", "Binance Futures": "wss://fstream.binance.com/market/ws/" };
+const LIVE_DRAW_MS = 500;      // höchstens so oft neu zeichnen (Futures senden mehrmals pro Sekunde)
+const LIVE_RETRY_MS = 5000;    // Pause vor dem erneuten Verbinden
+const LIVE_STALE_MS = 15000;   // so lange ohne Nachricht: gilt nicht mehr als live
+
+let liveSocket = null, liveSource = null, livePending = null, liveLast = 0;
+let liveDrawTimer = null, liveRetryTimer = null;
+
+const setLive = (on) => document.querySelector(".chart-card").classList.toggle("is-live", on);
+
+function closeLive() {
+  clearTimeout(liveRetryTimer);
+  clearTimeout(liveDrawTimer);
+  liveDrawTimer = null;
+  livePending = null;
+  liveLast = 0;
+  if (liveSocket) {
+    const s = liveSocket;
+    liveSocket = null;   // onmessage/onclose dieser Verbindung gelten ab jetzt nicht mehr
+    s.close();
+  }
+  setLive(false);
+}
+
+function connectLive(source) {
+  closeLive();
+  liveSource = source;
+  const base = LIVE_URLS[source];
+  if (!base || !candles.length || document.hidden || typeof WebSocket === "undefined") return;
+  const iv = interval;
+  let s;
+  try { s = new WebSocket(`${base}${symbol.toLowerCase()}usdt@kline_${iv}`); } catch (e) { return; }
+  liveSocket = s;
+  s.onmessage = (ev) => {
+    if (s !== liveSocket) return;
+    let k;
+    try { k = JSON.parse(ev.data).k; } catch (e) { return; }
+    if (!k || k.i !== iv) return;
+    // q = Quote-Volumen in USDT, wie bei den Kerzen vom Server
+    livePending = { time: Math.floor(k.t / 1000), open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.q };
+    liveLast = Date.now();
+    setLive(true);
+    if (!liveDrawTimer) liveDrawTimer = setTimeout(drawLive, LIVE_DRAW_MS);
+  };
+  s.onclose = () => {
+    if (s !== liveSocket) return;
+    liveSocket = null;
+    liveLast = 0;
+    setLive(false);
+    liveRetryTimer = setTimeout(resumeLive, LIVE_RETRY_MS);
+  };
+}
+
+function drawLive() {
+  liveDrawTimer = null;
+  const c = livePending;
+  livePending = null;
+  if (c) applyCandles([c]);
+}
+
+// Nach einer Unterbrechung erst die verpassten Kerzen vom Server holen, dann wieder verbinden
+async function resumeLive() {
+  const token = loadToken;
+  await refreshChart();
+  if (token === loadToken && !document.hidden) connectLive(liveSource);
+}
+
+// Im Hintergrund keine Verbindung halten; beim Zurückkehren aufholen und neu verbinden
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) closeLive();
+  else if (candles.length) resumeLive();
+});
 
 document.querySelectorAll(".toggle[data-show]").forEach((btn) => btn.addEventListener("click", () => {
   const key = btn.dataset.show;
