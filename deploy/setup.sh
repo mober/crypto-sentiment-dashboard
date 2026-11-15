@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Einmalige Einrichtung auf dem Server (Ubuntu 24.04 oder Debian 12), als root:
-#   bash /opt/crypto-dashboard/deploy/setup.sh <domain> [benutzername]
+#   bash /opt/crypto-dashboard/deploy/setup.sh <domain[,domain2,…]> [benutzername]
 # Beispiel: bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io          (öffentlich)
 #           bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io markus   (mit Anmeldung)
+#           bash /opt/crypto-dashboard/deploy/setup.sh beispiel.de,maxheadroom23.org (mehrere Domains)
 # Mit Benutzername wird das Passwort abgefragt und Caddy verlangt eine Anmeldung; ohne ist das
 # Dashboard frei erreichbar. Kann gefahrlos erneut ausgeführt werden (z. B. um Domain,
 # Passwort oder Anmeldung zu ändern).
@@ -50,6 +51,8 @@ fi
 python3 - "$DOMAIN" "$AUTH_USER" "$HASH" "$APP_DIR/deploy/Caddyfile.template" <<'EOF'
 import re, sys
 domain, user, pw_hash, template = sys.argv[1:5]
+# Mehrere Domains (Komma-getrennt) werden zu einer Site-Adresse "a, b"; Caddy holt je ein Zertifikat
+domain = ", ".join(d.strip() for d in domain.split(",") if d.strip())
 auth = f"\tbasic_auth {{\n\t\t{user} {pw_hash}\n\t}}\n\n" if user else ""
 text = open(template).read()
 text = text.replace("__DOMAIN__", domain).replace("__AUTH__\n", auth)
@@ -70,5 +73,6 @@ echo "== Automatische Sicherheitsupdates"
 dpkg-reconfigure -f noninteractive unattended-upgrades
 
 echo
-echo "Fertig. Das Dashboard ist gleich unter https://$DOMAIN erreichbar (Zertifikat kann eine Minute dauern)."
+echo "Fertig. Das Dashboard ist gleich erreichbar unter (Zertifikat kann eine Minute dauern):"
+for d in ${DOMAIN//,/ }; do echo "  https://$d"; done
 echo "Status: systemctl status crypto-dashboard caddy · Log: journalctl -u crypto-dashboard -f"

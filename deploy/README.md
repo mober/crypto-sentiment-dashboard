@@ -30,6 +30,10 @@ auf die IP `203.0.113.5`. Caddy bekommt dafür ein gültiges HTTPS-Zertifikat.
 Mit eigener Domain beim Domain-Anbieter einen A-Record auf die Server-IP setzen und diese Domain
 verwenden.
 
+Mehrere Domains gehen mit Komma getrennt (ohne Leerzeichen), z. B.
+`setup.sh beispiel.de,maxheadroom23.org`. Jede braucht einen A-Record auf die Server-IP; Caddy holt
+für jede ein eigenes Zertifikat.
+
 ## 3. Übertragen und einrichten
 
 Auf dem Mac im Projektordner:
