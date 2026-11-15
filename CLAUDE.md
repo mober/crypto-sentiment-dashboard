@@ -37,7 +37,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),
   Funding-/OI-Charts und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
   bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln), `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
-  `web/tips.js` – gemeinsame Tooltip-Texte und -Logik
+  `web/tips.js` – gemeinsame Tooltip-Texte und -Logik, `web/format.js` – gemeinsame Hilfsfunktionen
+  (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle vier Seiten; Formate dort ändern,
+  nicht in den Seiten
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 

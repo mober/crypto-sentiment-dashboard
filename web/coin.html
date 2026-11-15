@@ -276,19 +276,11 @@
     Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Keine Anlageberatung.</footer>
 </main>
 
+<script src="format.js"></script>
 <script src="tips.js"></script>
 <script>
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const usd = (v) => "$" + v.toLocaleString("de-DE", v < 1 ? { maximumSignificantDigits: 4 } : (v < 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 }));
-const usd6 = (v) => {
-  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
-  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
-};
+// $, esc, usd, usd6, pct, signed und tone kommen aus format.js
 const compact = (v) => v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 });
-const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
-// Farbschwelle wie VERDICT_WARM in sentiment.py
-const tone = (score) => (score >= 15 ? "tone-hot" : score <= -15 ? "tone-cold" : "tone-neutral");
 
 const MAIN_SYMBOLS = ["BTC", "ETH", "SOL"];  // wie SYMBOLS in server.py
 const INTERVAL_LABEL = { "1d": "1T", "4h": "4h", "1h": "1h" };
@@ -955,8 +947,7 @@ $("interval-seg").addEventListener("click", (e) => {
 
 const FUNDING_AVG_DAYS = 7;   // wie avg_7d in get_funding (sentiment.py)
 const OI_CHANGE_DAYS = 7;     // wie change_7d in get_open_interest
-const pct4 = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(4).replace(".", ",") + " %";
-const pct1 = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(1).replace(".", ",") + " %";
+const pct4 = (v) => pct(v, 4);
 // Schwellen wie FUNDING_SCALE: ab 0,05 % viel Long-Hebel, unter −0,01 % Shorts dominieren
 const fundTone = (r) => (r >= 0.0005 ? "hot" : r <= -0.0001 ? "cold" : "");
 
@@ -1013,7 +1004,7 @@ function renderOiLegend(time) {
   const ref = oiData.find((x) => x.time >= o.time - OI_CHANGE_DAYS * 86400);
   const chg = ref && ref !== o && o.time - ref.time >= (OI_CHANGE_DAYS - 0.5) * 86400 ? (o.usd - ref.usd) / ref.usd : null;
   $("oi-legend").innerHTML = `<span>OI <b>$${compact(o.usd)}</b></span>`
-    + (chg != null ? `<span>${OI_CHANGE_DAYS} T <b>${pct1(chg)}</b></span>` : "")
+    + (chg != null ? `<span>${OI_CHANGE_DAYS} T <b>${pct(chg)}</b></span>` : "")
     + (o.price != null ? `<span>Kurs <b>${usd(o.price)}</b></span>` : "");
 }
 

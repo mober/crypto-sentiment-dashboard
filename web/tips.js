@@ -1,4 +1,4 @@
-// Gemeinsame Tooltips für Dashboard (index.html) und Detailseite (coin.html).
+// Gemeinsame Tooltips für Dashboard (index.html), Detailseite (coin.html) und Sparten (sectors.html).
 // Braucht die Styles für [data-tip] und #tip aus base.css; das #tip-Element wird bei Bedarf angelegt.
 
 // Erklärungen für Tooltips. Die Schwellen entsprechen denen in sentiment.py.

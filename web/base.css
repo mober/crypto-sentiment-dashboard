@@ -52,6 +52,10 @@ main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
 header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
 .sub { color: var(--muted); font-size: 13px; }
+/* Farbklassen für Zahlen (format.js): steigend, fallend, fehlend */
+.up { color: var(--up); }
+.down { color: var(--down); }
+.muted { color: var(--muted); }
 
 button, .navlink {
   font: inherit; font-size: 14px; color: var(--text); text-decoration: none; background: var(--card);

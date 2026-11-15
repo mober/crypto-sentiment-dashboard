@@ -142,33 +142,12 @@
 
 <div id="tip" role="tooltip" hidden></div>
 
+<script src="format.js"></script>
 <script src="tips.js"></script>
 <script>
 const REFRESH_MS = 5 * 60 * 1000;
-const $ = (id) => document.getElementById(id);
-
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-// Vorzeichen nach dem gerundeten Wert, sonst wird z. B. −0,004 % als "-0,0 %" angezeigt
-const pct = (v, d = 1) => {
-  const r = Number((v * 100).toFixed(d));
-  return (r > 0 ? "+" : r < 0 ? "-" : "") + Math.abs(r).toFixed(d).replace(".", ",") + " %";
-};
-const usd = (v) => {
-  if (v >= 1e9) return "$" + (v / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Mrd.";
-  if (v >= 1e6) return "$" + (v / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Mio.";
-  // unter 1 $ nach signifikanten Stellen, sonst wird z. B. 0,0033 zu "$0"
-  if (v > 0 && v < 1) return "$" + v.toLocaleString("de-DE", { maximumSignificantDigits: 4 });
-  return "$" + v.toLocaleString("de-DE", (v < 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 }));
-};
-// Große Beträge auf 6 signifikante Stellen mit Einheit, z. B. "$1,61238 Bio."
-const usd6 = (v) => {
-  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
-  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
-};
+// $, esc, pct, usd, usd6, signed und tone kommen aus format.js
 const num = (v, d) => v.toFixed(d).replace(".", ",");
-// Farbschwellen wie in sentiment.py: VERDICT_WARM (Gesamtscore) und SIGNAL_STRONG (Einzelsignal)
-const tone = (score, limit = 15) => (score >= limit ? "tone-hot" : score <= -limit ? "tone-cold" : "tone-neutral");
-const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
 const na = '<span class="note">n/a</span>';
 
 

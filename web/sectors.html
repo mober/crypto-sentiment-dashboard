@@ -72,9 +72,6 @@
   .sname .orig { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
   .tops { display: inline-flex; gap: 4px; vertical-align: middle; }
   .tops img { width: 20px; height: 20px; border-radius: 50%; }
-  .up { color: var(--up); }
-  .down { color: var(--down); }
-  .muted { color: var(--muted); }
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
 
@@ -164,19 +161,11 @@
   <footer>Daten: CoinGecko (Kategorien), DefiLlama (TVL) · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
 </main>
 
+<script src="format.js"></script>
 <script src="tips.js"></script>
 <script>
 const REFRESH_MS = 5 * 60 * 1000;
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const dash = '<span class="muted">–</span>';
-const usd6 = (v) => {
-  if (v == null || v === 0) return dash;
-  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
-  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 4, maximumSignificantDigits: 4 }) + unit;
-};
-const pct = (v, digits = 1) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(digits).replace(".", ",") + " %";
-const change = (v) => v == null ? dash : `<span class="${v > 0 ? "up" : v < 0 ? "down" : "muted"}">${pct(v)}</span>`;
+// $, esc, dash, usd6, pct und change kommen aus format.js
 
 // Hauptsparten mit deutschem Namen (CoinGecko-IDs). Fehlt eine ID künftig, fällt sie still weg.
 const MAIN = [

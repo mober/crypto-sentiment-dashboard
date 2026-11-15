@@ -21,9 +21,6 @@
   .coin img { width: 22px; height: 22px; border-radius: 50%; flex: none; }
   .coin .name { font-weight: 600; }
   .coin .sym { color: var(--muted); font-size: 12px; margin-left: 4px; }
-  .up { color: var(--up); }
-  .down { color: var(--down); }
-  .muted { color: var(--muted); }
 
   .pager { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; margin: 16px 0; }
   .pager button { padding: 6px 11px; min-width: 38px; }
@@ -109,28 +106,14 @@
     Daten: CoinGecko · Aktualisiert sich alle 5 Minuten · Keine Anlageberatung.</footer>
 </main>
 
+<script src="format.js"></script>
 <script>
 const REFRESH_MS = 5 * 60 * 1000;
-const $ = (id) => document.getElementById(id);
-
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const dash = '<span class="muted">–</span>';
-
+// $, esc, dash, usd6 und change kommen aus format.js
 const price = (v) => {
   if (v == null) return dash;
   const opts = v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumSignificantDigits: 4 };
   return "$" + v.toLocaleString("de-DE", opts);
-};
-// Große Beträge auf 6 signifikante Stellen mit Einheit, wie auf dem Dashboard
-const usd6 = (v) => {
-  if (v == null || v === 0) return dash;
-  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
-  return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
-};
-const change = (v) => {
-  if (v == null) return dash;
-  const cls = v > 0 ? "up" : v < 0 ? "down" : "muted";
-  return `<span class="${cls}">${v > 0 ? "+" : ""}${(v * 100).toFixed(1).replace(".", ",")} %</span>`;
 };
 
 let page = 1;
