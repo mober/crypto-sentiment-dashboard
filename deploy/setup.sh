@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Einmalige Einrichtung auf dem Server (Ubuntu 24.04 oder Debian 12), als root:
 #   bash /opt/crypto-dashboard/deploy/setup.sh <domain> [benutzername]
-# Beispiel: bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io markus
-# Fragt das Passwort für den Zugang ab. Kann gefahrlos erneut ausgeführt werden
-# (z. B. um Domain oder Passwort zu ändern).
+# Beispiel: bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io          (öffentlich)
+#           bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io markus   (mit Anmeldung)
+# Mit Benutzername wird das Passwort abgefragt und Caddy verlangt eine Anmeldung; ohne ist das
+# Dashboard frei erreichbar. Kann gefahrlos erneut ausgeführt werden (z. B. um Domain,
+# Passwort oder Anmeldung zu ändern).
 set -euo pipefail
 
 DOMAIN=${1:?"Domain fehlt, z. B. 203-0-113-5.sslip.io"}
-AUTH_USER=${2:-admin}
+AUTH_USER=${2:-}
 APP_DIR=/opt/crypto-dashboard
 
 if [[ $EUID -ne 0 ]]; then echo "Bitte als root ausführen." >&2; exit 1; fi
@@ -38,13 +40,20 @@ systemctl daemon-reload
 systemctl enable --now crypto-dashboard
 systemctl restart crypto-dashboard
 
-echo "== Zugang für $AUTH_USER"
-HASH=$(caddy hash-password)   # fragt das Passwort zweimal ab
+HASH=""
+if [[ -n "$AUTH_USER" ]]; then
+  echo "== Zugang für $AUTH_USER"
+  HASH=$(caddy hash-password)   # fragt das Passwort zweimal ab
+else
+  echo "== Ohne Anmeldung: das Dashboard ist für alle erreichbar"
+fi
 python3 - "$DOMAIN" "$AUTH_USER" "$HASH" "$APP_DIR/deploy/Caddyfile.template" <<'EOF'
-import sys
+import re, sys
 domain, user, pw_hash, template = sys.argv[1:5]
+auth = f"\tbasic_auth {{\n\t\t{user} {pw_hash}\n\t}}\n\n" if user else ""
 text = open(template).read()
-text = text.replace("__DOMAIN__", domain).replace("__USER__", user).replace("__HASH__", pw_hash)
+text = text.replace("__DOMAIN__", domain).replace("__AUTH__\n", auth)
+text = re.sub(r"\n{3,}", "\n\n", text)
 open("/etc/caddy/Caddyfile", "w").write(text)
 EOF
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

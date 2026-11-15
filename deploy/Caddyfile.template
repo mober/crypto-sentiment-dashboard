@@ -1,12 +1,10 @@
 # Wird von setup.sh nach /etc/caddy/Caddyfile geschrieben (Platzhalter in __GROSS__ werden ersetzt).
-# Caddy holt das HTTPS-Zertifikat automatisch (Let's Encrypt) und verlangt Benutzername/Passwort.
+# Caddy holt das HTTPS-Zertifikat automatisch (Let's Encrypt). Der Platzhalter für die Anmeldung wird
+# zum basic_auth-Block (Benutzername/Passwort), wenn setup.sh einen Benutzernamen bekommt, sonst entfällt er.
 __DOMAIN__ {
 	encode zstd gzip
 
-	basic_auth {
-		__USER__ __HASH__
-	}
-
+__AUTH__
 	reverse_proxy 127.0.0.1:8000
 
 	header {

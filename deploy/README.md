@@ -1,14 +1,14 @@
 # Deployment auf einen eigenen Server
 
-Das Dashboard läuft auf einem kleinen Linux-Server, ist per HTTPS erreichbar und mit
-Benutzername und Passwort geschützt.
+Das Dashboard läuft auf einem kleinen Linux-Server und ist per HTTPS erreichbar, wahlweise
+öffentlich oder mit Benutzername und Passwort geschützt.
 
 ```
-Browser ──HTTPS──▶ Caddy (Port 443, Zertifikat, Passwort) ──▶ server.py (nur 127.0.0.1:8000)
+Browser ──HTTPS──▶ Caddy (Port 443, Zertifikat, ggf. Passwort) ──▶ server.py (nur 127.0.0.1:8000)
 ```
 
 - `crypto-dashboard.service`: systemd-Dienst, startet `server.py` beim Booten und nach Abstürzen neu
-- `Caddyfile.template`: HTTPS mit automatischem Let's-Encrypt-Zertifikat und Basic Auth
+- `Caddyfile.template`: HTTPS mit automatischem Let's-Encrypt-Zertifikat, optional Basic Auth
 - `setup.sh`: einmalige Einrichtung auf dem Server (Pakete, Dienst, Caddy, Firewall, Updates)
 - `deploy.sh`: überträgt den Stand vom Mac und startet die App neu
 
@@ -37,11 +37,13 @@ Auf dem Mac im Projektordner:
 ```bash
 deploy/deploy.sh root@203.0.113.5
 ssh root@203.0.113.5
-bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io markus
+bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io          # öffentlich
+bash /opt/crypto-dashboard/deploy/setup.sh 203-0-113-5.sslip.io markus   # mit Anmeldung
 ```
 
-`setup.sh` fragt das Passwort für den Zugang ab. Danach ist das Dashboard unter
-`https://203-0-113-5.sslip.io` erreichbar.
+Mit Benutzername fragt `setup.sh` das Passwort ab, und der Browser verlangt beim Aufruf eine
+Anmeldung. Ohne Benutzername ist das Dashboard für alle erreichbar. Danach läuft es unter
+`https://203-0-113-5.sslip.io`.
 
 ## Aktualisieren
 
@@ -51,7 +53,7 @@ Nach Änderungen auf dem Mac:
 deploy/deploy.sh root@203.0.113.5
 ```
 
-Passwort oder Domain ändern: `setup.sh` einfach erneut ausführen.
+Passwort, Domain oder Anmeldung ändern: `setup.sh` einfach erneut ausführen (mit oder ohne Benutzername).
 
 ## Nützliche Befehle auf dem Server
 
@@ -67,5 +69,6 @@ journalctl -u caddy -f                    # Log von Caddy (Zertifikat, Zugriffe)
   Häufen sich die Hinweise „CoinGecko-Limit erreicht“, hilft ein kostenloser Demo-Key.
 - Die App speichert nichts auf der Platte. Nach einem Neustart sind die Caches leer, und die
   ersten Aufrufe dauern etwas länger.
-- Das Passwort schützt den Zugang. Die App selbst hat keine Benutzerverwaltung, daher nicht ohne
-  Caddy davor ins Netz stellen. Sie lauscht ohnehin nur auf `127.0.0.1`.
+- Die App selbst hat keine Benutzerverwaltung; eine Anmeldung gibt es nur über Caddy. Öffentlich
+  erreichbar teilen sich alle Besucher das CoinGecko-Limit des Servers. Die App nicht ohne Caddy
+  davor ins Netz stellen; sie lauscht ohnehin nur auf `127.0.0.1`.
