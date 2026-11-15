@@ -54,6 +54,7 @@ LLAMA_INDEX_SECONDS = 24 * 3600   # Zuordnung Coin → Protokoll ändert sich se
 _fees_cache: Dict[str, Dict[str, Any]] = {}
 _fees_lock = threading.Lock()
 FEES_CACHE_SECONDS = 1800         # DefiLlama aktualisiert Gebühren täglich
+RETRY_SECONDS = 30                # unvollständige Ergebnisse (Abfrage fehlgeschlagen) nur so lange cachen
 _liq_cache: Dict[str, Dict[str, Any]] = {}
 _liq_lock = threading.Lock()
 _history_cache: Dict[str, Dict[str, Any]] = {}
@@ -128,7 +129,15 @@ def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) ->
         entry = _coin_cache.get(key)
         if force or entry is None or time.time() - entry["time"] > CACHE_SECONDS:
             symbol_data = sentiment.collect_symbol(symbol, coin_id, with_market=True)
-            entry = {"time": time.time(), "coin": build_coin(symbol, global_data, symbol_data)}
+            # CoinGecko-Abfrage fehlgeschlagen (z. B. Limit-Pause): Lücken aus dem letzten Stand
+            # füllen und bald erneut versuchen, statt das unvollständige Ergebnis 5 Min. zu behalten
+            incomplete = symbol_data.get("market_stats") is None
+            if entry:
+                for k, old in entry["coin"]["data"].items():
+                    if symbol_data.get(k) is None:
+                        symbol_data[k] = old
+            cached_at = time.time() - (CACHE_SECONDS - RETRY_SECONDS if incomplete else 0)
+            entry = {"time": cached_at, "coin": build_coin(symbol, global_data, symbol_data)}
             _coin_cache[key] = entry
         return entry["coin"]
 
@@ -253,8 +262,14 @@ def get_fees(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
     with _fees_lock:
         cached = _fees_cache.get(key)
         if cached is None or time.time() - cached["time"] > FEES_CACHE_SECONDS:
-            result = sentiment.get_fees(entry)   # fängt Fehler je Datenart selbst ab
-            cached = {"time": time.time(), "payload": result}
+            try:
+                result = sentiment.get_fees(entry)
+            except ValueError as exc:   # DefiLlama nicht erreichbar: letzten Stand behalten, nichts cachen
+                print(f"  [warn] get_fees: {exc}")
+                return cached["payload"] if cached else None
+            # Teilergebnis (eine Datenart fehlgeschlagen) nur kurz cachen
+            incomplete = bool(result and result.pop("incomplete", False))
+            cached = {"time": time.time() - (FEES_CACHE_SECONDS - RETRY_SECONDS if incomplete else 0), "payload": result}
             _fees_cache[key] = cached
         return cached["payload"]
 

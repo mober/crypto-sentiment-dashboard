@@ -1403,7 +1403,8 @@ const FEE_SERIES = [  // [Schlüssel, Name, Farbe (CSS-Variable), gestrichelt]
 let feeData = null, feeChart = null;
 const feeSeries = {};
 
-const money = (v) => (v ? usd6(v) : "$0");   // usd6 zeigt 0 sonst als „$0,00000“
+// usd6 ist für große Beträge gedacht: 0 würde „$0,00000“, 950 würde „$950,000“
+const money = (v) => (!v ? "$0" : Math.abs(v) < 1e6 ? usd(v) : usd6(v));
 
 function feeTiles() {
   const f = feeData;
@@ -1454,7 +1455,7 @@ function renderFeeLegend(time) {
   $("fee-legend").innerHTML = FEE_SERIES.filter(([k]) => feeData[k]).map(([k, label, color, dashed]) => {
     const w = feeData[k].weekly;
     const pt = (time != null && w.find((x) => x.time === time)) || w[w.length - 1];
-    return `<span><span class="sw${dashed ? " dash" : ""}" style="background:var(${color});border-color:var(${color})"></span>${label} <b>${pt ? usd6(pt.value) : "–"}</b></span>`;
+    return `<span><span class="sw${dashed ? " dash" : ""}" style="background:var(${color});border-color:var(${color})"></span>${label} <b>${pt ? money(pt.value) : "–"}</b></span>`;
   }).join("") + `<span>je Woche${time != null ? ", ab " + fmtDate(time, { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" }) : ", letzte volle Woche"}</span>`;
 }
 

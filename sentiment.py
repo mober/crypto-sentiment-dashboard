@@ -22,6 +22,7 @@ Die Schwellenwerte sind Erfahrungswerte, keine Naturgesetze. Keine Anlageberatun
 
 import argparse
 import bisect
+import http.client
 import json
 import statistics
 import sys
@@ -125,12 +126,17 @@ def fetch_json(url: str) -> Any:
             time.sleep(min(int(retry_after), 10) if retry_after.isdigit() else 3 * (attempt + 1))
 
 
+NETWORK_ERRORS = (OSError, http.client.HTTPException)
+
+
 def safe(fn, *args) -> Optional[Any]:
-    """Führt eine Abfrage aus; bei Fehlern wird None geliefert statt abzubrechen."""
+    """Führt eine Abfrage aus; bei Fehlern wird None geliefert statt abzubrechen.
+
+    OSError deckt Netzwerkfehler ab, auch Timeouts und Abbrüche mitten im Lesen der Antwort
+    (die urllib nicht in URLError verpackt); die übrigen unerwartete oder lückenhafte Daten."""
     try:
         return fn(*args)
-    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, KeyError,
-            IndexError, TypeError, TimeoutError) as exc:
+    except NETWORK_ERRORS + (ValueError, LookupError, TypeError, AttributeError, ArithmeticError) as exc:
         print(f"  [warn] {fn.__name__}: {exc}", file=sys.stderr)
         return None
 
@@ -575,12 +581,26 @@ def get_fees(entry: Dict[str, str]) -> Optional[Dict[str, Any]]:
     """Gebühren, Einnahmen und Einnahmen für Token-Halter eines Protokolls bzw. einer Chain.
 
     Je Art: Summen für 24 h, 7 T, 30 T (dazu die 30 T davor), 1 J und gesamt sowie Wochensummen
-    der letzten 52 Wochen für das Chart. None, wenn DefiLlama keine Gebührendaten hat."""
+    der letzten 52 Wochen für das Chart. None, wenn DefiLlama keine Gebührendaten hat
+    (antwortet dann mit HTTP 400). Schlägt eine Abfrage aus anderem Grund fehl, steht im Ergebnis
+    "incomplete": True; gibt es dann gar keine Daten, wird ein ValueError ausgelöst – damit der
+    Server einen kurzen Ausfall nicht als „keine Gebühren“ cacht."""
     out: Dict[str, Any] = {"name": entry["name"], "kind": entry["kind"], "slug": entry["slug"]}
-    found = False
+    found = failed = False
     for key, data_type in FEE_TYPES.items():
-        d = safe(fetch_json, f"https://api.llama.fi/summary/fees/{urllib.parse.quote(entry['slug'])}"
-                             f"?dataType={data_type}&excludeTotalDataChartBreakdown=true")
+        d = None
+        try:
+            d = fetch_json(f"https://api.llama.fi/summary/fees/{urllib.parse.quote(entry['slug'])}"
+                           f"?dataType={data_type}&excludeTotalDataChartBreakdown=true")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (400, 404):   # 400/404 = keine Daten dieser Art
+                failed = True
+                print(f"  [warn] get_fees {entry['slug']} {data_type}: {exc}", file=sys.stderr)
+        except NETWORK_ERRORS + (ValueError,) as exc:
+            failed = True
+            print(f"  [warn] get_fees {entry['slug']} {data_type}: {exc}", file=sys.stderr)
+        if not isinstance(d, dict):
+            d = None
         chart = (d or {}).get("totalDataChart") or []
         if not chart or not any(v for _, v in chart[-FEE_WEEKS * 7:]):   # leer oder im letzten Jahr nur Nullen
             out[key] = None
@@ -606,6 +626,10 @@ def get_fees(entry: Dict[str, str]) -> Optional[Dict[str, Any]]:
             "days": len(chart),
             "weekly": [{"time": w, "value": v} for w, v in sorted(weeks.items())],
         }
+    if failed:
+        if not found:
+            raise ValueError(f"DefiLlama-Gebühren für {entry['slug']} nicht erreichbar")
+        out["incomplete"] = True
     return out if found else None
 
 
