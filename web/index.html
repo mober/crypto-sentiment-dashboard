@@ -157,16 +157,8 @@ let extraId = null;     // dessen CoinGecko-ID, falls bekannt (Symbole sind nich
 let extraCoin = null;   // dessen Daten (null = lädt)
 const EXTRA_KEY = "extraCoin";
 
-// Zonen wie auf alternative.me / CNN; Farben von Rot (Angst) über Grau zu Grün (Gier)
-const FNG_ZONES = [
-  { to: 25, name: "Extreme Angst", color: "var(--down)" },
-  { to: 45, name: "Angst", color: "color-mix(in srgb, var(--down) 55%, var(--neutral))" },
-  { to: 55, name: "Neutral", color: "var(--neutral)" },
-  { to: 75, name: "Gier", color: "color-mix(in srgb, var(--up) 55%, var(--neutral))" },
-  { to: 100, name: "Extreme Gier", color: "var(--up)" },
-];
+// FNG_ZONES und fngZone kommen aus format.js
 const FNG_LABELS = { "Extreme Fear": "Extreme Angst", "Fear": "Angst", "Neutral": "Neutral", "Greed": "Gier", "Extreme Greed": "Extreme Gier" };
-const fngZone = (v) => FNG_ZONES.find((z) => v <= z.to) || FNG_ZONES[FNG_ZONES.length - 1];
 
 function fngGauge(value) {
   const cx = 70, cy = 70, r = 56;

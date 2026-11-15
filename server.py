@@ -66,6 +66,10 @@ CATEGORY_RE = re.compile(r"^[a-z0-9-]{1,100}$")
 _search_cache: Dict[str, Dict[str, Any]] = {}
 _search_lock = threading.Lock()
 SEARCH_MAX_LEN = 40
+_news_cache: Dict[str, Any] = {"time": 0.0, "items": None}
+_news_lock = threading.Lock()
+NEWS_CACHE_SECONDS = 900          # RSS-Feeds: alle 15 Min. reicht
+NAME_RE = re.compile(r"^[\w .&'+-]{1,40}$")   # Coin-Name für die News-Suche, z. B. "Bitcoin Cash"
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -78,6 +82,8 @@ def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, 
         "signals": signals,
         "score": total,
         "verdict": sentiment.verdict(total, len(signals)),
+        "situation": sentiment.situation(data, signals, total),   # Lagebild für den Kopf der Detailseite
+        "fear_greed": global_data["fear_greed"],
     }
 
 
@@ -89,7 +95,8 @@ def build_payload() -> Dict[str, Any]:
         global_data = global_future.result()
         mcaps = mcap_future.result() or {}
         symbol_data = {s: {**f.result(), "market_cap": (mcaps.get(s) or {}).get("market_cap"),
-                           "market_stats": (mcaps.get(s) or {}).get("market_stats")}
+                           "market_stats": (mcaps.get(s) or {}).get("market_stats"),
+                           "name": (mcaps.get(s) or {}).get("name")}
                        for s, f in symbol_futures.items()}
 
     # Fehlgeschlagene Abfragen (z. B. Rate-Limit) durch den letzten erfolgreichen Wert ersetzen
@@ -274,6 +281,21 @@ def get_fees(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
         return cached["payload"]
 
 
+def get_news(symbol: str, name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Deutschsprachige Meldungen zum Coin (RSS); die Feeds werden gemeinsam 15 Min. gecacht,
+    gefiltert wird je Abruf. Bei Fehlern der letzte erfolgreiche Stand."""
+    with _news_lock:
+        if _news_cache["items"] is None or time.time() - _news_cache["time"] > NEWS_CACHE_SECONDS:
+            items = sentiment.safe(sentiment.get_news)
+            if items:
+                _news_cache.update(time=time.time(), items=items, updated=datetime.now().isoformat(timespec="seconds"))
+        items = _news_cache["items"]
+    if not items:
+        return None
+    return {"symbol": symbol, "name": name, "updated": _news_cache["updated"],
+            "sources": [s for s, _ in sentiment.NEWS_FEEDS], **sentiment.match_news(items, symbol, name)}
+
+
 def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
     """Kerzen und OI je Stunde (Binance Futures) für die Liquidations-Heatmap; 5 Min. gecacht."""
     with _liq_lock:
@@ -417,6 +439,18 @@ class Handler(SimpleHTTPRequestHandler):
             payload = get_fees(symbol, coin_id)
             if payload is None:
                 self.send_json({"error": f"Keine Gebührendaten für {symbol} bei DefiLlama"}, 404)
+                return
+            self.send_json(payload)
+            return
+        if url.path == "/api/news":
+            symbol = (query.get("symbol") or [""])[0].upper()
+            name = " ".join((query.get("name") or [""])[0].split()) or None
+            if not SYMBOL_RE.match(symbol) or (name and not NAME_RE.match(name)):
+                self.send_json({"error": "ungültiges Symbol oder ungültiger Name"}, 400)
+                return
+            payload = get_news(symbol, name)
+            if payload is None:
+                self.send_json({"error": "News-Feeds nicht erreichbar"}, 502)
                 return
             self.send_json(payload)
             return

@@ -38,3 +38,13 @@ const usd6 = (v) => {
   const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
   return "$" + (v / div).toLocaleString("de-DE", { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
 };
+
+// Fear & Greed (0–100): Zonen wie auf alternative.me / CNN; Farben von Rot (Angst) über Grau zu Grün (Gier)
+const FNG_ZONES = [
+  { to: 25, name: "Extreme Angst", color: "var(--down)" },
+  { to: 45, name: "Angst", color: "color-mix(in srgb, var(--down) 55%, var(--neutral))" },
+  { to: 55, name: "Neutral", color: "var(--neutral)" },
+  { to: 75, name: "Gier", color: "color-mix(in srgb, var(--up) 55%, var(--neutral))" },
+  { to: 100, name: "Extreme Gier", color: "var(--up)" },
+];
+const fngZone = (v) => FNG_ZONES.find((z) => v <= z.to) || FNG_ZONES[FNG_ZONES.length - 1];

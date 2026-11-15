@@ -22,8 +22,10 @@ Die Schwellenwerte sind Erfahrungswerte, keine Naturgesetze. Keine Anlageberatun
 
 import argparse
 import bisect
+import html
 import http.client
 import json
+import re
 import statistics
 import sys
 import threading
@@ -31,8 +33,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ElementTree
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 TIMEOUT = 15
@@ -361,6 +365,7 @@ def get_market_caps(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
     return {c["symbol"].upper(): {
         "market_cap": {"usd": float(c["market_cap"]), "rank": c.get("market_cap_rank")},
         "market_stats": market_stats(c),
+        "name": c.get("name"),
     } for c in coins}
 
 
@@ -381,6 +386,7 @@ def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, 
     return {
         "market_cap": {"usd": float(mcap), "rank": c.get("market_cap_rank")} if mcap else None,
         "market_stats": market_stats(c),
+        "name": c.get("name"),
         "momentum": {
             "change_7d": change_7d / 100 if change_7d is not None else None,
             "change_30d": change_30d / 100 if change_30d is not None else None,
@@ -633,6 +639,77 @@ def get_fees(entry: Dict[str, str]) -> Optional[Dict[str, Any]]:
     return out if found else None
 
 
+# Deutschsprachige Krypto-Nachrichten per RSS (ohne Key). Schlagzeilen werden nur verlinkt, nicht bewertet.
+NEWS_FEEDS = [
+    ("BTC-ECHO", "https://www.btc-echo.de/feed/"),
+    ("BeInCrypto", "https://de.beincrypto.com/feed/"),
+    ("Krypto Magazin", "https://www.krypto-magazin.de/feed/"),
+    ("Blocktrainer", "https://www.blocktrainer.de/feed/"),
+    ("CVJ", "https://cvj.ch/feed/"),
+    ("Bitcoin Kurier", "https://bitcoin-kurier.de/feed/"),
+]
+NEWS_MAX_BYTES = 3_000_000   # mehr wird von einem Feed nicht gelesen
+NEWS_PER_COIN = 5
+NEWS_TEASER_LEN = 220
+NEWS_MIN_TERM = 3            # kürzere Symbole/Namen (z. B. „OP“) treffen zu viel Unpassendes
+
+
+def _plain(text: Optional[str]) -> str:
+    """HTML aus Feed-Texten entfernen (Tags, Entities, überzählige Leerzeichen)."""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", text or "")).split())
+
+
+def get_news_feed(source: str, url: str) -> List[Dict[str, Any]]:
+    """Einträge eines RSS-Feeds: Titel, Link, Zeit (Sekunden), Anreißer, Quelle."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        raw = resp.read(NEWS_MAX_BYTES)
+    try:
+        root = ElementTree.fromstring(raw)
+    except ElementTree.ParseError as exc:
+        raise ValueError(f"Feed {source} nicht lesbar: {exc}") from exc
+    items = []
+    for item in root.iter("item"):
+        title, link = _plain(item.findtext("title")), (item.findtext("link") or "").strip()
+        if not title or not link.startswith(("https://", "http://")):
+            continue
+        try:
+            when = int(parsedate_to_datetime(item.findtext("pubDate") or "").timestamp())
+        except (TypeError, ValueError):
+            continue
+        teaser = _plain(item.findtext("description"))
+        if len(teaser) > NEWS_TEASER_LEN:
+            teaser = teaser[:NEWS_TEASER_LEN].rsplit(" ", 1)[0] + " …"
+        items.append({"title": title, "link": link, "time": when, "teaser": teaser, "source": source})
+    return items
+
+
+def get_news() -> List[Dict[str, Any]]:
+    """Alle Feeds parallel, neueste zuerst; ValueError, wenn kein Feed erreichbar ist."""
+    with ThreadPoolExecutor(max_workers=len(NEWS_FEEDS)) as pool:
+        results = list(pool.map(lambda f: safe(get_news_feed, *f), NEWS_FEEDS))
+    if not any(results):
+        raise ValueError("kein News-Feed erreichbar")
+    return sorted((i for r in results if r for i in r), key=lambda i: -i["time"])
+
+
+def match_news(items: List[Dict[str, Any]], symbol: str, name: Optional[str]) -> Dict[str, Any]:
+    """Meldungen zu einem Coin: zuerst Treffer im Titel, dann im Anreißer, je neueste zuerst.
+
+    Gesucht wird das Symbol (Großschreibung, ganzes Wort) und der Name (ganzes Wort). Ohne Treffer
+    kommen die neuesten allgemeinen Meldungen, gekennzeichnet mit general = True."""
+    terms = []
+    if len(symbol) >= NEWS_MIN_TERM:
+        terms.append(re.compile(rf"(?<![A-Za-z0-9]){re.escape(symbol)}(?![A-Za-z0-9])"))
+    if name and len(name) >= NEWS_MIN_TERM:
+        terms.append(re.compile(rf"(?<!\w){re.escape(name)}(?!\w)", re.IGNORECASE))
+    hit = lambda text: any(t.search(text) for t in terms)
+    in_title = [i for i in items if hit(i["title"])]
+    in_teaser = [i for i in items if not hit(i["title"]) and hit(i["teaser"])]
+    found = (in_title + in_teaser)[:NEWS_PER_COIN]
+    return {"general": not found, "items": found or items[:NEWS_PER_COIN]}
+
+
 def get_stablecoins() -> Dict[str, Any]:
     chart = fetch_json("https://stablecoins.llama.fi/stablecoincharts/all")
     now = chart[-1]["totalCirculatingUSD"]["peggedUSD"]
@@ -769,6 +846,143 @@ def verdict(total: int, count: int) -> str:
     return "Neutral: Keine Extreme erkennbar."
 
 
+def _pct_de(v: float, digits: int = 1, sign: bool = True) -> str:
+    """Anteil als Prozent in deutscher Schreibweise, z. B. −12,3 %."""
+    r = round(v * 100, digits)
+    pre = ("+" if r > 0 else "−" if r < 0 else "") if sign else ""
+    return f"{pre}{abs(r):.{digits}f} %".replace(".", ",")
+
+
+# Lagebild: Stimmung (Score) × Trend (Kurs zum MA200). Titel und Einordnung je Feld sind
+# Erfahrungswerte, keine Regeln und keine Anlageberatung.
+SITUATIONS = {
+    ("fear", "up"): ("Rücksetzer im Aufwärtstrend",
+                     "Ängstliche Stimmung bei intaktem Aufwärtstrend. Solche Phasen waren historisch oft günstig."),
+    ("fear", "down"): ("Angst im Abwärtstrend",
+                       "Mögliche Bodenbildung, aber der Trend zeigt abwärts („fallendes Messer“)."),
+    ("greed", "up"): ("Heiß gelaufen",
+                      "Gierige Stimmung im Aufwärtstrend. Der Trend trägt, Rücksetzer werden aber wahrscheinlicher."),
+    ("greed", "down"): ("Erholung im Abwärtstrend",
+                        "Gierige Stimmung, obwohl der Trend abwärts zeigt. Solche Erholungen sind oft kurzlebig."),
+    ("neutral", "up"): ("Ruhiger Aufwärtstrend",
+                        "Trend aufwärts, Stimmung ohne Extreme: kein antizyklisches Signal."),
+    ("neutral", "down"): ("Abwärtstrend ohne Extreme",
+                          "Trend abwärts, Stimmung weder panisch noch gierig: kein antizyklisches Signal."),
+    ("fear", None): ("Ängstliche Stimmung", "Der Trend lässt sich nicht bestimmen (zu wenig Kursdaten)."),
+    ("greed", None): ("Gierige Stimmung", "Der Trend lässt sich nicht bestimmen (zu wenig Kursdaten)."),
+    ("neutral", None): ("Stimmung ohne Extreme", "Der Trend lässt sich nicht bestimmen (zu wenig Kursdaten)."),
+}
+
+
+def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> Optional[Dict[str, Any]]:
+    """Lagebild für den Kopf der Detailseite: Einordnung aus Stimmung und Trend, ein Satz zur Lage
+    und was für bzw. gegen steigende Kurse spricht.
+
+    Stimmung: Score ab ±VERDICT_WARM. Trend: Kurs über/unter dem MA200, ohne MA200 die Kursänderung
+    über 30 Tage. Ausgeprägte Signale (ab ±SIGNAL_STRONG) werden antizyklisch gelesen: Angst und
+    abgebauter Hebel sprechen eher für steigende Kurse, Gier und viel Hebel dagegen."""
+    if not signals:
+        return None
+    pts = {s["name"]: s["points"] for s in signals}
+    pro: List[str] = []
+    contra: List[str] = []
+    words: List[str] = []
+
+    def strong(name: str, cold: Tuple[str, str], hot: Tuple[str, str]) -> None:
+        """cold/hot = (Satz für die Liste, Stichwort für den Lage-Satz) bei ≤ −50 bzw. ≥ +50 Punkten."""
+        p = pts.get(name, 0)
+        if p <= -SIGNAL_STRONG and cold[0]:
+            pro.append(cold[0])
+            words.append(cold[1])
+        elif p >= SIGNAL_STRONG and hot[0]:
+            contra.append(hot[0])
+            words.append(hot[1])
+
+    trend = basis = trend_text = None
+    ma = d.get("price_ma200")
+    if ma:
+        dist = ma["distance"]
+        trend, basis = ("up" if dist >= 0 else "down"), "MA200"
+        where = f"{_pct_de(abs(dist), sign=False)} {'über' if dist >= 0 else 'unter'} dem MA200"
+        trend_text = f"{'Aufwärtstrend' if dist >= 0 else 'Abwärtstrend'} ({where})"
+        (pro if dist >= 0 else contra).append(
+            f"Kurs {where}: langfristiger {'Aufwärtstrend' if dist >= 0 else 'Abwärtstrend'}")
+    else:
+        c30 = ((d.get("market_stats") or {}).get("change") or {}).get("30d")
+        if c30 is None:
+            c30 = (d.get("momentum") or {}).get("change_30d")
+        if c30:
+            trend, basis = ("up" if c30 > 0 else "down"), "30 Tage"
+            trend_text = f"{'Aufwärts' if c30 > 0 else 'Abwärts'}bewegung ({_pct_de(c30)} in 30 Tagen)"
+            (pro if c30 > 0 else contra).append(
+                f"Kurs {_pct_de(c30)} in 30 Tagen (kein MA200 verfügbar, Trend nur grob)")
+
+    def num(v: float, digits: int) -> str:
+        return f"{v:.{digits}f}".replace(".", ",")
+
+    fng, rs, fr, oi = d.get("fear_greed"), d.get("rsi"), d.get("funding"), d.get("open_interest")
+    ls, dv, mo = d.get("long_short"), d.get("dvol"), d.get("momentum") or {}
+    if fng:
+        strong("Fear & Greed",
+               (f"Fear & Greed {fng['value']}: Angst am Markt, historisch oft nahe an Tiefs", ""),
+               (f"Fear & Greed {fng['value']}: Gier am Markt, historisch oft nahe an Hochs", ""))
+    if ma:
+        strong("Preis vs. MA200", ("", ""),
+               ("Kurs weit über dem MA200: stark gestreckt, anfällig für Rücksetzer", "stark gestreckt"))
+    if rs:
+        low, high = RSI_SCALE[0][0], RSI_SCALE[-1][0]   # 30 / 70: erst dort gilt der RSI als überverkauft / überkauft
+        sold = "überverkauft" if rs["value"] <= low else "schwach, nahe am überverkauften Bereich"
+        bought = "überkauft" if rs["value"] >= high else "stark, nahe am überkauften Bereich"
+        strong("RSI (14)",
+               (f"RSI {num(rs['value'], 0)}: {sold}, Gegenbewegungen sind häufig",
+                "überverkauft" if rs["value"] <= low else "RSI schwach"),
+               (f"RSI {num(rs['value'], 0)}: {bought}, Rücksetzer sind häufig",
+                "überkauft" if rs["value"] >= high else "RSI stark"))
+    if mo.get("rsi_hourly") is not None:
+        strong("RSI (14 Std.)",
+               (f"RSI (Stunden) {num(mo['rsi_hourly'], 0)}: kurzfristig überverkauft", "kurzfristig überverkauft"),
+               (f"RSI (Stunden) {num(mo['rsi_hourly'], 0)}: kurzfristig überkauft", "kurzfristig überkauft"))
+    if fr:
+        rate = f"Funding {_pct_de(fr['avg_7d'], 4)} pro 8 h"
+        strong("Funding Rate",
+               (f"{rate}: Shorts dominieren, ein Short-Squeeze ist möglich", "Shorts dominieren"),
+               (f"{rate}: Longs zahlen viel, der Markt ist gehebelt long", "viel Long-Hebel"))
+    if oi:
+        chg = f"Open Interest {_pct_de(oi['change_7d'])} in 7 Tagen"
+        strong("Open Interest",
+               (f"{chg}: Hebel wurde abgebaut, weniger Liquidationsdruck", "Hebel wird abgebaut"),
+               (f"{chg}: viel neuer Hebel, Risiko von Liquidationswellen", "viel neuer Hebel"))
+    if ls:
+        ratio = f"Long/Short {num(ls['ratio'], 2)}"
+        strong("Long/Short Ratio",
+               (f"{ratio}: ungewöhnlich viele Konten short (Kontraindikator)", "Masse short"),
+               (f"{ratio}: die Masse ist stark long (Kontraindikator)", "Masse stark long"))
+    if dv:
+        z = f"{'+' if dv['z'] >= 0 else '−'}{num(abs(dv['z']), 1)}σ"
+        strong("Optionsvola (DVOL)",
+               (f"Optionsvola ungewöhnlich hoch ({z}): Absicherung gefragt, viel Angst ist eingepreist", "hohe Optionsvola"),
+               (f"Optionsvola ungewöhnlich niedrig ({z}): Sorglosigkeit", "niedrige Optionsvola"))
+    if mo.get("change_7d") is not None:
+        c7 = _pct_de(mo["change_7d"])
+        strong("Momentum 7T",
+               (f"{c7} in 7 Tagen: starker Ausverkauf, eine Gegenbewegung ist möglich", "starker Ausverkauf"),
+               (f"{c7} in 7 Tagen: steiler Anstieg, anfällig für Rücksetzer", "steiler Anstieg"))
+    if mo.get("turnover") is not None:
+        strong("Umschlag",
+               ("Sehr hoher Umschlag im Rückgang: Panikverkäufe, oft nahe an Zwischentiefs", "Panikverkäufe"),
+               ("Sehr hoher Umschlag im Anstieg: Spekulationsrausch", "Spekulationsrausch"))
+
+    mood = "greed" if total >= VERDICT_WARM else "fear" if total <= -VERDICT_WARM else "neutral"
+    mood_text = ("Stimmung überhitzt" if total >= VERDICT_HOT else "Stimmung leicht gierig" if total >= VERDICT_WARM
+                 else "Stimmung extrem ängstlich" if total <= -VERDICT_HOT
+                 else "Stimmung leicht ängstlich" if total <= -VERDICT_WARM else "Stimmung neutral")
+    words = [w for w in words if w]
+    summary = ", ".join(x for x in (trend_text, mood_text) if x) + ("; " + ", ".join(words[:3]) if words else "") + "."
+    title, text = SITUATIONS[(mood, trend)]
+    return {"mood": mood, "trend": trend, "trend_basis": basis, "title": title, "text": text,
+            "summary": summary, "pro": pro, "contra": contra}
+
+
 def fmt_usd(v: float) -> str:
     if v >= 1e9:
         return f"${v / 1e9:,.1f} Mrd."
@@ -823,6 +1037,14 @@ def print_report(symbol: str, d: Dict[str, Any], signals: List[Dict[str, Any]]) 
 
     print(f"\n  Score: {total:+d} (Bereich -100 … +100, Durchschnitt aus {len(signals)} Signalen)")
     print(f"  → {verdict(total, len(signals))}")
+    sit = situation(d, signals, total)
+    if sit:
+        print(f"\n  Lage: {sit['title']} – {sit['summary']}")
+        for label, items in (("Für steigende Kurse spricht", sit["pro"]), ("Dagegen spricht", sit["contra"])):
+            if items:
+                print(f"  {label}:")
+                for item in items:
+                    print(f"    · {item}")
     print(f"{line}\n  Keine Anlageberatung. Schwellenwerte sind Erfahrungswerte.\n")
 
 
@@ -970,6 +1192,7 @@ def collect_symbol(symbol: str, coin_id: Optional[str] = None,
         if with_market:
             data["market_cap"] = cg.get("market_cap")
             data["market_stats"] = cg.get("market_stats")
+            data["name"] = cg.get("name")
         if no_futures or not closes:
             data["momentum"] = cg.get("momentum")
     return data
@@ -988,7 +1211,8 @@ def main() -> None:
     if args.json:
         total = total_score(signals)
         print(json.dumps({"symbol": symbol, "data": data, "signals": signals,
-                          "score": total, "verdict": verdict(total, len(signals))},
+                          "score": total, "verdict": verdict(total, len(signals)),
+                          "situation": situation(data, signals, total)},
                          indent=2, ensure_ascii=False))
     else:
         print_report(symbol, data, signals)

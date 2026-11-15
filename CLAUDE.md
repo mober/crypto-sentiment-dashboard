@@ -26,7 +26,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Vorrang Dachprotokoll > Chain > Einzelprotokoll, Cache 30 Min., Index 1 Tag), `/api/klines?symbol=…&interval=1d|4h|1h|15m|5m|3m|1m`
   (Binance-Kerzen, Cache 60 s), `/api/derivatives?symbol=…` (Funding 90 T, Open Interest 30 T
   von Binance Futures, Cache 5 Min.), `/api/score-history?symbol=…` (Score je Tag, rückwirkend
-  aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/search?q=…` (CoinGecko-Suche plus
+  aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/news?symbol=…&name=…` (deutschsprachige Schlagzeilen aus den RSS-Feeds `NEWS_FEEDS`, nach Symbol/Name
+  gefiltert in `match_news`, Feeds gemeinsam 15 Min. gecacht; Anzeige im Kopf der Detailseite),
+  `/api/search?q=…` (CoinGecko-Suche plus
   Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.); liefert `web/` statisch aus
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
@@ -59,6 +61,11 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   wird nur bei mindestens 200 Tageskerzen berechnet, sonst `price_ma200 = None` (kein MA52 o. ä.).
 - Fehlen Binance-Futures oder -Tageskerzen, kommen Ersatz-Signale aus CoinGecko
   (Momentum 7T/30T, Umschlag, RSI auf Stundenbasis).
+
+- Lagebild im Kopf der Detailseite: `situation()` in `sentiment.py` ordnet Stimmung (Score ab
+  ±`VERDICT_WARM`) × Trend (Kurs zum MA200, sonst 30-T-Änderung) in ein Feld der Tabelle `SITUATIONS`
+  ein und sortiert ausgeprägte Signale (ab ±`SIGNAL_STRONG`) in „spricht dafür / dagegen“
+  (antizyklisch gelesen). Bewusst Einordnung statt Kauf-/Verkaufsempfehlung; Tooltip `situation`.
 
 ## Fallstricke
 

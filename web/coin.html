@@ -10,7 +10,35 @@
 <style>
   .hero { padding: 20px 24px; display: grid; grid-template-columns: 1fr auto; gap: 16px 24px; align-items: center; margin-bottom: 20px; }
   .hero .price { font-size: 28px; font-weight: 700; }
-  .hero .mcap { color: var(--muted); font-size: 13px; }
+  .hero .price-line { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
+  .hero .chg { font-size: 13px; color: var(--muted); display: flex; gap: 12px; }
+  .hero .chg span span { font-weight: 600; }
+  .hero .mcap { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .hero .mcap b { color: var(--text); font-weight: 600; }
+  /* Lagebild: Einordnung aus Stimmung und Trend */
+  .lage { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }
+  .lage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lage-head .verdict { margin-top: 0; font-weight: 600; }
+  .lage-sum { margin-top: 8px; font-weight: 500; }
+  .lage-text { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .lage-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; margin-top: 12px; }
+  .lage-cols ul { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
+  .lage-cols li { position: relative; padding: 3px 0 3px 18px; }
+  .lage-cols li::before { position: absolute; left: 0; font-weight: 700; }
+  .lage-cols .pro li::before { content: "+"; color: var(--up); }
+  .lage-cols .contra li::before { content: "−"; color: var(--down); }
+  .lage-cols li.none { color: var(--muted); padding-left: 0; }
+  .lage-cols li.none::before { content: none; }
+  .lage-foot { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .lage-foot b { color: var(--text); font-weight: 600; }
+  /* News zum Coin */
+  .news { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }
+  .news[hidden] { display: none; }
+  .news ul { list-style: none; margin: 6px 0 0; padding: 0; }
+  .news li { display: flex; justify-content: space-between; align-items: baseline; gap: 2px 16px; flex-wrap: wrap; padding: 5px 0; font-size: 14px; }
+  .news a { color: var(--text); text-decoration: none; font-weight: 500; }
+  .news a:hover { text-decoration: underline; }
+  .news .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .hero .score-box { text-align: right; }
   .hero .score { font-size: 28px; font-weight: 700; }
   .verdict { border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 500; display: inline-block; margin-top: 4px; }
@@ -174,6 +202,7 @@
 
   @media (max-width: 640px) {
     .hero { grid-template-columns: 1fr; }
+    .lage-cols { grid-template-columns: 1fr; }
     .hero .score-box { text-align: left; }
     .chart-wrap, .chart-card.with-rsi .chart-wrap { height: 320px; }
     .rsi-wrap { height: 120px; }
@@ -295,7 +324,7 @@
   </section>
 
   <footer>Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
-    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Keine Anlageberatung.</footer>
+    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · News: RSS-Feeds deutschsprachiger Krypto-Medien · Keine Anlageberatung.</footer>
 </main>
 
 <script src="format.js"></script>
@@ -321,20 +350,95 @@ const validSymbol = /^[A-Z0-9]{1,15}$/.test(symbol);
 
 // --- Kopfbereich ---------------------------------------------------------
 
+// Lagebild unter Kurs und Score: Einordnung, ein Satz zur Lage, Für und Wider (kommt fertig vom Server,
+// siehe situation() in sentiment.py)
+const MOOD_TONE = { fear: "tone-cold", greed: "tone-hot", neutral: "tone-neutral" };
+
+function lageBlock(c) {
+  const s = c.situation;
+  if (!s) return "";
+  const list = (items) => items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : '<li class="none">nichts Ausgeprägtes</li>';
+  // die zwei Signale mit dem größten Ausschlag
+  const drivers = [...c.signals].sort((a, b) => Math.abs(b.points) - Math.abs(a.points)).slice(0, 2)
+    .map((x) => `${esc(x.name)} <b>${signed(x.points)}</b>`).join(", ");
+  return `
+    <div class="lage">
+      <div class="lage-head">
+        <span class="label"><span${tipAttr("situation")}>Lage</span></span>
+        <span class="verdict ${MOOD_TONE[s.mood] || "tone-neutral"}">${esc(s.title)}</span>
+      </div>
+      <div class="lage-sum">${esc(s.summary)}</div>
+      <div class="lage-text">${esc(s.text)}</div>
+      <div class="lage-cols">
+        <div class="pro"><div class="label">Für steigende Kurse spricht</div><ul>${list(s.pro)}</ul></div>
+        <div class="contra"><div class="label">Dagegen spricht</div><ul>${list(s.contra)}</ul></div>
+      </div>
+      <div class="lage-foot">${drivers ? `Stärkste Signale im Score: ${drivers} · ` : ""}Einordnung nach Erfahrungswerten, keine Anlageberatung.</div>
+    </div>`;
+}
+
+// News zum Coin: Schlagzeilen deutschsprachiger Krypto-Medien, vom Server aus RSS-Feeds gefiltert
+const NEWS_REFRESH_MS = 15 * 60 * 1000;   // wie NEWS_CACHE_SECONDS in server.py
+let newsData = null, newsName = "";
+
+const ago = (t) => {
+  const min = Math.max(0, (Date.now() / 1000 - t) / 60);
+  return min < 60 ? `vor ${Math.round(min)} Min.` : min < 48 * 60 ? `vor ${Math.round(min / 60)} Std.` : `vor ${Math.round(min / 1440)} Tagen`;
+};
+
+function renderNews() {
+  const el = $("hero-news");
+  if (!el) return;
+  const items = newsData ? newsData.items : [];
+  const who = esc(newsName || symbol);
+  el.hidden = !items.length;
+  el.innerHTML = !items.length ? "" : `
+    <div class="label"><span${tipAttr("news")}>${newsData.general ? `Keine aktuellen Meldungen zu ${who} – neueste Krypto-News` : `News zu ${who}`}</span></div>
+    <ul>${items.map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="${esc(i.teaser)}">${esc(i.title)}</a>`
+      + `<span class="meta">${esc(i.source)} · ${ago(i.time)}</span></li>`).join("")}</ul>`;
+}
+
+async function loadNews(name) {
+  // Name nur mitschicken, wenn der Server ihn annimmt (siehe NAME_RE in server.py)
+  newsName = /^[\w .&'+-]{1,40}$/.test(name || "") ? name : "";
+  try {
+    const res = await fetch("/api/news?symbol=" + encodeURIComponent(symbol) + (newsName ? "&name=" + encodeURIComponent(newsName) : ""));
+    if (!res.ok) return;   // Feeds nicht erreichbar: Kopf bleibt ohne News
+    newsData = await res.json();
+    renderNews();
+  } catch (e) { /* ohne News weiter */ }
+}
+
 function renderHero(c) {
   const ma = c.data.price_ma200;
   const mc = c.data.market_cap;
+  const st = c.data.market_stats || {};
+  const ch = st.change || {};
+  const fng = c.fear_greed;
+  const changes = [["24 h", ch["24h"]], ["7 T", ch["7d"]]].filter(([, v]) => v != null)
+    .map(([label, v]) => `<span>${label} ${change(v)}</span>`).join("");
+  const facts = [
+    mc ? `Marktkap. ${usd6(mc.usd)}${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "Marktkap. n/a",
+    st.ath_change == null ? "" : st.ath_change < 0 ? `<b>${pct(-st.ath_change).replace("+", "")}</b> unter dem Allzeithoch` : "<b>auf dem Allzeithoch</b>",
+    fng ? `Fear &amp; Greed <b>${fng.value}</b> (${fngZone(fng.value).name})` : "",
+  ].filter(Boolean).join(" · ");
   $("hero").className = "card hero";
   $("hero").innerHTML = `
     <div>
-      <div class="price" id="hero-price">${ma ? usd(ma.price) : c.data.price != null ? usd(c.data.price) : "–"}</div>
-      <div class="mcap">${mc ? `Marktkap. ${usd6(mc.usd)}${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "Marktkap. n/a"}</div>
+      <div class="price-line">
+        <div class="price" id="hero-price">${ma ? usd(ma.price) : c.data.price != null ? usd(c.data.price) : "–"}</div>
+        ${changes ? `<div class="chg">${changes}</div>` : ""}
+      </div>
+      <div class="mcap">${facts}</div>
     </div>
     <div class="score-box">
       <div class="label">Überhitzungs-Score</div>
       <div class="score">${signed(c.score)}</div>
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
-    </div>`;
+    </div>
+    ${lageBlock(c)}
+    <div class="news" id="hero-news" hidden></div>`;
+  renderNews();
   fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
   renderStats(c);
   renderBreakdown(c);
@@ -603,6 +707,10 @@ async function loadHero() {
     }
     if (!coin) throw new Error("keine Daten");
     renderHero(coin);
+    // Name von CoinGecko, sonst aus der Coin-ID abgeleitet (z. B. "avalanche-2" → "avalanche")
+    const name = coin.data.name || coinId.replace(/-\d+$/, "").replace(/-/g, " ");
+    loadNews(name);
+    setInterval(() => loadNews(name), NEWS_REFRESH_MS);
     $("updated").textContent = updated ? "Score-Stand: " + new Date(updated).toLocaleString("de-DE") : "";
   } catch (e) {
     $("hero").className = "card status error";
