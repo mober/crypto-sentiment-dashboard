@@ -6,7 +6,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 ## Starten
 
 - `python3 server.py` → http://localhost:8000 (öffnet den Browser; `--no-browser`, `--port`)
-- `start.command` per Doppelklick im Finder macht dasselbe
+- `./start.sh` im Terminal (gleiche Optionen, prüft vorher, ob der Port frei ist) oder
+  `start.command` per Doppelklick im Finder macht dasselbe
 - `python3 sentiment.py --symbol ETH` → Bericht im Terminal (`--json` für Rohdaten)
 
 - Deployment auf einen eigenen Server (HTTPS + Passwort über Caddy, systemd): `deploy/README.md`,
