@@ -36,7 +36,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 TIMEOUT = 15
-RATE_LIMIT_RETRIES = 2    # erneute Versuche bei HTTP 429 (v. a. CoinGecko ohne API-Key)
+RATE_LIMIT_RETRIES = 2    # erneute Versuche bei HTTP 429 (nicht für CoinGecko: dort sofortiger Abbruch, siehe unten)
 USER_AGENT = "Mozilla/5.0 (sentiment-script)"
 # CoinGecko ohne API-Key: wenige Abfragen pro Minute, und Bursts lösen schnell HTTP 429 aus.
 # Daher alle CoinGecko-Abfragen nacheinander mit Mindestabstand, nach 429 eine längere Pause.

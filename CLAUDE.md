@@ -62,8 +62,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - **Nach Änderungen an `.py`-Dateien den Server neu starten** – er hält die Module im
   Speicher. HTML/CSS wird ohne Neustart ausgeliefert (`Cache-Control: no-cache`).
 - **CoinGecko ohne API-Key ist stark limitiert (HTTP 429).** Abfragen bündeln statt pro Coin
-  einzeln abzufragen; `fetch_json` wiederholt bei 429, und der Server behält bei Fehlern den
-  letzten erfolgreichen Wert. Neue Features nicht mit zusätzlichen CoinGecko-Abfragen pro
+  einzeln abzufragen; der Server behält bei Fehlern den letzten erfolgreichen Wert (bei 429
+  wiederholt `fetch_json` nur für die anderen Quellen, für CoinGecko siehe unten). Neue Features nicht mit zusätzlichen CoinGecko-Abfragen pro
   Seitenaufruf bauen.
 - **Skalen stehen an zwei Stellen:** Ändert sich ein Ankerpunkt in `sentiment.py`, auch den
   Tooltip-Text im Objekt `TIPS` in `web/tips.js` anpassen (gemeinsam für Dashboard und Detailseite). Neue Signale brauchen dort

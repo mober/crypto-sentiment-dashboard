@@ -1415,7 +1415,6 @@ function feeTiles() {
   }
   tiles.push(statTile("feesHolders", "An Token-Halter 30 T", f.holders ? money(f.holders.total30d) : "–",
     `<div class="det">${f.holders ? "Rückkäufe, Burns oder Ausschüttungen" : "keine Weitergabe an Halter erfasst"}</div>`));
-  const rev1y = f.revenue && f.revenue.total1y;
   if (f.revenue || f.fees) {
     const x = f.revenue || f.fees;
     tiles.push(statTile("feesYear", `${f.revenue ? "Einnahmen" : "Gebühren"} 1 J`, x.total1y ? money(x.total1y) : "–",
