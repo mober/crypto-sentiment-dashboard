@@ -28,7 +28,7 @@ SYMBOLS = ["BTC", "ETH", "SOL"]
 CACHE_SECONDS = 300
 MARKETS_PER_PAGE = 50
 MARKETS_MAX_PAGE = 20     # Top 1000, wie bei Cryptobubbles
-KLINE_INTERVALS = {"1d", "4h", "1h"}
+KLINE_INTERVALS = {"1d", "4h", "1h", "15m", "5m", "3m", "1m"}   # wie INTERVAL_LABEL in coin.html
 KLINE_CACHE_SECONDS = 60  # Binance ist großzügig limitiert; die letzte Kerze soll aktuell sein
 STATIC_DIR = Path(__file__).resolve().parent / "web"
 

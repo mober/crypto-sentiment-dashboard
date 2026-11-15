@@ -196,6 +196,8 @@
         <button class="toggle" data-show="ma200" aria-pressed="true" title="Gleitender Durchschnitt über 200 Kerzen ein- oder ausblenden"><span class="swatch"></span>MA200</button>
         <button class="toggle" data-show="rsi" aria-pressed="true" title="RSI-Fenster unter dem Chart ein- oder ausblenden"><span class="swatch rsi"></span>RSI</button>
         <div class="seg" id="range-seg" role="group" aria-label="Zeitraum">
+          <button data-range="0.25" title="Letzte 6 Stunden">6h</button>
+          <button data-range="1" title="Letzte 24 Stunden">24h</button>
           <button data-range="7" title="Letzte Woche">1W</button>
           <button data-range="30" title="Letzter Monat">1M</button>
           <button data-range="91" title="Letzte 3 Monate">3M</button>
@@ -207,6 +209,10 @@
           <button data-interval="1d">1T</button>
           <button data-interval="4h">4h</button>
           <button data-interval="1h">1h</button>
+          <button data-interval="15m" title="15 Minuten je Kerze">15m</button>
+          <button data-interval="5m" title="5 Minuten je Kerze">5m</button>
+          <button data-interval="3m" title="3 Minuten je Kerze">3m</button>
+          <button data-interval="1m" title="1 Minute je Kerze">1m</button>
         </div>
       </div>
     </div>
@@ -285,7 +291,7 @@
 const compact = (v) => v.toLocaleString("de-DE", { notation: "compact", maximumFractionDigits: 1 });
 
 const MAIN_SYMBOLS = ["BTC", "ETH", "SOL"];  // wie SYMBOLS in server.py
-const INTERVAL_LABEL = { "1d": "1T", "4h": "4h", "1h": "1h" };
+const INTERVAL_LABEL = { "1d": "1T", "4h": "4h", "1h": "1h", "15m": "15m", "5m": "5m", "3m": "3m", "1m": "1m" };  // wie KLINE_INTERVALS in server.py
 const INTERVAL_KEY = "chartInterval";
 const CHART_REFRESH_MS = 60 * 1000;   // wie KLINE_CACHE_SECONDS in server.py
 const VISIBLE_BARS = 150;             // so viele Kerzen beim Öffnen sichtbar, der Rest per Scrollen
@@ -850,12 +856,17 @@ function setRange(range) {
   chart.timeScale().setVisibleLogicalRange({ from, to: n - 1 + 5 });
 }
 
-// Zeiträume, die länger sind als die geladenen Kerzen, abschalten (z. B. 1J bei 1h-Kerzen)
+// Zeiträume abschalten, die nicht zum Intervall passen: länger als die geladenen Kerzen
+// (z. B. 1J bei 1h-Kerzen) oder so kurz, dass kaum Kerzen zu sehen wären (z. B. 6h bei Tageskerzen)
+const RANGE_MIN_BARS = 6;
 function updateRangeButtons() {
-  const span = candles.length ? candles[candles.length - 1].time - candles[0].time : 0;
+  const n = candles.length;
+  const span = n ? candles[n - 1].time - candles[0].time : 0;
+  const step = n > 1 ? candles[n - 1].time - candles[n - 2].time : 0;
   document.querySelectorAll("#range-seg button").forEach((b) => {
     const days = b.dataset.range;
-    b.disabled = !candles.length || (days !== "all" && span < Number(days) * 86400 * 0.95);
+    const secs = Number(days) * 86400;
+    b.disabled = !n || (days !== "all" && (span < secs * 0.95 || secs < step * RANGE_MIN_BARS));
   });
 }
 
