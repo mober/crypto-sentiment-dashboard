@@ -110,8 +110,17 @@
   .hist-detail .cold b { color: var(--cold); }
 
   /* Kennzahlen */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; padding: 0; overflow: hidden;
-    background: var(--border); margin-bottom: 20px; }
+  .stats-card { padding: 0; overflow: hidden; margin-bottom: 20px; }
+  .stats-card[hidden] { display: none; }
+  /* Kopfzeile = Schalter zum Ein- und Ausklappen */
+  .stats-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;
+    border: 0; border-radius: 0; background: none; padding: 11px 16px; text-align: left; }
+  .stats-toggle:hover .label, .stats-toggle:hover .chev { color: var(--text); }
+  .stats-toggle .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .stats-toggle .chev { color: var(--muted); font-size: 12px; transition: transform .15s; }
+  .stats-toggle[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px;
+    background: var(--border); border-top: 1px solid var(--border); }
   .stats[hidden] { display: none; }
   .stat { background: var(--card); padding: 14px 16px; min-width: 0; }
   .stat .val { font-size: 17px; font-weight: 700; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -186,7 +195,12 @@
   </header>
 
   <section id="hero"></section>
-  <section class="card stats" id="stats" hidden aria-label="Kennzahlen"></section>
+  <section class="card stats-card" id="stats" hidden aria-label="Kennzahlen">
+    <button class="stats-toggle" id="stats-toggle" aria-expanded="true" aria-controls="stats-grid" title="Kennzahlen ein- oder ausklappen">
+      <span class="label">Kennzahlen</span><span class="hint" id="stats-hint"></span><span class="chev" aria-hidden="true">▼</span>
+    </button>
+    <div class="stats" id="stats-grid"></div>
+  </section>
 
   <section class="card chart-card">
     <div class="chart-head">
@@ -539,9 +553,29 @@ function drawStats() {
       : `<div class="det">kein Maximum festgelegt${st.total_supply ? ` · ausgegeben ${big(st.total_supply)}` : ""}</div>`;
     tiles.push(statTile("supply", "Umlaufmenge", `${big(st.circulating_supply)} ${esc(c.symbol)}`, det));
   }
-  $("stats").innerHTML = tiles.join("");
+  $("stats-grid").innerHTML = tiles.join("");
   $("stats").hidden = !tiles.length;
+  applyStatsOpen();
 }
+
+// Kennzahlen ein- und ausklappen, gemerkt im Browser
+const STATS_KEY = "statsOpen";
+let statsOpen = true;
+try { statsOpen = localStorage.getItem(STATS_KEY) !== "0"; } catch (e) { /* ignorieren */ }
+
+function applyStatsOpen() {
+  $("stats-grid").hidden = !statsOpen;
+  $("stats-toggle").setAttribute("aria-expanded", String(statsOpen));
+  const n = $("stats-grid").children.length;
+  $("stats-hint").textContent = statsOpen ? "" : `${n} Kennzahlen ausgeblendet`;
+}
+
+$("stats-toggle").addEventListener("click", () => {
+  statsOpen = !statsOpen;
+  try { localStorage.setItem(STATS_KEY, statsOpen ? "1" : "0"); } catch (e) { /* ignorieren */ }
+  hideTip();
+  applyStatsOpen();
+});
 
 async function loadDailyStats() {
   try {
