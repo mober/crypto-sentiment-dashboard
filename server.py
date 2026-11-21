@@ -11,6 +11,7 @@ Aufruf:
 
 import argparse
 import json
+import os
 import re
 import threading
 import time
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
+import liquidations
 import sentiment
 
 SYMBOLS = ["BTC", "ETH", "SOL"]
@@ -31,6 +33,10 @@ MARKETS_MAX_PAGE = 20     # Top 1000, wie bei Cryptobubbles
 KLINE_INTERVALS = {"1d", "4h", "1h", "15m", "5m", "3m", "1m"}   # wie INTERVAL_LABEL in coin.html
 KLINE_CACHE_SECONDS = 60  # Binance ist großzügig limitiert; die letzte Kerze soll aktuell sein
 STATIC_DIR = Path(__file__).resolve().parent / "web"
+# Liquidationen der letzten 24 h (liquidations.py); auf dem Server setzt systemd STATE_DIRECTORY
+DATA_DIR = Path(os.environ.get("STATE_DIRECTORY") or Path(__file__).resolve().parent / "data")
+LIQ_EXCHANGES = set(liquidations.EXCHANGES)
+_collector: Optional[liquidations.Collector] = None   # startet in main()
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
 COIN_ID_RE = re.compile(r"^[a-z0-9-]{1,100}$")  # CoinGecko-ID, z. B. "bitcoin"
@@ -504,6 +510,30 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             self.send_json(payload)
             return
+        if url.path in ("/api/liq-overview", "/api/liq-feed"):
+            if _collector is None:
+                self.send_json({"error": "Liquidations-Collector läuft nicht"}, 503)
+                return
+            if url.path == "/api/liq-overview":
+                window = (query.get("window") or ["24h"])[0]
+                if window not in liquidations.WINDOWS:
+                    self.send_json({"error": "ungültiges Zeitfenster"}, 400)
+                    return
+                self.send_json(_collector.overview(window))
+                return
+            coin = (query.get("coin") or [""])[0].upper() or None
+            exchange = (query.get("exchange") or [""])[0] or None
+            try:
+                min_usd = max(0.0, float((query.get("min") or ["0"])[0]))
+                limit = min(200, max(1, int((query.get("limit") or ["60"])[0])))
+            except ValueError:
+                self.send_json({"error": "ungültige Zahl"}, 400)
+                return
+            if (coin and not SYMBOL_RE.match(coin)) or (exchange and exchange not in LIQ_EXCHANGES):
+                self.send_json({"error": "ungültiger Coin oder ungültige Börse"}, 400)
+                return
+            self.send_json(_collector.feed(coin, exchange, min_usd, limit))
+            return
         if url.path == "/api/derivatives":
             symbol = (query.get("symbol") or [""])[0].upper()
             if not SYMBOL_RE.match(symbol):
@@ -527,6 +557,10 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--no-browser", action="store_true", help="Browser nicht öffnen")
     args = parser.parse_args()
+
+    # Echte Liquidationen von Binance, Bybit und OKX im Hintergrund mitschneiden
+    global _collector
+    _collector = liquidations.Collector(DATA_DIR).start()
 
     # Nur lokal erreichbar
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

@@ -16,6 +16,12 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 ## Aufbau
 
 - `sentiment.py` – Datenabfragen, Score-Skalen und Bewertung (auch als CLI nutzbar)
+- `liquidations.py` – echte Liquidationen live von Binance, Bybit und OKX (eigener WebSocket-Client
+  ohne Zusatzpakete, je Börse ein Thread, `Collector` startet in `server.main()`); 24 h im Speicher
+  und als JSON-Zeilen in `data/liquidations.jsonl` (überlebt Neustarts, stündlich verdichtet). Endpoints
+  `/api/liq-overview?window=1h|4h|12h|24h` (Summen aller Fenster, Coins und Börsen des Fensters,
+  größte Order, Stundenwerte 24 h, Status der Verbindungen) und `/api/liq-feed?coin=&exchange=&min=&limit=`.
+  Test im Terminal: `python3 liquidations.py --seconds 60`
 - `server.py` – HTTP-Server mit Cache (5 Min.) und den Endpoints `/api/sentiment`,
   `/api/coin?symbol=…&id=…`, `/api/markets?page=…` (oder `?category=…`: größte 100 einer Sparte),
   `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/defi` (TVL je Kategorie und
@@ -32,6 +38,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.), `/api/coin-info?symbol=…&id=…`
   (Profil für `about.html`: eine CoinGecko-Abfrage `coins/{id}`, Cache 1 Tag; Kategorien deutsch über
   `CATEGORY_DE`, Art über `coin_type`, regelbasierte Risikostufe in `coin_assessment`); liefert `web/` statisch aus
+- `web/liquidations.html` – Liquidations-Übersicht im Stil von CoinGlass (Heatmap je Coin/Börse als
+  Treemap, Summen 1h–24h, Long/Short, Anteil je Börse, größte Order, Stunden mit BTC-Kurs, Live-Feed)
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
   Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten
@@ -93,6 +101,13 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - Die Liquidations-Heatmap ist ein **Modell** (OI-Zuwachs × angenommene Hebel), keine echten
   Aufträge; sie liegt als Canvas unter einem transparenten Lightweight-Chart und wird bei
   Bereichsänderungen neu gezeichnet. Die Preisachse ist dort nicht von Hand skalierbar.
+- **Liquidationen (`liquidations.py`):** Binance liefert `!forceOrder@arr` nur noch über
+  `wss://fstream.binance.com/market/ws/` (die alte Adresse `/ws/` verbindet, schickt aber nichts) und mischt
+  dort COIN-M-Kontrakte (`BTCUSD_PERP`) bei: deren Menge sind Kontrakte zu 100 $ (BTC) bzw. 10 $ (Rest).
+  Binance meldet je Symbol höchstens eine Liquidation pro Sekunde. Bybit `allLiquidation`: `S = Buy` heißt
+  Long liquidiert. OKX rechnet Kontrakte über `ctVal` in USD um und schickt beim Verbinden ältere Meldungen
+  erneut (der `Store` sortiert ein und verwirft Duplikate). `data/` ist in `.gitignore` und wird von
+  `deploy.sh` nicht überschrieben.
 - Es gibt kein Node.js; JS-Syntax lässt sich mit `osascript -l JavaScript` prüfen.
 
 ## Arbeitsweise

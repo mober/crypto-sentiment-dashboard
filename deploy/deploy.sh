@@ -15,7 +15,7 @@ fi
 ssh "$TARGET" "mkdir -p $APP_DIR"
 rsync -az --delete \
   --exclude .git --exclude .DS_Store --exclude __pycache__ --exclude '*.pyc' \
-  --exclude .claude --exclude .env --exclude .venv \
+  --exclude .claude --exclude .env --exclude .venv --exclude data \
   ./ "$TARGET:$APP_DIR/"
 
 # Neustart nur, wenn die App schon eingerichtet ist (beim ersten Mal übernimmt das setup.sh)

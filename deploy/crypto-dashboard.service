@@ -13,7 +13,9 @@ Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
-# Härtung: die App schreibt nichts auf die Platte (Caches liegen im Speicher)
+# Härtung: die App schreibt nur in /var/lib/crypto-dashboard (Liquidationen der letzten 24 h),
+# systemd legt das Verzeichnis an und übergibt es als STATE_DIRECTORY
+StateDirectory=crypto-dashboard
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

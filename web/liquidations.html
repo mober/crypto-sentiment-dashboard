@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liquidationen</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  /* Long = Longs zwangsgeschlossen (Kurs fiel) → rot; Short = Shorts zwangsgeschlossen (Kurs stieg) → grün */
+  :root { --long: var(--down); --short: var(--up); }
+  .notice { margin: -8px 0 18px; padding: 10px 14px; border-radius: 10px; background: var(--hot-bg); font-size: 13px; }
+  .notice[hidden] { display: none; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 12px; font-size: 13px; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--text); color: var(--card); }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--up); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--up); animation: blink 1.4s infinite; }
+  .live.off { color: var(--muted); } .live.off i { background: var(--muted); animation: none; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .top { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+  .card { padding: 16px 18px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .card-head h2 { margin: 0; font-size: 16px; }
+
+  /* Heatmap */
+  .tree { position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 300px; border-radius: 8px; overflow: hidden; background: var(--track); }
+  .tile { position: absolute; box-sizing: border-box; border: 1px solid var(--card); padding: 6px 8px; overflow: hidden; cursor: pointer;
+    color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; line-height: 1.2;
+    transition: filter .15s; }
+  .tile:hover { filter: brightness(1.12); }
+  .tile b { font-size: clamp(11px, 1.6vw, 22px); }
+  .tile span { font-size: 12px; opacity: .92; }
+  .tile small { font-size: 11px; opacity: .8; }
+  .tile.s span, .tile.s small { display: none; }
+  .tile.xs b { font-size: 10px; } .tile.xxs b { display: none; }
+  .tile.sel { outline: 3px solid var(--text); outline-offset: -3px; }
+  .legend { display: flex; gap: 14px; justify-content: flex-end; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  /* Summen */
+  .totals { display: grid; gap: 12px; }
+  .tot { padding: 14px 16px; }
+  .tot .label { display: flex; justify-content: space-between; }
+  .tot .big { font-size: 24px; font-weight: 700; margin: 2px 0 8px; }
+  .lsbar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--track); }
+  .lsbar i { display: block; height: 100%; }
+  .lsrow { display: flex; justify-content: space-between; font-size: 13px; margin-top: 6px; }
+  .lsrow .l { color: var(--long); } .lsrow .s { color: var(--short); }
+
+  .summary { margin: 16px 0; padding: 14px 18px; font-size: 15px; }
+  .summary b { font-weight: 650; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .donut { display: flex; align-items: center; gap: 18px; }
+  .donut svg { width: 120px; height: 120px; flex: none; }
+  .donut .val { font-size: 22px; font-weight: 700; }
+  .ex-row { display: grid; grid-template-columns: 70px 1fr 64px; gap: 10px; align-items: center; font-size: 13px; margin: 9px 0; }
+  .ex-row .bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; display: flex; }
+  .big-order .amt { font-size: 26px; font-weight: 700; margin: 4px 0; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .tag.long { background: color-mix(in srgb, var(--long) 16%, transparent); color: var(--long); }
+  .tag.short { background: color-mix(in srgb, var(--short) 16%, transparent); color: var(--short); }
+
+  /* Stundenverlauf */
+  .hours svg { width: 100%; height: 240px; display: block; }
+  .hours text { fill: var(--muted); font-size: 11px; }
+
+  /* Live-Feed */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters input, .filters select { font: inherit; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; }
+  .filters input { width: 120px; text-transform: uppercase; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+  th.left, td.left { text-align: left; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.new td { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--cold) 22%, transparent); } to { background: transparent; } }
+  td.whale { font-weight: 700; }
+  .status { padding: 24px; text-align: center; color: var(--muted); }
+  section { margin-top: 16px; }
+  .src { font-size: 12px; color: var(--muted); }
+  .src b.ok { color: var(--up); } .src b.err { color: var(--down); }
+
+  @media (max-width: 900px) {
+    .top { grid-template-columns: 1fr; }
+    .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid3 { grid-template-columns: 1fr; }
+    .tree { aspect-ratio: 4 / 5; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Liquidationen</h1>
+      <div class="sub">Echte Zwangsschließungen auf Binance, Bybit und OKX, live mitgeschnitten · <span class="live" id="live"><i></i>LIVE</span></div>
+    </div>
+    <nav class="actions">
+      <a class="navlink" href="markets.html">Marktübersicht</a>
+      <a class="navlink" href="./">← Sentiment-Dashboard</a>
+    </nav>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="top">
+    <div class="card">
+      <div class="card-head">
+        <h2>Liquidations-Heatmap</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div class="seg" id="win"><button data-w="1h">1h</button><button data-w="4h">4h</button><button data-w="12h">12h</button><button data-w="24h" class="on">24h</button></div>
+          <div class="seg" id="group"><button data-g="coin" class="on">Coin</button><button data-g="exchange">Börse</button></div>
+        </div>
+      </div>
+      <div class="tree" id="tree"><div class="status">Lade Daten …</div></div>
+      <div class="legend"><span><i style="background:var(--long)"></i>vor allem Longs liquidiert</span><span><i style="background:var(--short)"></i>vor allem Shorts liquidiert</span><span>Fläche = Betrag · Klick filtert den Live-Feed</span></div>
+    </div>
+    <div class="totals" id="totals"></div>
+  </div>
+
+  <div class="card summary" id="summary"></div>
+
+  <div class="grid3">
+    <div class="card"><div class="card-head"><h2 id="bdTitle">Long/Short</h2></div><div class="donut" id="donut"></div></div>
+    <div class="card"><div class="card-head"><h2>Anteil je Börse</h2></div><div id="exchanges"></div></div>
+    <div class="card big-order"><div class="card-head"><h2>Größte Liquidation</h2></div><div id="largest"></div></div>
+  </div>
+
+  <section class="card hours">
+    <div class="card-head"><h2>Liquidationen je Stunde (24 h) und BTC-Kurs</h2>
+      <div class="legend" style="margin:0"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span><i style="background:var(--cold)"></i>BTC</span></div></div>
+    <div id="hours"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Live-Feed</h2>
+      <div class="filters">
+        <input id="fCoin" placeholder="Coin, z. B. BTC" maxlength="15" aria-label="Coin filtern">
+        <select id="fEx" aria-label="Börse filtern"><option value="">Alle Börsen</option><option>Binance</option><option>Bybit</option><option>OKX</option></select>
+        <select id="fMin" aria-label="Mindestbetrag"><option value="0">ab $0</option><option value="10000" selected>ab $10.000</option><option value="100000">ab $100.000</option><option value="1000000">ab $1 Mio.</option></select>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="left">Zeit</th><th class="left">Börse</th><th class="left">Coin</th><th class="left">Seite</th><th>Preis</th><th>Betrag</th></tr></thead>
+      <tbody id="feed"><tr><td colspan="6" class="status">Lade …</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    <div class="src" id="sources"></div>
+    Long = Long-Position zwangsgeschlossen (Kurs fiel), Short = Short-Position zwangsgeschlossen (Kurs stieg).
+    Binance meldet je Coin höchstens die größte Liquidation pro Sekunde; Hyperliquid und kleinere Börsen fehlen.
+    Die Summen liegen deshalb unter denen von Aggregatoren wie CoinGlass.
+  </footer>
+</main>
+
+<script src="format.js"></script>
+<script>
+let win = "24h", group = "coin", ov = null, coinFilter = "", seenIds = new Set(), firstFeed = true;
+
+const money = (v) => {
+  if (v >= 1e9) return "$" + (v / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " Mrd.";
+  if (v >= 1e6) return "$" + (v / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " Mio.";
+  if (v >= 1e3) return "$" + (v / 1e3).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Tsd.";
+  return "$" + v.toLocaleString("de-DE", { maximumFractionDigits: 0 });
+};
+const share = (part, total) => total > 0 ? (part / total * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " %" : "–";
+const clock = (t) => new Date(t * 1000).toLocaleTimeString("de-DE");
+const WIN_LABEL = { "1h": "1 Stunde", "4h": "4 Stunden", "12h": "12 Stunden", "24h": "24 Stunden" };
+const sideTag = (s) => `<span class="tag ${s}">${s === "long" ? "Long" : "Short"}</span>`;
+
+/* Squarified Treemap: Kacheln möglichst quadratisch */
+function squarify(items, x, y, w, h) {
+  const out = [], total = items.reduce((s, d) => s + d.v, 0);
+  if (!total) return out;
+  let rest = items.map((d) => ({ ...d, a: d.v * w * h / total }));
+  while (rest.length) {
+    const side = Math.min(w, h);
+    const worst = (row) => {
+      const s = row.reduce((a, b) => a + b.a, 0), mx = Math.max(...row.map((r) => r.a)), mn = Math.min(...row.map((r) => r.a));
+      return Math.max(side * side * mx / (s * s), (s * s) / (side * side * mn));
+    };
+    let row = [rest[0]], i = 1;
+    while (i < rest.length && worst([...row, rest[i]]) <= worst(row)) row.push(rest[i++]);
+    const s = row.reduce((a, b) => a + b.a, 0);
+    if (w >= h) { const cw = s / h; let cy = y; for (const r of row) { const rh = r.a / cw; out.push({ ...r, x, y: cy, w: cw, h: rh }); cy += rh; } x += cw; w -= cw; }
+    else { const ch = s / w; let cx = x; for (const r of row) { const rw = r.a / ch; out.push({ ...r, x: cx, y, w: rw, h: ch }); cx += rw; } y += ch; h -= ch; }
+    rest = rest.slice(i);
+  }
+  return out;
+}
+
+function tileColor(long, short) {
+  const t = long + short, dom = t ? Math.abs(long - short) / t : 0;
+  const base = long >= short ? "var(--long)" : "var(--short)";
+  return `color-mix(in srgb, ${base} ${Math.round(45 + dom * 50)}%, #333)`;
+}
+
+function renderTree() {
+  const box = $("tree");
+  let items = (group === "coin" ? ov.coins.map((c) => ({ ...c, key: c.coin })) : ov.exchanges.map((x) => ({ ...x, key: x.name })))
+    .filter((d) => d.total > 0).map((d) => ({ ...d, v: d.total }));
+  if (group === "coin" && ov.coins_other > 0) items.push({ key: "Andere", v: ov.coins_other, total: ov.coins_other, long: 0, short: 0, other: true });
+  if (!items.length) { box.innerHTML = `<div class="status">Noch keine Liquidationen in den letzten ${WIN_LABEL[win]}.</div>`; return; }
+  const W = 1000, H = 1000 * box.clientHeight / Math.max(box.clientWidth, 1);
+  box.innerHTML = squarify(items, 0, 0, W, H).map((r) => {
+    const area = (r.w / W) * (r.h / H), cls = area < .004 ? "xxs" : area < .012 ? "xs" : area < .03 ? "s" : "";
+    const dom = r.long >= r.short ? `Long ${share(r.long, r.total)}` : `Short ${share(r.short, r.total)}`;
+    const bg = r.other ? "#555" : tileColor(r.long, r.short);
+    return `<div class="tile ${cls} ${r.key === coinFilter ? "sel" : ""}" data-key="${esc(r.key)}" title="${esc(r.key)}: ${money(r.total)} · Long ${money(r.long)} · Short ${money(r.short)}"
+      style="left:${r.x / W * 100}%;top:${r.y / H * 100}%;width:${r.w / W * 100}%;height:${r.h / H * 100}%;background:${bg}">
+      <b>${esc(r.key)}</b><span>${money(r.total)}</span>${r.other ? "" : `<small>${dom}</small>`}</div>`;
+  }).join("");
+}
+
+function renderTotals() {
+  $("totals").innerHTML = ["1h", "4h", "12h", "24h"].map((k) => {
+    const t = ov.totals[k], lp = t.total ? t.long / t.total * 100 : 50;
+    return `<div class="card tot"><div class="label"><span>${k} gesamt</span><span>${t.count.toLocaleString("de-DE")} Liq.</span></div>
+      <div class="big">${money(t.total)}</div>
+      <div class="lsbar"><i style="width:${lp}%;background:var(--long)"></i><i style="width:${100 - lp}%;background:var(--short)"></i></div>
+      <div class="lsrow"><span class="l">Long ${money(t.long)}</span><span class="s">Short ${money(t.short)}</span></div></div>`;
+  }).join("");
+}
+
+function renderBreakdown() {
+  const t = ov.totals[win];
+  $("bdTitle").textContent = `Long/Short (${win})`;
+  const lp = t.total ? t.long / t.total : 0, r = 46, c = 2 * Math.PI * r;
+  $("donut").innerHTML = t.total ? `<svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--short)" stroke-width="16"/>
+      <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--long)" stroke-width="16" stroke-dasharray="${lp * c} ${c}" transform="rotate(-90 60 60)"/></svg>
+    <div><div class="val">${lp >= .5 ? "Long" : "Short"} ${share(Math.max(t.long, t.short), t.total)}</div>
+      <div class="lsrow" style="flex-direction:column;gap:2px"><span class="l">Long ${money(t.long)} · ${share(t.long, t.total)}</span><span class="s">Short ${money(t.short)} · ${share(t.short, t.total)}</span></div>
+      <div class="sub" style="margin-top:6px">${t.long > t.short ? "Longs dominant: Kurse fielen" : t.short > t.long ? "Shorts dominant: Kurse stiegen" : "ausgeglichen"}</div></div>`
+    : `<div class="status">Keine Daten</div>`;
+
+  const total = ov.exchanges.reduce((s, x) => s + x.total, 0);
+  $("exchanges").innerHTML = ov.exchanges.map((x) => {
+    const w = total ? x.total / total * 100 : 0, lp = x.total ? x.long / x.total * 100 : 0;
+    return `<div class="ex-row"><b>${esc(x.name)}</b><div class="bar" title="Long ${money(x.long)} · Short ${money(x.short)}">
+      <i style="width:${w * lp / 100}%;background:var(--long)"></i><i style="width:${w * (100 - lp) / 100}%;background:var(--short)"></i></div>
+      <span style="text-align:right">${share(x.total, total)}</span></div>
+      <div class="sub" style="margin:-6px 0 0 80px">${money(x.total)} · ${x.count.toLocaleString("de-DE")} Liq.</div>`;
+  }).join("");
+
+  const L = ov.largest;
+  $("largest").innerHTML = L ? `<div class="amt">${money(L.usd)}</div>
+      <div>${sideTag(L.side)} <b>${esc(L.coin)}</b> auf ${esc(L.exchange)}</div>
+      <div class="sub" style="margin-top:6px">${esc(L.symbol)} · Preis ${usd(L.price)} · ${clock(L.time)} Uhr</div>`
+    : `<div class="status">Keine Daten</div>`;
+}
+
+function renderSummary() {
+  const t = ov.totals[win], top = ov.coins[0], L = ov.largest;
+  if (!t.count) { $("summary").innerHTML = `In den letzten ${WIN_LABEL[win]} wurden noch keine Liquidationen erfasst.`; return; }
+  $("summary").innerHTML = `In den letzten <b>${WIN_LABEL[win]}</b> wurden <b>${t.count.toLocaleString("de-DE")}</b> Positionen liquidiert,
+    zusammen <b>${money(t.total)}</b> (Long ${share(t.long, t.total)}, Short ${share(t.short, t.total)}).
+    ${top ? `Am stärksten betroffen: <b>${esc(top.coin)}</b> mit ${money(top.total)}.` : ""}
+    ${L ? `Die größte einzelne Liquidation: <b>${money(L.usd)}</b> auf ${esc(L.exchange)} (${esc(L.symbol)}, ${L.side === "long" ? "Long" : "Short"} bei ${usd(L.price)}).` : ""}`;
+}
+
+let btc = null;
+async function loadBtc() {
+  try {
+    const r = await fetch("api/klines?symbol=BTC&interval=1h");
+    if (r.ok) btc = (await r.json()).candles.slice(-30);
+  } catch (e) {}
+}
+
+function renderHours() {
+  const hs = ov.hours, W = 1000, H = 240, pad = { l: 64, r: 64, t: 14, b: 26 }, mid = pad.t + (H - pad.t - pad.b) / 2;
+  const max = Math.max(1, ...hs.map((h) => Math.max(h.long, h.short)));
+  const bw = (W - pad.l - pad.r) / hs.length, half = (H - pad.t - pad.b) / 2;
+  let svg = `<line x1="${pad.l}" x2="${W - pad.r}" y1="${mid}" y2="${mid}" stroke="var(--border)"/>`;
+  hs.forEach((h, i) => {
+    const x = pad.l + i * bw + 2, sh = h.short / max * half, lh = h.long / max * half;
+    svg += `<rect x="${x}" y="${mid - sh}" width="${bw - 4}" height="${sh}" fill="var(--short)" rx="2"><title>${clock(h.t).slice(0, 5)} Shorts ${money(h.short)}</title></rect>`;
+    svg += `<rect x="${x}" y="${mid}" width="${bw - 4}" height="${lh}" fill="var(--long)" rx="2"><title>${clock(h.t).slice(0, 5)} Longs ${money(h.long)}</title></rect>`;
+    if (i % 3 === 0) svg += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${clock(h.t).slice(0, 5)}</text>`;
+  });
+  svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
+  if (btc && btc.length) {
+    const pts = hs.map((h, i) => { const c = btc.find((k) => k.time === h.t); return c ? [pad.l + i * bw + bw / 2, c.close] : null; }).filter(Boolean);
+    if (pts.length > 1) {
+      const lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1])), sp = hi - lo || 1;
+      const y = (v) => pad.t + (1 - (v - lo) / sp) * (H - pad.t - pad.b);
+      svg += `<polyline fill="none" stroke="var(--cold)" stroke-width="2.5" points="${pts.map((p) => `${p[0].toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ")}"/>`;
+      svg += `<text x="${W - pad.r + 8}" y="${pad.t + 10}">${usd(hi)}</text><text x="${W - pad.r + 8}" y="${H - pad.b}">${usd(lo)}</text>`;
+    }
+  }
+  $("hours").innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${svg}</svg>`;
+}
+
+function renderStatus(st) {
+  const hrs = st.coverage_hours, down = st.sources.filter((s) => !s.connected);
+  $("live").classList.toggle("off", down.length === st.sources.length);
+  const notes = [];
+  if (hrs < 24) notes.push(`Der Mitschnitt läuft seit ${clock(st.since)} Uhr (${hrs.toLocaleString("de-DE", { maximumFractionDigits: 1 })} h). Längere Zeitfenster sind erst nach dieser Laufzeit vollständig.`);
+  if (down.length) notes.push(`Gerade nicht verbunden: ${down.map((s) => s.name).join(", ")} – verbindet sich automatisch neu.`);
+  $("notice").hidden = !notes.length;
+  $("notice").innerHTML = notes.join("<br>");
+  $("sources").innerHTML = "Quellen: " + st.sources.map((s) => `${s.name} <b class="${s.connected ? "ok" : "err"}">${s.connected ? "●" : "○"}</b> ${s.events.toLocaleString("de-DE")} seit Start`).join(" · ") + "<br>";
+}
+
+async function loadOverview() {
+  try {
+    const r = await fetch("api/liq-overview?window=" + win);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    ov = d;
+    renderTree(); renderTotals(); renderBreakdown(); renderSummary(); renderHours(); renderStatus(d.status);
+  } catch (e) {
+    $("tree").innerHTML = `<div class="status">Fehler: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadFeed() {
+  const params = new URLSearchParams({ coin: coinFilter, exchange: $("fEx").value, min: $("fMin").value, limit: 60 });
+  try {
+    const r = await fetch("api/liq-feed?" + params);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    const rows = d.orders.map((o) => {
+      const id = `${o.time}|${o.exchange}|${o.symbol}|${o.usd}`, isNew = !firstFeed && !seenIds.has(id);
+      seenIds.add(id);
+      return `<tr class="${isNew ? "new" : ""}"><td class="left">${clock(o.time)}</td><td class="left">${esc(o.exchange)}</td>
+        <td class="left"><b>${esc(o.coin)}</b> <span class="muted">${esc(o.symbol)}</span></td><td class="left">${sideTag(o.side)}</td>
+        <td>${usd(o.price)}</td><td class="${o.usd >= 1e6 ? "whale" : ""}">${money(o.usd)}</td></tr>`;
+    });
+    firstFeed = false;
+    if (seenIds.size > 5000) seenIds = new Set([...seenIds].slice(-1000));
+    $("feed").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6" class="status">Keine Liquidationen für diesen Filter.</td></tr>`;
+  } catch (e) {
+    $("feed").innerHTML = `<tr><td colspan="6" class="status">Fehler: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function setCoin(c) {
+  coinFilter = c; $("fCoin").value = c; firstFeed = true; seenIds.clear();
+  if (ov) renderTree();
+  loadFeed();
+}
+
+$("win").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  win = b.dataset.w; [...$("win").children].forEach((x) => x.classList.toggle("on", x === b)); loadOverview();
+});
+$("group").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  group = b.dataset.g; [...$("group").children].forEach((x) => x.classList.toggle("on", x === b)); if (ov) renderTree();
+});
+$("tree").addEventListener("click", (e) => {
+  const t = e.target.closest(".tile"); if (!t) return;
+  const k = t.dataset.key;
+  if (group === "exchange") { $("fEx").value = k; firstFeed = true; seenIds.clear(); loadFeed(); return; }
+  if (k !== "Andere") setCoin(coinFilter === k ? "" : k);
+});
+let typing;
+$("fCoin").addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => setCoin($("fCoin").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "")), 350); });
+$("fEx").addEventListener("change", () => { firstFeed = true; seenIds.clear(); loadFeed(); });
+$("fMin").addEventListener("change", () => { firstFeed = true; seenIds.clear(); loadFeed(); });
+window.addEventListener("resize", () => { if (ov) renderTree(); });
+
+loadBtc().then(() => { if (ov) renderHours(); });
+loadOverview(); loadFeed();
+setInterval(loadOverview, 15000);
+setInterval(loadFeed, 5000);
+setInterval(loadBtc, 600000);
+</script>
+</body>
+</html>
