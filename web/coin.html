@@ -242,7 +242,7 @@
     <nav class="actions">
       <a class="navlink" href="sectors.html">Sparten</a>
       <a class="navlink" href="markets.html">Marktübersicht</a>
-      <a class="navlink" href="/">← Sentiment-Dashboard</a>
+      <a class="navlink" href="./">← Sentiment-Dashboard</a>
     </nav>
   </header>
 
@@ -430,7 +430,7 @@ async function loadNews(name) {
   // Name nur mitschicken, wenn der Server ihn annimmt (siehe NAME_RE in server.py)
   newsName = /^[\w .&'+-]{1,40}$/.test(name || "") ? name : "";
   try {
-    const res = await fetch("/api/news?symbol=" + encodeURIComponent(symbol) + (newsName ? "&name=" + encodeURIComponent(newsName) : ""));
+    const res = await fetch("api/news?symbol=" + encodeURIComponent(symbol) + (newsName ? "&name=" + encodeURIComponent(newsName) : ""));
     if (!res.ok) return;   // Feeds nicht erreichbar: Kopf bleibt ohne News
     newsData = await res.json();
     renderNews();
@@ -755,7 +755,7 @@ document.addEventListener("click", (e) => {
 
 async function loadDailyStats() {
   try {
-    const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=1d`);
+    const res = await fetch(`api/klines?symbol=${encodeURIComponent(symbol)}&interval=1d`);
     if (!res.ok) return;  // kein Binance-Paar: nur die CoinGecko-Kennzahlen
     dailyCandles = (await res.json()).candles;
     drawStats();
@@ -767,13 +767,13 @@ async function loadHero() {
     // Hauptcoins stecken im gecachten Dashboard-Payload, alle anderen im Coin-Cache des Servers
     let coin, updated;
     if (MAIN_SYMBOLS.includes(symbol)) {
-      const res = await fetch("/api/sentiment");
+      const res = await fetch("api/sentiment");
       if (!res.ok) throw new Error("HTTP " + res.status);
       const p = await res.json();
       coin = p.coins.find((c) => c.symbol === symbol);
       updated = p.updated;
     } else {
-      const res = await fetch("/api/coin?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
+      const res = await fetch("api/coin?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
       if (!res.ok) throw new Error("HTTP " + res.status);
       coin = await res.json();
     }
@@ -1052,7 +1052,7 @@ function chartMessage(text, isError = false) {
 }
 
 async function fetchKlines(iv) {
-  const res = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${iv}`);
+  const res = await fetch(`api/klines?symbol=${encodeURIComponent(symbol)}&interval=${iv}`);
   const p = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { status: res.status });
   return p;  // { source, candles }
@@ -1375,7 +1375,7 @@ function derivMessage(text) {
 
 async function loadDerivs() {
   try {
-    const res = await fetch("/api/derivatives?symbol=" + encodeURIComponent(symbol));
+    const res = await fetch("api/derivatives?symbol=" + encodeURIComponent(symbol));
     const p = await res.json().catch(() => ({}));
     if (res.status === 404) {
       derivMessage("");
@@ -1488,7 +1488,7 @@ function histMarkers() {
 
 async function loadHistory() {
   try {
-    const res = await fetch("/api/score-history?symbol=" + encodeURIComponent(symbol));
+    const res = await fetch("api/score-history?symbol=" + encodeURIComponent(symbol));
     const p = await res.json().catch(() => ({}));
     if (res.status === 404) {
       $("history").innerHTML = `<div class="status">Für ${esc(symbol)} gibt es keinen Score-Verlauf (keine Kurs- oder Futures-Daten von Binance).</div>`;
@@ -1684,7 +1684,7 @@ function renderLiqClusters() {
 
 async function loadLiquidations() {
   try {
-    const res = await fetch("/api/liquidations?symbol=" + encodeURIComponent(symbol));
+    const res = await fetch("api/liquidations?symbol=" + encodeURIComponent(symbol));
     const p = await res.json().catch(() => ({}));
     if (res.status === 404) {
       $("liq").innerHTML = `<div class="status">Für ${esc(symbol)} gibt es keine Binance-Futures – daher keine Liquidations-Heatmap.</div>`;
@@ -1790,7 +1790,7 @@ function initFeeChart() {
 
 async function loadFees() {
   try {
-    const res = await fetch("/api/fees?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
+    const res = await fetch("api/fees?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
     if (!res.ok) return;   // keine Gebührendaten: Karte bleibt ausgeblendet
     feeData = await res.json();
     $("fees").hidden = false;

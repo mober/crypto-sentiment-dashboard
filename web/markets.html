@@ -65,7 +65,7 @@
     </div>
     <nav class="actions">
       <a class="navlink" href="sectors.html">Sparten</a>
-      <a class="navlink" href="/">← Sentiment-Dashboard</a>
+      <a class="navlink" href="./">← Sentiment-Dashboard</a>
     </nav>
   </header>
 
@@ -200,7 +200,7 @@ async function load() {
   setCategoryMode();
   if (!category) renderPager();
   try {
-    const res = await fetch(category ? "/api/markets?category=" + encodeURIComponent(category) : "/api/markets?page=" + page);
+    const res = await fetch(category ? "api/markets?category=" + encodeURIComponent(category) : "api/markets?page=" + page);
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     if (token !== loadToken || (!category && p.page !== page)) return;  // inzwischen andere Seite oder Suche
@@ -258,7 +258,7 @@ async function runSearch() {
   setSearchMode(true);
   $("search-info").textContent = "Suche …";
   try {
-    const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+    const res = await fetch("api/search?q=" + encodeURIComponent(q));
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     if (token !== loadToken) return;

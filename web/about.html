@@ -81,7 +81,7 @@
     <nav class="actions">
       <a class="navlink" id="back" href="coin.html">← Details</a>
       <a class="navlink" href="markets.html">Marktübersicht</a>
-      <a class="navlink" href="/">Sentiment-Dashboard</a>
+      <a class="navlink" href="./">Sentiment-Dashboard</a>
     </nav>
   </header>
 
@@ -258,7 +258,7 @@ function showRateLimit(retryIn) {
 
 async function loadProfile() {
   try {
-    const res = await fetch("/api/coin-info?" + query);
+    const res = await fetch("api/coin-info?" + query);
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     profile = p;
@@ -277,11 +277,11 @@ async function loadProfile() {
 async function loadMarket() {
   try {
     if (MAIN_SYMBOLS.includes(symbol)) {
-      const res = await fetch("/api/sentiment");
+      const res = await fetch("api/sentiment");
       if (!res.ok) return;
       market = (await res.json()).coins.find((c) => c.symbol === symbol) || null;
     } else {
-      const res = await fetch("/api/coin?" + query);
+      const res = await fetch("api/coin?" + query);
       if (!res.ok) return;
       market = await res.json();
     }

@@ -94,7 +94,7 @@
     </div>
     <nav class="actions">
       <a class="navlink" href="markets.html">Marktübersicht</a>
-      <a class="navlink" href="/">← Sentiment-Dashboard</a>
+      <a class="navlink" href="./">← Sentiment-Dashboard</a>
     </nav>
   </header>
 
@@ -282,7 +282,7 @@ function saveView() {
 
 async function load() {
   try {
-    const res = await fetch("/api/categories");
+    const res = await fetch("api/categories");
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     cats = p.categories.map((c) => ({ ...c, turnover: c.volume_24h && c.market_cap ? c.volume_24h / c.market_cap : null }));
@@ -396,7 +396,7 @@ function attachTvl() {
 
 async function loadDefi() {
   try {
-    const res = await fetch("/api/defi");
+    const res = await fetch("api/defi");
     const p = await res.json();
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     defi = p;

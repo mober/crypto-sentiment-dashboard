@@ -246,7 +246,7 @@ async function loadTop20() {
   if (top20Loading) return;
   top20Loading = true;
   try {
-    const res = await fetch("/api/markets?page=1");
+    const res = await fetch("api/markets?page=1");
     const p = await res.json();
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     top20 = p.coins.filter((c) => !isStablecoin(c)).slice(0, TOP_COUNT).map((c) => ({
@@ -423,7 +423,7 @@ async function loadExtra(force = false) {
     return;
   }
   try {
-    const res = await fetch("/api/coin?symbol=" + encodeURIComponent(symbol)
+    const res = await fetch("api/coin?symbol=" + encodeURIComponent(symbol)
       + (extraId ? "&id=" + encodeURIComponent(extraId) : "") + (force ? "&refresh=1" : ""));
     if (!res.ok) throw new Error("HTTP " + res.status);
     const coin = await res.json();
@@ -457,7 +457,7 @@ async function load(force = false) {
   btn.disabled = true;
   btn.textContent = "Lädt …";
   try {
-    const res = await fetch("/api/sentiment" + (force ? "?refresh=1" : ""));
+    const res = await fetch("api/sentiment" + (force ? "?refresh=1" : ""));
     if (!res.ok) throw new Error("HTTP " + res.status);
     payload = await res.json();
     renderMarket(payload.global);
