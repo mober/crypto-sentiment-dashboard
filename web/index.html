@@ -52,7 +52,7 @@
   .chip.fixed { cursor: default; }
 
   /* Coins */
-  .coins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: start; }
+  .coins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; }
   .coin.flash { animation: flash 1.6s ease-out; }
   @keyframes flash { from { box-shadow: 0 0 0 3px #e8a317; } to { box-shadow: 0 0 0 3px transparent; } }
   /* Übersicht: alle Watchlist-Coins kompakt, Klick springt zur Karte */
@@ -113,7 +113,8 @@
   .metrics .val { font-weight: 600; }
   /* Ab Funding eingeklappt; offener Zustand je Karte gemerkt (openCards) */
   .more { border-top: 1px solid var(--border); padding-top: 10px; }
-  .more summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; user-select: none; }
+  .more summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; user-select: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .more summary::-webkit-details-marker { display: none; }
   .more summary::before { content: "▸"; display: inline-block; width: 14px; transition: transform .15s; }
   .more[open] summary::before { transform: rotate(90deg); }
@@ -130,13 +131,13 @@
   .error { padding: 16px 20px; color: var(--down); margin-bottom: 20px; }
 
   @media (max-width: 1180px) {
-    .coins { grid-template-columns: repeat(3, 1fr); }
+    .coins { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
   @media (max-width: 960px) {
-    .coins { grid-template-columns: 1fr 1fr; }
+    .coins { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 640px) {
-    .coins { grid-template-columns: 1fr; }
+    .coins { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 640px) {
     .market { grid-template-columns: 1fr; }
@@ -405,7 +406,7 @@ function renderCoin(c, id = null) {
       </div>
 
       <details class="more" data-more="${esc(id || c.symbol)}"${openCards.has(id || c.symbol) ? " open" : ""}>
-      <summary>${L("Funding, Open Interest, RSI und Signale", "Funding, open interest, RSI and signals")}</summary>
+      <summary>${L("Funding, OI, RSI und Signale", "Funding, OI, RSI and signals")}</summary>
       <div class="metrics">
         <div><div class="label"><span${tipAttr("funding")}>${L("Funding Ø 7T", "Funding avg 7D")}</span></div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
         <div><div class="label"><span${tipAttr("longShort")}>Long/Short</span></div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", DEC) : na}</div></div>
