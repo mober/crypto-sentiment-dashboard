@@ -4,9 +4,9 @@
 // --- Gebühren & Einnahmen (DefiLlama) ---------------------------------------
 
 const FEE_SERIES = [  // [Schlüssel, Name, Farbe (CSS-Variable), gestrichelt]
-  ["fees", "Gebühren", "--muted", false],
-  ["revenue", "Einnahmen", "--cold", false],
-  ["holders", "An Token-Halter", "--hot", true],
+  ["fees", L("Gebühren", "Fees"), "--muted", false],
+  ["revenue", L("Einnahmen", "Revenue"), "--cold", false],
+  ["holders", L("An Token-Halter", "To token holders"), "--hot", true],
 ];
 let feeData = null, feeChart = null;
 const feeSeries = {};
@@ -20,34 +20,34 @@ function feeTiles() {
   const mc = statsCoin && statsCoin.data.market_cap ? statsCoin.data.market_cap.usd : null;
   const fdv = statsCoin && statsCoin.data.market_stats ? statsCoin.data.market_stats.fdv : null;
   const tiles = [];
-  const vs = (x) => x && x.prev30d > 0 ? `${chgSpan(x.total30d / x.prev30d - 1)} zu den 30 T davor` : "";
+  const vs = (x) => x && x.prev30d > 0 ? `${chgSpan(x.total30d / x.prev30d - 1)} ${L("zu den 30 T davor", "vs. the 30 d before")}` : "";
   if (f.fees) {
-    tiles.push(statTile("feesTotal", "Gebühren 30 T", money(f.fees.total30d),
+    tiles.push(statTile("feesTotal", L("Gebühren 30 T", "Fees 30 d"), money(f.fees.total30d),
       `<div class="det">${vs(f.fees)}</div>`));
   }
   if (f.revenue) {
     const share = f.fees && f.fees.total30d ? f.revenue.total30d / f.fees.total30d : null;
-    tiles.push(statTile("feesRevenue", "Einnahmen 30 T", money(f.revenue.total30d),
-      `<div class="det">${share != null ? `<b>${numDe(share * 100, 0)} %</b> der Gebühren · ` : ""}${vs(f.revenue)}</div>`));
+    tiles.push(statTile("feesRevenue", L("Einnahmen 30 T", "Revenue 30 d"), money(f.revenue.total30d),
+      `<div class="det">${share != null ? `<b>${numDe(share * 100, 0)}${PCT}</b> ${L("der Gebühren", "of fees")} · ` : ""}${vs(f.revenue)}</div>`));
   }
-  tiles.push(statTile("feesHolders", "An Token-Halter 30 T", f.holders ? money(f.holders.total30d) : "–",
-    `<div class="det">${f.holders ? "Rückkäufe, Burns oder Ausschüttungen" : "keine Weitergabe an Halter erfasst"}</div>`));
+  tiles.push(statTile("feesHolders", L("An Token-Halter 30 T", "To token holders 30 d"), f.holders ? money(f.holders.total30d) : "–",
+    `<div class="det">${f.holders ? L("Rückkäufe, Burns oder Ausschüttungen", "buybacks, burns or distributions") : L("keine Weitergabe an Halter erfasst", "no pass-through to holders recorded")}</div>`));
   if (f.revenue || f.fees) {
     const x = f.revenue || f.fees;
-    tiles.push(statTile("feesYear", `${f.revenue ? "Einnahmen" : "Gebühren"} 1 J`, x.total1y ? money(x.total1y) : "–",
-      `<div class="det">${x.totalAllTime ? `gesamt seit Start ${money(x.totalAllTime)}` : ""}</div>`));
+    tiles.push(statTile("feesYear", `${f.revenue ? L("Einnahmen", "Revenue") : L("Gebühren", "Fees")} ${L("1 J", "1 y")}`, x.total1y ? money(x.total1y) : "–",
+      `<div class="det">${x.totalAllTime ? `${L("gesamt seit Start", "total since start")} ${money(x.totalAllTime)}` : ""}</div>`));
   }
   // Bewertung: Marktkap. im Verhältnis zu den hochgerechneten Einnahmen der letzten 30 T
   const annual = f.revenue ? f.revenue.total30d * 365 / 30 : null;
   if (mc && annual > 0) {
     const mult = mc / annual;
-    tiles.push(statTile("feesMultiple", "Marktkap. / Einnahmen", `${numDe(mult, mult < 10 ? 1 : 0)}x`,
-      `<div class="det">30 T hochgerechnet${fdv ? ` · FDV-Basis ${numDe(fdv / annual, 0)}x` : ""}</div>`));
+    tiles.push(statTile("feesMultiple", L("Marktkap. / Einnahmen", "Market cap / revenue"), `${numDe(mult, mult < 10 ? 1 : 0)}x`,
+      `<div class="det">${L("30 T hochgerechnet", "annualised from 30 d")}${fdv ? ` · ${L("FDV-Basis", "FDV basis")} ${numDe(fdv / annual, 0)}x` : ""}</div>`));
   }
   const holdersAnnual = f.holders ? f.holders.total30d * 365 / 30 : null;
   if (mc && holdersAnnual > 0) {
-    tiles.push(statTile("feesYield", "Rendite für Halter", `${numDe(holdersAnnual / mc * 100, 1)} % p.a.`,
-      `<div class="det">Weitergabe an Halter / Marktkap., 30 T hochgerechnet</div>`));
+    tiles.push(statTile("feesYield", L("Rendite für Halter", "Holder yield"), `${numDe(holdersAnnual / mc * 100, 1)}${PCT} ${L("p.a.", "p.a.")}`,
+      `<div class="det">${L("Weitergabe an Halter / Marktkap., 30 T hochgerechnet", "pass-through to holders / market cap, annualised from 30 d")}</div>`));
   }
   return tiles.join("");
 }
@@ -88,7 +88,7 @@ async function loadFees() {
     if (!res.ok) return;   // keine Gebührendaten: Karte bleibt ausgeblendet
     feeData = await res.json();
     $("fees").hidden = false;
-    $("fee-source").textContent = `DefiLlama · ${feeData.name} (${feeData.kind === "chain" ? "Chain" : "Protokoll"}) · täglich aktualisiert`;
+    $("fee-source").textContent = `DefiLlama · ${feeData.name} (${feeData.kind === "chain" ? "Chain" : L("Protokoll", "protocol")}) · ${L("täglich aktualisiert", "updated daily")}`;
     initFeeChart();
     for (const [k] of FEE_SERIES) {
       feeSeries[k].setData(feeData[k] ? feeData[k].weekly.map((x) => ({ time: x.time, value: x.value })) : []);

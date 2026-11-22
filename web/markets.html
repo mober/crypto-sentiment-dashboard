@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marktübersicht</title>
 <link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
 <style>
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -113,12 +114,27 @@
 <script src="format.js"></script>
 <script src="watchlist.js"></script>
 <script>
+const PAGE_TITLE = L("Marktübersicht", "Markets");
+const STAND = L("Stand:", "As of:");
+const RUNNING = L("Läuft server.py?", "Is server.py running?");
+addStatic({
+  "Marktübersicht": "Markets", "Top 1000 nach Marktkapitalisierung": "Top 1000 by market cap", "Sparten": "Sectors",
+  "Coin suchen (Name oder Symbol) …": "Search coin (name or symbol) …", "Coin suchen": "Search coin",
+  "Taste / springt ins Suchfeld": "Key / jumps to the search field", "Suche löschen": "Clear search",
+  "Nur die Coins deiner Watchlist zeigen": "Show only the coins in your watchlist", "Sparte:": "Sector:",
+  "alle Sparten": "all sectors", "Sparte verlassen": "Leave sector", "Zurück zur Gesamt-Rangliste": "Back to the full ranking",
+  "Preis": "Price", "7T": "7D", "30T": "30D", "1J": "1Y", "Marktkap.": "Market cap", "Volumen 24h": "Volume 24h",
+  "Lade Daten …": "Loading data …",
+  "Klick auf einen Coin öffnet seine Detailseite (Chart und Score), der Stern ☆ merkt ihn in der Watchlist (nur in diesem Browser). Die Suche durchsucht alle Coins auf CoinGecko, nicht nur die Top 1000.":
+    "Clicking a coin opens its detail page (chart and score), the star ☆ saves it to the watchlist (only in this browser). The search covers all coins on CoinGecko, not just the top 1000.",
+  "Daten: CoinGecko · Aktualisiert sich alle 5 Minuten.": "Data: CoinGecko · Refreshes every 5 minutes.",
+});
 const REFRESH_MS = 5 * 60 * 1000;
 // $, esc, dash, usd6 und change kommen aus format.js
 const price = (v) => {
   if (v == null) return dash;
   const opts = v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumSignificantDigits: 4 };
-  return "$" + v.toLocaleString("de-DE", opts);
+  return "$" + v.toLocaleString(LOCALE, opts);
 };
 
 let page = 1;
@@ -134,12 +150,12 @@ function renderPager() {
   const nums = new Set([1, maxPage]);
   for (let i = page - 2; i <= page + 2; i++) if (i >= 1 && i <= maxPage) nums.add(i);
   const sorted = [...nums].sort((a, b) => a - b);
-  let html = `<button data-page="${page - 1}" ${page === 1 ? "disabled" : ""} aria-label="Vorherige Seite">‹</button>`;
+  let html = `<button data-page="${page - 1}" ${page === 1 ? "disabled" : ""} aria-label="${L("Vorherige Seite", "Previous page")}">‹</button>`;
   sorted.forEach((n, i) => {
     if (i > 0 && n - sorted[i - 1] > 1) html += '<span class="gap">…</span>';
     html += `<button data-page="${n}" class="${n === page ? "current" : ""}" ${n === page ? 'disabled aria-current="page"' : ""}>${n}</button>`;
   });
-  html += `<button data-page="${page + 1}" ${page === maxPage ? "disabled" : ""} aria-label="Nächste Seite">›</button>`;
+  html += `<button data-page="${page + 1}" ${page === maxPage ? "disabled" : ""} aria-label="${L("Nächste Seite", "Next page")}">›</button>`;
   $("pager-top").innerHTML = html;
   $("pager-bottom").innerHTML = html;
 }
@@ -149,7 +165,7 @@ const linkable = (c) => /^[A-Z0-9]{1,15}$/.test(c.symbol);
 
 function renderRows(coins) {
   $("rows").innerHTML = coins.map((c) => `
-    <tr${linkable(c) ? ` data-symbol="${esc(c.symbol)}" data-id="${esc(c.id)}" title="Detailseite für ${esc(c.name)} öffnen"` : ""}>
+    <tr${linkable(c) ? ` data-symbol="${esc(c.symbol)}" data-id="${esc(c.id)}" title="${L("Detailseite für", "Open details for")} ${esc(c.name)}${L(" öffnen", "")}"` : ""}>
       <td class="star-col">${watchStar(c)}</td>
       <td class="rank">${c.rank ?? "–"}</td>
       <td class="left"><div class="coin">
@@ -173,8 +189,8 @@ function showRateLimit(e, fn, token) {
   clearInterval(retryTimer);
   let left = e.retryIn;
   const draw = () => {
-    $("rows").innerHTML = `<tr><td colspan="11" class="status">CoinGecko-Limit erreicht (kostenlose API ohne Key). `
-      + `Neuer Versuch in ${left} s …</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("CoinGecko-Limit erreicht (kostenlose API ohne Key). ", "CoinGecko limit reached (free API without key). ")}`
+      + `${L("Neuer Versuch in", "Retrying in")} ${left} s …</td></tr>`;
   };
   draw();
   retryTimer = setInterval(() => {
@@ -182,7 +198,7 @@ function showRateLimit(e, fn, token) {
     left -= 1;
     if (left > 0) { draw(); return; }
     clearInterval(retryTimer);
-    $("rows").innerHTML = '<tr><td colspan="11" class="status">Lade Daten …</td></tr>';
+    $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
     fn();
   }, 1000);
 }
@@ -210,10 +226,10 @@ let watchRows = null;   // zuletzt angezeigte Coins, um neu hinzugekommene zu er
 async function loadWatch() {
   const token = loadToken;
   const ids = watchList().map((c) => c.id).sort().join(",");
-  $("updated").textContent = `Watchlist · ${watchList().length} Coins, nur in diesem Browser gespeichert`;
+  $("updated").textContent = `Watchlist · ${watchList().length} Coins, ${L("nur in diesem Browser gespeichert", "stored only in this browser")}`;
   if (!ids) {
     watchRows = [];
-    $("rows").innerHTML = '<tr><td colspan="11" class="status">Noch keine Coins in der Watchlist. Stern ☆ vor einem Coin antippen, um ihn zu merken.</td></tr>';
+    $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Noch keine Coins in der Watchlist. Stern ☆ vor einem Coin antippen, um ihn zu merken.", "No coins in the watchlist yet. Tap the star ☆ in front of a coin to save it.")}</td></tr>`;
     return;
   }
   const res = await fetch("api/watchlist?ids=" + encodeURIComponent(ids));
@@ -223,8 +239,8 @@ async function loadWatch() {
   watchRows = p.coins;
   renderRows(p.coins);
   const missing = watchList().length - p.coins.length;
-  $("updated").textContent = `Watchlist · ${p.coins.length} Coins nach Marktkapitalisierung`
-    + (missing > 0 ? ` (${missing} ohne Marktdaten bei CoinGecko)` : "") + ` · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+  $("updated").textContent = `Watchlist · ${p.coins.length} ${L("Coins nach Marktkapitalisierung", "coins by market cap")}`
+    + (missing > 0 ? ` (${missing} ${L("ohne Marktdaten bei CoinGecko", "without market data on CoinGecko")})` : "") + ` · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
 }
 
 // Neu hinzugekommen (z. B. in einem anderen Tab): neu laden. Entfernte Coins bleiben mit leerem Stern stehen,
@@ -237,12 +253,12 @@ document.addEventListener("watchlist", () => {
 
 function setWatchMode(on) {
   watchMode = on;
-  if (on) { category = null; categoryName = ""; document.title = "Watchlist – Marktübersicht"; }
-  else document.title = "Marktübersicht";
+  if (on) { category = null; categoryName = ""; document.title = "Watchlist – " + PAGE_TITLE; }
+  else document.title = PAGE_TITLE;
   $("search").value = "";
   query = "";
   history.pushState(null, "", on ? "markets.html?watch=1" : page === 1 ? "markets.html" : `markets.html?page=${page}`);
-  $("rows").innerHTML = '<tr><td colspan="11" class="status">Lade Daten …</td></tr>';
+  $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
   setSearchMode(false);
   loadToken++;
   load();
@@ -255,7 +271,7 @@ async function load() {
     try { await loadWatch(); } catch (e) {
       if (token !== loadToken) return;
       if (e.retryIn) { showRateLimit(e, load, token); return; }
-      $("rows").innerHTML = `<tr><td colspan="11" class="status error">Watchlist konnte nicht geladen werden (${esc(e.message)}). Läuft server.py?</td></tr>`;
+      $("rows").innerHTML = `<tr><td colspan="11" class="status error">${L("Watchlist konnte nicht geladen werden", "Watchlist could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
     }
     return;
   }
@@ -267,19 +283,19 @@ async function load() {
     if (token !== loadToken || (!category && p.page !== page)) return;  // inzwischen andere Seite oder Suche
     if (category) {
       renderRows(p.coins);
-      if (!p.coins.length) $("rows").innerHTML = '<tr><td colspan="11" class="status">Keine Coins in dieser Sparte.</td></tr>';
-      $("updated").textContent = `Sparte „${categoryName || category}“ · die ${p.coins.length} größten Coins nach Marktkapitalisierung · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+      if (!p.coins.length) $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Keine Coins in dieser Sparte.", "No coins in this sector.")}</td></tr>`;
+      $("updated").textContent = L(`Sparte „${categoryName || category}“ · die ${p.coins.length} größten Coins nach Marktkapitalisierung`, `Sector “${categoryName || category}” · the ${p.coins.length} largest coins by market cap`) + ` · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
       return;
     }
     maxPage = p.max_page;
     renderPager();
     renderRows(p.coins);
     const from = (page - 1) * p.per_page + 1;
-    $("updated").textContent = `Top ${p.max_page * p.per_page} nach Marktkapitalisierung · Platz ${from}–${from + p.coins.length - 1} · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+    $("updated").textContent = `Top ${p.max_page * p.per_page} ${L("nach Marktkapitalisierung · Platz", "by market cap · rank")} ${from}–${from + p.coins.length - 1} · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
   } catch (e) {
     if (token !== loadToken) return;
     if (e.retryIn) { showRateLimit(e, load, token); return; }
-    $("rows").innerHTML = `<tr><td colspan="11" class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="11" class="status error">${L("Daten konnten nicht geladen werden", "Data could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
   }
 }
 
@@ -287,7 +303,7 @@ function goTo(p) {
   if (p < 1 || p > maxPage || p === page) return;
   page = p;
   history.pushState(null, "", p === 1 ? "markets.html" : `markets.html?page=${p}`);
-  $("rows").innerHTML = '<tr><td colspan="11" class="status">Lade Daten …</td></tr>';
+  $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
   window.scrollTo({ top: 0 });
   load();
 }
@@ -317,25 +333,25 @@ async function runSearch() {
   const token = ++loadToken;
   const q = query;
   setSearchMode(true);
-  $("search-info").textContent = "Suche …";
+  $("search-info").textContent = L("Suche …", "Searching …");
   try {
     const res = await fetch("api/search?q=" + encodeURIComponent(q));
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     if (token !== loadToken) return;
     if (!p.coins.length) {
-      $("rows").innerHTML = `<tr><td colspan="11" class="status">Kein Coin gefunden für „${esc(q)}“.</td></tr>`;
+      $("rows").innerHTML = `<tr><td colspan="11" class="status">${L(`Kein Coin gefunden für „${esc(q)}“.`, `No coin found for “${esc(q)}”.`)}</td></tr>`;
       $("search-info").textContent = "";
     } else {
       renderRows(p.coins);
-      $("search-info").textContent = `${p.coins.length}${p.coins.length === 25 ? "+" : ""} Treffer, nach Relevanz`;
+      $("search-info").textContent = `${p.coins.length}${p.coins.length === 25 ? "+" : ""} ${L("Treffer, nach Relevanz", "results, by relevance")}`;
     }
-    $("updated").textContent = `Suche in allen Coins auf CoinGecko · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+    $("updated").textContent = `${L("Suche in allen Coins auf CoinGecko", "Search across all coins on CoinGecko")} · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
   } catch (e) {
     if (token !== loadToken) return;
     $("search-info").textContent = "";
     if (e.retryIn) { showRateLimit(e, runSearch, token); return; }
-    $("rows").innerHTML = `<tr><td colspan="11" class="status error">Suche fehlgeschlagen (${esc(e.message)}). CoinGecko ist ohne API-Key stark limitiert – kurz warten und erneut versuchen.</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="11" class="status error">${L("Suche fehlgeschlagen", "Search failed")} (${esc(e.message)}). ${L("CoinGecko ist ohne API-Key stark limitiert – kurz warten und erneut versuchen.", "CoinGecko is heavily rate-limited without an API key – wait a moment and try again.")}</td></tr>`;
   }
 }
 
@@ -386,8 +402,8 @@ $("cat-clear").addEventListener("click", () => {
   categoryName = "";
   page = 1;
   history.pushState(null, "", "markets.html");
-  document.title = "Marktübersicht";
-  $("rows").innerHTML = '<tr><td colspan="11" class="status">Lade Daten …</td></tr>';
+  document.title = PAGE_TITLE;
+  $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
   setSearchMode(false);
   load();
 });
@@ -416,7 +432,7 @@ function fromUrl() {
   category = /^[a-z0-9-]{1,100}$/.test(cat) ? cat : null;
   categoryName = category ? (params.get("name") || category).slice(0, 80) : "";
   watchMode = !category && params.get("watch") === "1";
-  document.title = category ? `${categoryName} – Marktübersicht` : watchMode ? "Watchlist – Marktübersicht" : "Marktübersicht";
+  document.title = category ? `${categoryName} – ${PAGE_TITLE}` : watchMode ? "Watchlist – " + PAGE_TITLE : PAGE_TITLE;
   page = category ? 1 : pageFromUrl();
   $("search").value = q;
   query = "";

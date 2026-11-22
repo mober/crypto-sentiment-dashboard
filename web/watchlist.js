@@ -14,6 +14,8 @@ const WATCH_FIXED = [
   { id: "ethereum", symbol: "ETH", name: "Ethereum" },
   { id: "solana", symbol: "SOL", name: "Solana" },
 ];
+const WATCH_ADD = L("Zur Watchlist hinzufügen", "Add to watchlist");
+const WATCH_REMOVE = L("Aus der Watchlist entfernen", "Remove from watchlist");
 const isFixed = (id) => WATCH_FIXED.some((c) => c.id === id);
 
 // Nur die selbst gemerkten Coins (ohne die festen)
@@ -44,7 +46,7 @@ function toggleWatch(coin) {
   const i = list.findIndex((c) => c.id === coin.id);
   if (i >= 0) list.splice(i, 1);
   else if (list.length + WATCH_FIXED.length < WATCH_MAX) list.push({ id: coin.id, symbol: coin.symbol, name: coin.name || coin.symbol });
-  else { alert(`Die Watchlist ist voll (höchstens ${WATCH_MAX} Coins).`); return false; }
+  else { alert(L(`Die Watchlist ist voll (höchstens ${WATCH_MAX} Coins).`, `The watchlist is full (at most ${WATCH_MAX} coins).`)); return false; }
   watchSave(list);
   return i < 0;
 }
@@ -54,12 +56,12 @@ function watchStar(coin, cls = "") {
   if (!coin || !WATCH_ID_RE.test(coin.id || "") || !WATCH_SYMBOL_RE.test(coin.symbol || "")) return "";
   if (isFixed(coin.id)) {
     return `<button type="button" class="star on${cls ? " " + cls : ""}" disabled aria-pressed="true"`
-      + ` title="${esc(coin.symbol)} gehört fest zur Watchlist" aria-label="Watchlist: ${esc(coin.symbol)} (fest)">★</button>`;
+      + ` title="${esc(coin.symbol)} ${L("gehört fest zur Watchlist", "is always in the watchlist")}" aria-label="Watchlist: ${esc(coin.symbol)} (${L("fest", "fixed")})">★</button>`;
   }
   const on = isWatched(coin.id);
   return `<button type="button" class="star${on ? " on" : ""}${cls ? " " + cls : ""}" aria-pressed="${on}"`
     + ` data-watch-id="${esc(coin.id)}" data-watch-symbol="${esc(coin.symbol)}" data-watch-name="${esc(coin.name || coin.symbol)}"`
-    + ` title="${on ? "Aus der Watchlist entfernen" : "Zur Watchlist hinzufügen"}" aria-label="Watchlist: ${esc(coin.symbol)}">${on ? "★" : "☆"}</button>`;
+    + ` title="${on ? WATCH_REMOVE : WATCH_ADD}" aria-label="Watchlist: ${esc(coin.symbol)}">${on ? "★" : "☆"}</button>`;
 }
 
 // Alle Sterne auf der Seite an den gespeicherten Stand anpassen
@@ -70,7 +72,7 @@ function syncStars() {
     b.classList.toggle("on", on);
     b.setAttribute("aria-pressed", on);
     b.textContent = on ? "★" : "☆";
-    b.title = on ? "Aus der Watchlist entfernen" : "Zur Watchlist hinzufügen";
+    b.title = on ? WATCH_REMOVE : WATCH_ADD;
   });
 }
 

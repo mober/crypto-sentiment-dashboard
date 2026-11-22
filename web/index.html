@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crypto Sentiment</title>
 <link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
 <style>
   .actions { display: flex; gap: 8px; align-items: center; }
   #refresh:disabled { cursor: wait; }
@@ -178,16 +179,27 @@
 <script src="tips.js"></script>
 <script src="watchlist.js"></script>
 <script>
+addStatic({
+  "Lade Daten …": "Loading data …", "Sparten →": "Sectors →", "Marktübersicht →": "Markets →",
+  "Liquidationen →": "Liquidations →", "Aktualisieren": "Refresh", "Übersicht der Watchlist": "Watchlist overview",
+  "BTC, ETH und SOL fest · weitere per Stern ☆ oder Klick in Trending/Top 20 ·": "BTC, ETH and SOL fixed · add more with the star ☆ or a click in Trending/Top 20 ·",
+  "als Tabelle": "as table",
+  "Score je Coin: Fear & Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio, Optionsvola DVOL (nur BTC/ETH), MVRV (Coin Metrics, nicht für alle Coins) (je −100 … +100, Score = gewichteter Durchschnitt: MA200 und DVOL 1,5-fach, Fear & Greed und RSI halb).":
+    "Score per coin: Fear & Greed, funding rate, open interest, price vs. MA200, RSI (14), long/short ratio, options volatility DVOL (BTC/ETH only), MVRV (Coin Metrics, not for all coins) (each −100 … +100, score = weighted average: MA200 and DVOL 1.5×, Fear & Greed and RSI half).",
+  "Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten.":
+    "Data: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Refreshes every 5 minutes.",
+});
 const REFRESH_MS = 5 * 60 * 1000;
 // $, esc, pct, usd, usd6, signed und tone kommen aus format.js
-const num = (v, d) => v.toFixed(d).replace(".", ",");
+const num = (v, d) => v.toFixed(d).replace(".", DEC);
 const na = '<span class="note">n/a</span>';
 
 
 let payload = null;     // letzte Antwort von /api/sentiment (Markt-Leiste, Trending; die Karten kommen aus /api/watch-coins)
 
 // FNG_ZONES und fngZone kommen aus format.js
-const FNG_LABELS = { "Extreme Fear": "Extreme Angst", "Fear": "Angst", "Neutral": "Neutral", "Greed": "Gier", "Extreme Greed": "Extreme Gier" };
+const FNG_LABELS = EN ? {} : { "Extreme Fear": "Extreme Angst", "Fear": "Angst", "Neutral": "Neutral", "Greed": "Gier", "Extreme Greed": "Extreme Gier" };
+const NA = L("nicht verfügbar", "not available");
 
 function fngGauge(value) {
   const cx = 70, cy = 70, r = 56;
@@ -204,7 +216,7 @@ function fngGauge(value) {
   }).join("");
   const angle = -90 + (Math.max(0, Math.min(100, value)) / 100) * 180;  // Nadel zeigt bei 0 nach links
   return `
-    <svg viewBox="0 0 140 84" role="img" aria-label="Fear &amp; Greed ${value} von 100">
+    <svg viewBox="0 0 140 84" role="img" aria-label="Fear &amp; Greed ${value} ${L("von", "of")} 100">
       ${arcs}
       <line class="needle" x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - r + 14}" style="transform:rotate(${angle}deg);transform-origin:${cx}px ${cy}px"/>
       <circle class="hub" cx="${cx}" cy="${cy}" r="4.5"/>
@@ -228,20 +240,20 @@ function renderMarket(g) {
           <div>
             <div class="val">${fng.value}</div>
             <div class="cls"><span class="dot" style="background:${fngZone(fng.value).color}"></span>${esc(FNG_LABELS[fng.label] || fng.label)}</div>
-            ${hist("Gestern", fng.yesterday)}
-            ${hist("Vor 7 Tagen", fng.week_ago)}
+            ${hist(L("Gestern", "Yesterday"), fng.yesterday)}
+            ${hist(L("Vor 7 Tagen", "7 days ago"), fng.week_ago)}
           </div>
-        </div>` : '<div class="val">–</div><div class="note">nicht verfügbar</div>'}
+        </div>` : `<div class="val">–</div><div class="note">${NA}</div>`}
     </div>
     <div>
       <div class="label"><span${tipAttr("stablecoins")}>Stablecoins</span></div>
       <div class="val">${st ? usd(st.mcap) : "–"}</div>
-      <div class="note">${st ? `${pct(st.change_30d)} in 30 Tagen` : "nicht verfügbar"}</div>
+      <div class="note">${st ? `${pct(st.change_30d)} ${L("in 30 Tagen", "in 30 days")}` : NA}</div>
     </div>
     <div>
-      <div class="label"><span${tipAttr("dominance")}>BTC-Dominanz</span></div>
-      <div class="val">${dom ? dom.btc.toFixed(1).replace(".", ",") + " %" : "–"}</div>
-      <div class="note">${dom ? (dom.btc >= 55 ? "Risk-off / BTC-Phase" : "Altcoins gewinnen Anteile") : "nicht verfügbar"}</div>
+      <div class="label"><span${tipAttr("dominance")}>${L("BTC-Dominanz", "BTC dominance")}</span></div>
+      <div class="val">${dom ? dom.btc.toFixed(1).replace(".", DEC) + PCT : "–"}</div>
+      <div class="note">${dom ? (dom.btc >= 55 ? L("Risk-off / BTC-Phase", "Risk-off / BTC phase") : L("Altcoins gewinnen Anteile", "Altcoins gaining share")) : NA}</div>
     </div>`;
   renderChips();
 }
@@ -306,30 +318,31 @@ function renderChips() {
     const heat = isTop ? 0 : list.length > 1 ? 6 + ((list.length - t.rank) / (list.length - 1)) * 34 : 40;
     const chg = t.change_24h == null ? ""
       : `<span class="chg ${t.change_24h >= 0 ? "up" : "down"}">${pct(t.change_24h)}</span>`;
-    const title = isTop ? `Marktkap.-Rang ${t.rank}: ${t.name}`
-      : `Rang ${t.rank}: ${t.name}` + (t.market_cap_rank ? ` · Marktkap.-Rang ${t.market_cap_rank}` : "");
+    const mcRank = L("Marktkap.-Rang", "Market cap rank");
+    const title = isTop ? `${mcRank} ${t.rank}: ${t.name}`
+      : `${L("Rang", "Rank")} ${t.rank}: ${t.name}` + (t.market_cap_rank ? ` · ${mcRank} ${t.market_cap_rank}` : "");
     const inner = `<span class="rank">${t.rank}</span>${esc(t.symbol)}${chg}`;
     if (!WATCH_SYMBOL_RE.test(t.symbol) || !WATCH_ID_RE.test(t.id || ""))  // z. B. FIGR_HELOC: kein gültiges Symbol
-      return `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · kann nicht gemerkt werden">${inner}</span>`;
+      return `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · ${L("kann nicht gemerkt werden", "cannot be saved")}">${inner}</span>`;
     if (isFixed(t.id))
-      return `<span class="chip active fixed" style="--heat:${heat}%" title="${esc(title)} · fest in der Watchlist">${inner}</span>`;
+      return `<span class="chip active fixed" style="--heat:${heat}%" title="${esc(title)} · ${L("fest in der Watchlist", "always in the watchlist")}">${inner}</span>`;
     const on = isWatched(t.id);
     return `<button class="chip${on ? " active" : ""}" style="--heat:${heat}%" data-symbol="${esc(t.symbol)}" data-id="${esc(t.id)}"`
-      + ` data-name="${esc(t.name || t.symbol)}" aria-pressed="${on}" title="${esc(title)} · ${on ? "aus der Watchlist entfernen" : "zur Watchlist hinzufügen"}">${inner}</button>`;
+      + ` data-name="${esc(t.name || t.symbol)}" aria-pressed="${on}" title="${esc(title)} · ${on ? L("aus der Watchlist entfernen", "remove from watchlist") : L("zur Watchlist hinzufügen", "add to watchlist")}">${inner}</button>`;
   };
   const empty = isTop && !top20
-    ? (top20Error ? `nicht verfügbar (${esc(top20Error)})` : "Lade Top 20 …")
-    : "nicht verfügbar";
+    ? (top20Error ? `${NA} (${esc(top20Error)})` : L("Lade Top 20 …", "Loading top 20 …"))
+    : NA;
   $("trending").innerHTML = `
     <div class="trending-head">
       <div class="list-title">
-        <div class="seg" role="group" aria-label="Liste wählen">
+        <div class="seg" role="group" aria-label="${L("Liste wählen", "Choose list")}">
           <button data-list="trending" aria-pressed="${!isTop}">Trending</button>
           <button data-list="top" aria-pressed="${isTop}">Top 20</button>
         </div>
-        <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? "Nach Marktkap. (CoinGecko)" : "Meistgesucht (CoinGecko)"}</span></div>
+        <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? L("Nach Marktkap. (CoinGecko)", "By market cap (CoinGecko)") : L("Meistgesucht (CoinGecko)", "Most searched (CoinGecko)")}</span></div>
       </div>
-      <div class="note">${isTop ? "ohne Stablecoins · Zahl = Marktkap.-Rang" : "Rang 1 = meistgesucht"} · rechts: Kurs 24 h · Klick = zur Watchlist (dunkel = schon dabei)</div>
+      <div class="note">${isTop ? L("ohne Stablecoins · Zahl = Marktkap.-Rang", "without stablecoins · number = market cap rank") : L("Rang 1 = meistgesucht", "rank 1 = most searched")} · ${L("rechts: Kurs 24 h · Klick = zur Watchlist (dunkel = schon dabei)", "right: price 24 h · click = add to watchlist (dark = already in)")}</div>
     </div>
     <div class="chips">${list.length ? list.map(chip).join("") : `<span class="note">${empty}</span>`}</div>`;
 }
@@ -348,7 +361,7 @@ function renderCoin(c, id = null) {
   const pos = (c.score + 100) / 2;
   const noData = !ma && !fr && !oi && !ls && !rsi;
   const trend = ma
-    ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? "▲ über MA200" : "▼ unter MA200"}</span>`
+    ? `<span class="trend ${ma.distance >= 0 ? "up" : "down"}">${ma.distance >= 0 ? L("▲ über MA200", "▲ above MA200") : L("▼ unter MA200", "▼ below MA200")}</span>`
     : "";
 
   // Fear & Greed gilt für den ganzen Markt und steht schon oben im Tacho; in der
@@ -356,7 +369,7 @@ function renderCoin(c, id = null) {
   const signals = c.signals.filter((s) => s.name !== "Fear & Greed").map((s) => {
     const t = tone(s.points, 50);
     const p = signed(s.points);
-    return `<li><span class="pts ${t}">${p}</span><span><span class="name"${tipAttr(SIGNAL_TIPS[s.name])}>${esc(s.name)}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
+    return `<li><span class="pts ${t}">${p}</span><span><span class="name"${tipAttr(SIGNAL_TIPS[s.name])}>${esc(signalName(s.name))}</span><br><span class="reason">${esc(s.reason)}</span></span></li>`;
   }).join("");
 
   return `
@@ -366,10 +379,10 @@ function renderCoin(c, id = null) {
           <div class="coin-title">
             <h2>${esc(c.symbol)}</h2>
             ${watchStar({ id, symbol: c.symbol, name: d.name })}
-            <a class="navlink detail-link" href="${esc(detailHref)}" title="Detailansicht für ${esc(c.symbol)} öffnen">Details</a>
+            <a class="navlink detail-link" href="${esc(detailHref)}" title="${L("Detailansicht für", "Open details for")} ${esc(c.symbol)}${L(" öffnen", "")}">Details</a>
           </div>
-          <div class="mcap"><span${tipAttr("mcap")}>Marktkap.</span>
-            ${mc ? `<span class="val">${usd6(mc.usd)}</span>${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "n/a"}</div>
+          <div class="mcap"><span${tipAttr("mcap")}>${L("Marktkap.", "Market cap")}</span>
+            ${mc ? `<span class="val">${usd6(mc.usd)}</span>${mc.rank ? ` · ${L("Rang", "Rank")} ${mc.rank}` : ""}` : "n/a"}</div>
         </div>
         <div class="head-r">
           <div class="price">${ma ? usd(ma.price) : d.price != null ? usd(d.price) : "–"}</div>
@@ -379,33 +392,33 @@ function renderCoin(c, id = null) {
 
       <div>
         <div class="score-line">
-          <span class="label"><span${tipAttr("score")}>Überhitzungs-Score</span></span>
+          <span class="label"><span${tipAttr("score")}>${L("Überhitzungs-Score", "Overheating score")}</span></span>
           <span class="score">${signed(c.score)}</span>
         </div>
         <div class="gauge"><div class="marker" style="left:${pos}%"></div></div>
-        <div class="gauge-scale"><span>Angst −100</span><span>0</span><span>+100 Gier</span></div>
+        <div class="gauge-scale"><span>${L("Angst", "Fear")} −100</span><span>0</span><span>+100 ${L("Gier", "Greed")}</span></div>
       </div>
 
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
 
       <div class="metrics">
         <div><div class="label"><span${tipAttr("ma200")}>MA200</span></div><div class="val">${ma ? usd(ma.ma200) : na}</div></div>
-        <div><div class="label"><span${tipAttr("distance")}>Abstand</span></div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
+        <div><div class="label"><span${tipAttr("distance")}>${L("Abstand", "Distance")}</span></div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
       </div>
 
       <details class="more" data-more="${esc(id || c.symbol)}"${openCards.has(id || c.symbol) ? " open" : ""}>
-      <summary>Funding, Open Interest, RSI und Signale</summary>
+      <summary>${L("Funding, Open Interest, RSI und Signale", "Funding, open interest, RSI and signals")}</summary>
       <div class="metrics">
-        <div><div class="label"><span${tipAttr("funding")}>Funding Ø 7T</span></div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
-        <div><div class="label"><span${tipAttr("longShort")}>Long/Short</span></div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", ",") : na}</div></div>
+        <div><div class="label"><span${tipAttr("funding")}>${L("Funding Ø 7T", "Funding avg 7D")}</span></div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
+        <div><div class="label"><span${tipAttr("longShort")}>Long/Short</span></div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", DEC) : na}</div></div>
         <div><div class="label"><span${tipAttr("oi")}>Open Interest</span></div><div class="val">${oi ? usd(oi.usd) : na}</div></div>
-        <div><div class="label"><span${tipAttr("oiChange")}>OI 7 Tage</span></div><div class="val">${oi ? pct(oi.change_7d) : na}</div></div>
-        <div><div class="label"><span${tipAttr("rsi")}>RSI 14T</span></div><div class="val">${rsi ? Math.round(rsi.value) : na}</div></div>
+        <div><div class="label"><span${tipAttr("oiChange")}>${L("OI 7 Tage", "OI 7 days")}</span></div><div class="val">${oi ? pct(oi.change_7d) : na}</div></div>
+        <div><div class="label"><span${tipAttr("rsi")}>${L("RSI 14T", "RSI 14D")}</span></div><div class="val">${rsi ? Math.round(rsi.value) : na}</div></div>
         <div><div class="label"><span${tipAttr("dvol")}>DVOL</span></div><div class="val">${dv ? `${num(dv.value, 1)} <span class="note">(${dv.z >= 0 ? "+" : "−"}${num(Math.abs(dv.z), 1)}σ)</span>` : na}</div></div>
       </div>
 
-      ${d.momentum ? '<div class="coin-note">Binance-Daten unvollständig – Score ergänzt um Kursdaten von CoinGecko (Momentum, Umschlag).</div>'
-        : noData ? '<div class="coin-note">Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.</div>' : ""}
+      ${d.momentum ? `<div class="coin-note">${L("Binance-Daten unvollständig – Score ergänzt um Kursdaten von CoinGecko (Momentum, Umschlag).", "Binance data incomplete – score supplemented with CoinGecko price data (momentum, turnover).")}</div>`
+        : noData ? `<div class="coin-note">${L("Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.", "No Binance data for this coin – score from Fear &amp; Greed only.")}</div>` : ""}
       <ul class="signals">${signals}</ul>
       </details>
     </article>`;
@@ -413,7 +426,7 @@ function renderCoin(c, id = null) {
 
 // --- Karten: eine je Watchlist-Coin (watchlist.js; BTC, ETH, SOL fest) aus /api/watch-coins ---
 // Der Server fragt CoinGecko dafür einmal für alle Coins ab, Binance je Coin; Cache je Coin 5 Min.
-const WATCH_COINS_KEY = "lastWatchCoins";
+const WATCH_COINS_KEY = "lastWatchCoins_" + LANG;   // Texte vom Server sind sprachabhängig
 const watchCoins = new Map();   // Coin-ID → Antwort wie /api/coin
 let watchErrors = new Map();    // Coin-ID → Fehlertext (nur Anzeige auf dem Platzhalter)
 let watchToken = 0;
@@ -436,7 +449,7 @@ function renderCoins() {
     const c = watchCoins.get(w.id);
     if (c) return renderCoin(c, w.id);
     const err = watchErrors.get(w.id);
-    return `<article class="card coin coin-loading" id="card-${esc(w.id)}">${esc(w.symbol)} ${err ? `konnte nicht geladen werden (${esc(err)}) – neuer Versuch beim nächsten Aktualisieren.` : "wird geladen …"}</article>`;
+    return `<article class="card coin coin-loading" id="card-${esc(w.id)}">${esc(w.symbol)} ${err ? L(`konnte nicht geladen werden (${esc(err)}) – neuer Versuch beim nächsten Aktualisieren.`, `could not be loaded (${esc(err)}) – retrying on next refresh.`) : L("wird geladen …", "loading …")}</article>`;
   }).join("");
   renderOverview();
 }
@@ -445,11 +458,11 @@ function renderCoins() {
 function renderOverview() {
   $("overview").innerHTML = watchList().map((w) => {
     const c = watchCoins.get(w.id);
-    if (!c) return `<button class="ov loading" data-card="${esc(w.id)}"><span class="ov-sym">${esc(w.symbol)}</span>lädt …</button>`;
+    if (!c) return `<button class="ov loading" data-card="${esc(w.id)}"><span class="ov-sym">${esc(w.symbol)}</span>${L("lädt …", "loading …")}</button>`;
     const d = c.data;
     const price = d.price_ma200 ? d.price_ma200.price : d.price;
     const ch = ((d.market_stats || {}).change || {})["24h"];
-    return `<button class="ov" data-card="${esc(w.id)}" title="${esc(d.name || c.symbol)}: ${esc(c.verdict)} · zur Karte springen">
+    return `<button class="ov" data-card="${esc(w.id)}" title="${esc(d.name || c.symbol)}: ${esc(c.verdict)} · ${L("zur Karte springen", "jump to card")}">
       <span class="ov-top"><span class="ov-sym">${esc(c.symbol)}</span><span class="ov-score ${tone(c.score)}">${signed(c.score)}</span></span>
       <span class="ov-price"><span>${price != null ? usd(price) : "–"}</span>${ch != null ? `<span class="chg">${change(ch)}</span>` : ""}</span>
       <span class="gauge"><span class="marker" style="left:${(c.score + 100) / 2}%"></span></span>
@@ -521,14 +534,14 @@ document.addEventListener("watchlist", () => {
 });
 
 // Letzter Stand im Browser: beim Öffnen sofort anzeigen, die frischen Daten ersetzen ihn kurz darauf
-const PAYLOAD_KEY = "lastPayload";
+const PAYLOAD_KEY = "lastPayload_" + LANG;
 const STALE_MS = 5 * 60 * 1000;        // wie CACHE_SECONDS im Server
 const STALE_RETRY_MS = 10 * 1000;
 const STALE_RETRY_MAX = 6;             // höchstens 1 Minute lang nachfragen
 let staleTimer = null, staleRetries = 0;
 function showPayload() {
   renderMarket(payload.global);
-  $("updated").textContent = "Stand: " + new Date(payload.updated).toLocaleString("de-DE");
+  $("updated").textContent = L("Stand: ", "As of: ") + new Date(payload.updated).toLocaleString(LOCALE);
 }
 function restorePayload() {
   try {
@@ -543,7 +556,7 @@ function restorePayload() {
 async function load(force = false) {
   const btn = $("refresh");
   btn.disabled = true;
-  btn.textContent = "Lädt …";
+  btn.textContent = L("Lädt …", "Loading …");
   const cards = loadWatchCoins(force);   // parallel zu den Marktdaten
   try {
     const res = await fetch("api/sentiment" + (force ? "?refresh=1" : ""));
@@ -560,12 +573,12 @@ async function load(force = false) {
     } else staleRetries = 0;
     if (listMode === "top") loadTop20();  // Rangliste mit aktualisieren
   } catch (e) {
-    $("error").textContent = "Daten konnten nicht geladen werden (" + e.message + "). Läuft server.py?";
+    $("error").textContent = L("Daten konnten nicht geladen werden (", "Data could not be loaded (") + e.message + L("). Läuft server.py?", "). Is server.py running?");
     $("error").hidden = false;
   } finally {
     await cards;
     btn.disabled = false;
-    btn.textContent = "Aktualisieren";
+    btn.textContent = L("Aktualisieren", "Refresh");
   }
 }
 

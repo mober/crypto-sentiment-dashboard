@@ -87,3 +87,6 @@ button.star { border: 0; background: none; padding: 0 4px; font-size: 18px; line
 button.star:hover:not(:disabled) { color: #e8a317; }
 button.star.on { color: #e8a317; }
 button.star:disabled { opacity: 1; cursor: default; }
+
+/* Sprachumschalter (i18n.js) */
+.lang-switch { font-weight: 600; min-width: 42px; }

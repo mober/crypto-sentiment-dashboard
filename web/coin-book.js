@@ -46,8 +46,8 @@ let bookView = null;        // zuletzt gezeichnete Werte, für die Maus-Anzeige 
 const bookPair = () => symbol + "USDT";
 // kurz: „$51,2 Mio.“, „$798 Tsd.“, „$412“
 const bookUsd = (v) => {
-  const f = (x, d) => x.toLocaleString("de-DE", { maximumFractionDigits: d });
-  return "$" + (v >= 1e9 ? f(v / 1e9, 1) + " Mrd." : v >= 1e6 ? f(v / 1e6, 1) + " Mio." : v >= 1e3 ? f(v / 1e3, 0) + " Tsd." : f(v, 0));
+  const f = (x, d) => x.toLocaleString(LOCALE, { maximumFractionDigits: d });
+  return "$" + (v >= 1e9 ? f(v / 1e9, 1) + L(" Mrd.", "B") : v >= 1e6 ? f(v / 1e6, 1) + L(" Mio.", "M") : v >= 1e3 ? f(v / 1e3, 0) + L(" Tsd.", "K") : f(v, 0));
 };
 let bookOff = false;        // kein Paar auf Binance: Karte zeigt nur noch den Hinweis
 
@@ -103,7 +103,7 @@ async function snapshotBook(token) {
       if (bookAvail[other] !== false) { bookMarket = other; updateBookMarketButtons(); connectBook(); return; }
       closeBook();
       bookOff = true;
-      $("book").innerHTML = `<div class="status">Für ${esc(symbol)} gibt es kein USDT-Paar auf Binance – daher kein Orderbuch.</div>`;
+      $("book").innerHTML = `<div class="status">${L(`Für ${esc(symbol)} gibt es kein USDT-Paar auf Binance – daher kein Orderbuch.`, `There is no USDT pair for ${esc(symbol)} on Binance – so no order book.`)}</div>`;
       return;
     }
     if (!res.ok || !d.bids) throw new Error(d.msg || "HTTP " + res.status);
@@ -120,7 +120,7 @@ async function snapshotBook(token) {
     bookResnapTimer = setTimeout(() => { if (token === bookToken) { book = null; snapshotBook(token); } }, BOOK_RESNAP_MS);
   } catch (e) {
     if (token !== bookToken) return;
-    if (!book) bookMessage(`Orderbuch nicht verfügbar (${e.message}).`);
+    if (!book) bookMessage(L(`Orderbuch nicht verfügbar (${e.message}).`, `Order book not available (${e.message}).`));
     scheduleBookRetry(token);
   }
 }
@@ -194,7 +194,7 @@ function setupBookGroups(mid) {
   const sel = $("book-group"), prev = bookGroup;
   if (sel.dataset.steps === steps.join()) return;
   sel.dataset.steps = steps.join();
-  sel.innerHTML = steps.map((s) => `<option value="${s}">${s.toLocaleString("de-DE", { maximumFractionDigits: 10 })}</option>`).join("");
+  sel.innerHTML = steps.map((s) => `<option value="${s}">${s.toLocaleString(LOCALE, { maximumFractionDigits: 10 })}</option>`).join("");
   bookGroup = prev && steps.includes(prev) ? prev : steps[1];
   sel.value = String(bookGroup);
 }
@@ -205,7 +205,7 @@ function drawBook() {
   bookDirty = false;
   if (!book) return;
   const { bids, asks } = bookSides();
-  if (!bids.length || !asks.length) { bookMessage("Orderbuch ist leer."); return; }
+  if (!bids.length || !asks.length) { bookMessage(L("Orderbuch ist leer.", "Order book is empty.")); return; }
   bookMessage("");
   const bestBid = bids[0][0], bestAsk = asks[0][0], mid = (bestBid + bestAsk) / 2;
   setupBookGroups(mid);
@@ -218,16 +218,17 @@ function drawBook() {
   drawDepth({ inBids, inAsks, mid, lo, hi });
   // Hinweis, wenn die Momentaufnahme den gewählten Bereich nicht ganz abdeckt
   const notes = [];
-  const fmtPct = (v) => (v * 100).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " %";
-  if (book.floor > lo) notes.push(`Kaufseite nur bis −${fmtPct(1 - book.floor / mid)}`);
-  if (book.ceil < hi) notes.push(`Verkaufsseite nur bis +${fmtPct(book.ceil / mid - 1)}`);
+  const fmtPct = (v) => (v * 100).toLocaleString(LOCALE, { maximumFractionDigits: 2 }) + PCT;
+  if (book.floor > lo) notes.push(`${L("Kaufseite nur bis", "Buy side only down to")} −${fmtPct(1 - book.floor / mid)}`);
+  if (book.ceil < hi) notes.push(`${L("Verkaufsseite nur bis", "Sell side only up to")} +${fmtPct(book.ceil / mid - 1)}`);
   $("book-note").textContent = notes.length
-    ? `${notes.join(", ")} – mehr Stufen liefert Binance ${bookMarket === "futures" ? "für Futures (1.000 je Seite)" : "nicht (5.000 je Seite)"}; der Rest des Bereichs fehlt.`
+    ? (EN ? `${notes.join(", ")} – Binance provides no more levels ${bookMarket === "futures" ? "for futures (1,000 per side)" : "(5,000 per side)"}; the rest of the range is missing.`
+      : `${notes.join(", ")} – mehr Stufen liefert Binance ${bookMarket === "futures" ? "für Futures (1.000 je Seite)" : "nicht (5.000 je Seite)"}; der Rest des Bereichs fehlt.`)
     : "";
 }
 
 function renderBookStats({ bestBid, bestAsk, mid, bidUsd, askUsd, inBids, inAsks }) {
-  const spread = bestAsk - bestBid, rangeTxt = "±" + (bookRange * 100).toLocaleString("de-DE") + " %";
+  const spread = bestAsk - bestBid, rangeTxt = "±" + (bookRange * 100).toLocaleString(LOCALE) + PCT;
   const imb = bidUsd + askUsd > 0 ? (bidUsd - askUsd) / (bidUsd + askUsd) : 0;
   const wall = (levels, down) => {
     const g = groupSide(levels, niceStep(mid * BOOK_WALL_STEP), down).sort((a, b) => b[2] - a[2])[0];
@@ -235,17 +236,17 @@ function renderBookStats({ bestBid, bestAsk, mid, bidUsd, askUsd, inBids, inAsks
   };
   const bw = wall(inBids, true), aw = wall(inAsks, false);
   const wallTile = (w, label) => statTile("bookWall", label, w ? usd(w.price) : "–",
-    w ? `<div class="det"><b>${bookUsd(w.usd)}</b> · ${num1(w.dist)} % vom Kurs</div>` : "");
+    w ? `<div class="det"><b>${bookUsd(w.usd)}</b> · ${num1(w.dist)}${PCT} ${L("vom Kurs", "from price")}</div>` : "");
   const share = bidUsd + askUsd > 0 ? bidUsd / (bidUsd + askUsd) * 100 : 50;
   $("book-stats").innerHTML =
     statTile("bookSpread", "Spread", usd(spread),
-      `<div class="det">${(spread / mid * 100).toLocaleString("de-DE", { maximumSignificantDigits: 2 })} % · Mitte ${usd(mid)}</div>`) +
-    statTile("bookImbalance", `Kauf vs. Verkauf ${rangeTxt}`,
-      `<span class="${imb > 0.05 ? "up" : imb < -0.05 ? "down" : ""}">${imb > 0 ? "+" : imb < 0 ? "−" : ""}${Math.abs(imb * 100).toFixed(0)} % ${imb >= 0 ? "Kaufseite" : "Verkaufsseite"}</span>`,
+      `<div class="det">${(spread / mid * 100).toLocaleString(LOCALE, { maximumSignificantDigits: 2 })}${PCT} · ${L("Mitte", "mid")} ${usd(mid)}</div>`) +
+    statTile("bookImbalance", `${L("Kauf vs. Verkauf", "Buy vs. sell")} ${rangeTxt}`,
+      `<span class="${imb > 0.05 ? "up" : imb < -0.05 ? "down" : ""}">${imb > 0 ? "+" : imb < 0 ? "−" : ""}${Math.abs(imb * 100).toFixed(0)}${PCT} ${imb >= 0 ? L("Kaufseite", "buy side") : L("Verkaufsseite", "sell side")}</span>`,
       `<div class="book-bar"><i class="b" style="width:${share.toFixed(1)}%"></i><i class="a"></i></div>
-       <div class="det">Kauf <b>${bookUsd(bidUsd)}</b> · Verkauf <b>${bookUsd(askUsd)}</b></div>`) +
-    wallTile(bw, `Größte Kaufwand ${rangeTxt}`) +
-    wallTile(aw, `Größte Verkaufswand ${rangeTxt}`);
+       <div class="det">${L("Kauf", "Buy")} <b>${bookUsd(bidUsd)}</b> · ${L("Verkauf", "Sell")} <b>${bookUsd(askUsd)}</b></div>`) +
+    wallTile(bw, `${L("Größte Kaufwand", "Largest buy wall")} ${rangeTxt}`) +
+    wallTile(aw, `${L("Größte Verkaufswand", "Largest sell wall")} ${rangeTxt}`);
 }
 
 function renderBookTable(bids, asks, mid) {
@@ -253,8 +254,8 @@ function renderBookTable(bids, asks, mid) {
   const gb = groupSide(bids, step, true).sort((a, b) => b[0] - a[0]).slice(0, BOOK_ROWS);
   const ga = groupSide(asks, step, false).sort((a, b) => a[0] - b[0]).slice(0, BOOK_ROWS);
   const max = Math.max(...gb.map((g) => g[2]), ...ga.map((g) => g[2]), 1);
-  const price = (v) => v.toLocaleString("de-DE", { minimumFractionDigits: dec, maximumFractionDigits: dec });
-  const qty = (q) => q.toLocaleString("de-DE", { maximumFractionDigits: q >= 100 ? 0 : q >= 1 ? 2 : 4 });
+  const price = (v) => v.toLocaleString(LOCALE, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const qty = (q) => q.toLocaleString(LOCALE, { maximumFractionDigits: q >= 100 ? 0 : q >= 1 ? 2 : 4 });
   const rows = (list, side) => {
     let cum = 0;
     return list.map((g) => {
@@ -264,7 +265,7 @@ function renderBookTable(bids, asks, mid) {
   };
   $("book-asks").innerHTML = rows(ga, "ask").reverse().join("");   // höchster Preis oben, bester Ask direkt über der Mitte
   $("book-bids").innerHTML = rows(gb, "bid").join("");
-  $("book-mid").innerHTML = `<tr class="mid"><td colspan="3"><b>${usd(mid)}</b> <span>Mitte · Spread ${usd(asks[0][0] - bids[0][0])}</span></td></tr>`;
+  $("book-mid").innerHTML = `<tr class="mid"><td colspan="3"><b>${usd(mid)}</b> <span>${L("Mitte", "Mid")} · Spread ${usd(asks[0][0] - bids[0][0])}</span></td></tr>`;
 }
 
 // Tiefenchart: kumulierte USD-Summe vom Kurs nach außen, Kauf links (grün), Verkauf rechts (rot)
@@ -296,7 +297,7 @@ function drawDepth({ inBids, inAsks, mid, lo, hi }) {
   ctx.textAlign = "center";
   for (const f of [-1, -0.5, 0, 0.5, 1]) {   // Preisachse: Rand, Hälfte, Mitte
     const p = mid * (1 + f * bookRange), xx = x(p);
-    const lbl = f === 0 ? usd(mid) : (f > 0 ? "+" : "−") + (Math.abs(f) * bookRange * 100).toLocaleString("de-DE") + " %";
+    const lbl = f === 0 ? usd(mid) : (f > 0 ? "+" : "−") + (Math.abs(f) * bookRange * 100).toLocaleString(LOCALE) + PCT;
     ctx.fillText(lbl, Math.min(Math.max(xx, pad.l + 24), pad.l + pw - 24), H - 6);
   }
 
@@ -335,8 +336,8 @@ function bookHover(e) {
   const list = isBid ? cumB : cumA;
   let v = 0;
   for (const [lp, c] of list) { if (isBid ? lp >= p : lp <= p) v = c; else break; }
-  tip.innerHTML = `<div><b>${usd(p)}</b> · ${num1((p / mid - 1) * 100)} %</div>
-    <div>${isBid ? "Kaufaufträge bis hier" : "Verkaufsaufträge bis hier"}: <b>${bookUsd(v)}</b></div>`;
+  tip.innerHTML = `<div><b>${usd(p)}</b> · ${num1((p / mid - 1) * 100)}${PCT}</div>
+    <div>${isBid ? L("Kaufaufträge bis hier", "Buy orders up to here") : L("Verkaufsaufträge bis hier", "Sell orders up to here")}: <b>${bookUsd(v)}</b></div>`;
   tip.hidden = false;
   const w = tip.offsetWidth;
   tip.style.left = Math.min(Math.max(4, px - w / 2), r.width - w - 4) + "px";
@@ -346,7 +347,7 @@ function updateBookMarketButtons() {
   $("book-market").querySelectorAll("button").forEach((b) => {
     b.setAttribute("aria-pressed", String(b.dataset.market === bookMarket));
     b.disabled = bookAvail[b.dataset.market] === false;
-    if (b.disabled) b.title = `Kein ${symbol}/USDT-Paar auf ${BOOK_MARKETS[b.dataset.market].name}`;
+    if (b.disabled) b.title = L(`Kein ${symbol}/USDT-Paar auf ${BOOK_MARKETS[b.dataset.market].name}`, `No ${symbol}/USDT pair on ${BOOK_MARKETS[b.dataset.market].name}`);
   });
 }
 
@@ -360,7 +361,7 @@ function startBook() {
     try { localStorage.setItem(BOOK_MARKET_KEY, bookMarket); } catch (err) { /* ignorieren */ }
     updateBookMarketButtons();
     book = null; bookView = null; $("book-group").dataset.steps = "";
-    bookMessage("Lade Orderbuch …");
+    bookMessage(L("Lade Orderbuch …", "Loading order book …"));
     connectBook();
   });
   $("book-range").addEventListener("click", (e) => {

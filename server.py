@@ -178,7 +178,7 @@ _derivs_cache = TTLCache("derivatives", CACHE_SECONDS, stale=True)   # Funding/O
 _defi_cache = TTLCache("defi", DEFI_CACHE_SECONDS, max_entries=1, stale=True)
 _llama_index_cache = TTLCache("llama-index", LLAMA_INDEX_SECONDS, max_entries=1, stale=True)
 _fees_cache = TTLCache("fees", FEES_CACHE_SECONDS, stale=True)   # Schlüssel: "<art>:<slug>"
-_news_cache = TTLCache("news", NEWS_CACHE_SECONDS, max_entries=1, stale=True)   # alle Feeds gemeinsam
+_news_cache = TTLCache("news", NEWS_CACHE_SECONDS, max_entries=len(sentiment.LANGS), stale=True)   # alle Feeds je Sprache
 _liq_cache = TTLCache("liquidation-inputs", CACHE_SECONDS, stale=True)   # Stundenkerzen und OI
 _history_cache = TTLCache("score-history", CACHE_SECONDS, stale=True)   # Score je Tag
 _onchain_cache = TTLCache("onchain", 3600, max_entries=300, stale=True)   # Coin Metrics, Tageswerte
@@ -393,18 +393,19 @@ def get_fees(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
     return _fees_cache.get(entry["kind"] + ":" + entry["slug"], load)
 
 
-def get_news(symbol: str, name: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Deutschsprachige Meldungen zum Coin (RSS); die Feeds werden gemeinsam 15 Min. gecacht,
-    gefiltert wird je Abruf. Bei Fehlern der letzte erfolgreiche Stand."""
+def get_news(symbol: str, name: Optional[str], lang: str = "de") -> Optional[Dict[str, Any]]:
+    """Meldungen zum Coin aus den RSS-Feeds der Sprache; die Feeds werden je Sprache gemeinsam 15 Min.
+    gecacht, gefiltert wird je Abruf. Bei Fehlern der letzte erfolgreiche Stand."""
     def load(_: Any) -> Optional[Dict[str, Any]]:
-        items = sentiment.safe(sentiment.get_news)
+        items = sentiment.safe(sentiment.get_news, lang)
         return {"items": items, "updated": datetime.now().isoformat(timespec="seconds")} if items else None
 
-    feeds = _news_cache.get("all", load)
+    feeds = _news_cache.get(lang, load)
     if not feeds:
         return None
+    sources = sentiment.NEWS_FEEDS_EN if lang == "en" else sentiment.NEWS_FEEDS
     return {"symbol": symbol, "name": name, "updated": feeds["updated"],
-            "sources": [s for s, _ in sentiment.NEWS_FEEDS], **sentiment.match_news(feeds["items"], symbol, name)}
+            "sources": [s for s, _ in sources], **sentiment.match_news(feeds["items"], symbol, name)}
 
 
 def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
@@ -441,10 +442,23 @@ def get_coin_profile(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, 
             return None
 
     def load(_: Any) -> Optional[Dict[str, Any]]:
-        profile = sentiment.safe(sentiment.get_coin_profile, coin_id)
+        profile = sentiment.safe(sentiment.get_coin_profile, coin_id)   # {"de": …, "en": …}
         return {"updated": datetime.now().isoformat(timespec="seconds"), **profile} if profile else None
 
     return _profile_cache.get(coin_id, load)
+
+
+def localize_coin(coin: Dict[str, Any], lang: str) -> Dict[str, Any]:
+    """Texte eines Coins (Begründungen, Einschätzung, Lagebild) in der Sprache; Zahlen bleiben gleich.
+    Die Caches halten die deutsche Fassung, für andere Sprachen wird aus denselben Daten neu formuliert."""
+    if lang == "de":
+        return coin
+    data = {"fear_greed": coin.get("fear_greed"), **coin["data"]}
+    signals = sentiment.score(data, lang)
+    total = sentiment.total_score(signals)
+    return {**coin, "signals": signals, "score": total,
+            "verdict": sentiment.verdict(total, len(signals), lang),
+            "situation": sentiment.situation(data, signals, total, lang)}
 
 
 def coingecko_error() -> Dict[str, Any]:
@@ -469,9 +483,13 @@ class ApiError(Exception):
 class Query:
     """Parameter einer Anfrage; `q("symbol")` liefert den ersten Wert oder den Standardwert."""
 
-    def __init__(self, query: str) -> None:
+    def __init__(self, query: str, cookie: str = "") -> None:
         self.params = parse_qs(query)
         self.force = self.params.get("refresh") == ["1"]
+        # Sprache der Texte: ?lang=… oder Cookie "lang" (setzt web/i18n.js), sonst deutsch
+        m = re.search(r"(?:^|;\s*)lang=(\w+)", cookie or "")
+        lang = self("lang") or (m.group(1) if m else "")
+        self.lang = lang if lang in sentiment.LANGS else "de"
 
     def __call__(self, name: str, default: str = "") -> str:
         return (self.params.get(name) or [default])[0]
@@ -529,7 +547,10 @@ def valid_symbol(q: Query) -> str:
 # --- Endpunkte: je eine Funktion (Query → JSON), Fehler über ApiError
 
 def api_sentiment(q: Query) -> Dict[str, Any]:
-    return get_payload(force=q.force)
+    payload = get_payload(force=q.force)
+    if q.lang == "de":
+        return payload
+    return {**payload, "coins": [localize_coin(c, q.lang) for c in payload["coins"]]}
 
 
 def api_markets(q: Query) -> Dict[str, Any]:
@@ -566,18 +587,20 @@ def api_watch_coins(q: Query) -> Dict[str, Any]:
         if (sym, cid) not in entries:
             entries.append((sym, cid))
     require(len(entries) <= sentiment.WATCHLIST_MAX, "zu viele Coins")
-    return get_watch_coins(entries, force=q.force)
+    result = get_watch_coins(entries, force=q.force)
+    return {**result, "coins": [localize_coin(c, q.lang) for c in result["coins"]]}
 
 
 def api_coin(q: Query) -> Dict[str, Any]:
     symbol = valid_symbol(q)
     coin_id = q.coin_id()
     require(not coin_id or COIN_ID_RE.match(coin_id), "ungültige Coin-ID")
-    return get_coin(symbol, coin_id, force=q.force)
+    return localize_coin(get_coin(symbol, coin_id, force=q.force), q.lang)
 
 
 def api_coin_info(q: Query) -> Dict[str, Any]:
-    return from_coingecko(get_coin_profile(*valid_symbol_and_id(q)))
+    profile = from_coingecko(get_coin_profile(*valid_symbol_and_id(q)))
+    return {"updated": profile["updated"], **profile[q.lang]}
 
 
 def api_klines(q: Query) -> Dict[str, Any]:
@@ -622,7 +645,7 @@ def api_news(q: Query) -> Dict[str, Any]:
     symbol, name = q.symbol(), q.text("name") or None
     require(SYMBOL_RE.match(symbol) and not (name and not NAME_RE.match(name)),
             "ungültiges Symbol oder ungültiger Name")
-    return found(get_news(symbol, name), "News-Feeds nicht erreichbar", 502)
+    return found(get_news(symbol, name, q.lang), "News-Feeds nicht erreichbar", 502)
 
 
 def api_liquidations(q: Query) -> Dict[str, Any]:
@@ -717,7 +740,7 @@ class Handler(SimpleHTTPRequestHandler):
             super().do_GET()   # statische Dateien aus web/ (unbekannte /api/-Pfade → 404)
             return
         try:
-            payload = route(Query(url.query))
+            payload = route(Query(url.query, self.headers.get("Cookie", "")))
         except ApiError as e:
             self.send_json(e.payload, e.status)
             return

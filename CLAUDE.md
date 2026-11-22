@@ -92,6 +92,22 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 
+## Sprachen (deutsch/englisch)
+
+- `web/i18n.js` als erstes Skript jeder Seite (im `<head>`): `LANG` aus `?lang=`, `localStorage.lang` oder
+  Browsersprache; setzt das Cookie `lang` für den Server und den Umschalter DE/EN in der Kopfzeile.
+- Texte im Code: `L("deutsch", "english")`; Zahlen über `LOCALE`, `DEC`, `PCT` (`format.js`), nie fest `"de-DE"`,
+  `","` oder `" %"`. Statisches HTML übersetzt `translateStatic` beim Laden über `addStatic({ "deutscher Text": "…" })`
+  im Skript der jeweiligen Seite (Schlüssel = Text mit zusammengefassten Leerzeichen, auch `title`, `placeholder`,
+  `aria-label`). Neue Texte also immer in beiden Sprachen anlegen.
+- Tooltips: `TIPS` (deutsch) und `TIPS_EN` in `tips.js`, gleiche Schlüssel; Skalen in beiden mitpflegen.
+  Signalnamen bleiben deutsche Schlüssel (`SIGNAL_WEIGHTS`, `SIGNAL_TIPS`), angezeigt über `signalName()`.
+- Server: `Query.lang` (Parameter oder Cookie). Caches halten die deutsche Fassung; `localize_coin` formuliert
+  Begründungen, Einschätzung und Lagebild aus denselben Daten neu (`score`, `verdict`, `situation` mit `lang`,
+  englisch in `SITUATIONS_EN`, `ACTIONS_EN`, `ACTIONS_EXTREME_EN`). Profil: `get_coin_profile` baut beide Sprachen
+  aus einer Abfrage (`CATEGORY_EN`, `coin_type`/`coin_assessment` mit `lang`). News: `NEWS_FEEDS_EN` für Englisch.
+  Browser-Caches mit Servertexten (`lastPayload_…`, `lastWatchCoins_…`) sind je Sprache getrennt.
+
 ## Score-Logik
 
 - Jedes Signal rechnet seinen Messwert über Ankerpunkte (`*_SCALE` oben in `sentiment.py`)
@@ -161,5 +177,5 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 
 ## Arbeitsweise
 
-- Oberfläche und Texte auf Deutsch, Commit-Nachrichten auf Englisch.
+- Oberfläche zweisprachig (siehe „Sprachen“), Code-Kommentare auf Deutsch, Commit-Nachrichten auf Englisch.
 - Änderungen erst im Browser prüfen lassen, **committen nur auf ausdrückliche Anweisung**.

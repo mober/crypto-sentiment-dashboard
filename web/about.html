@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Coin-Profil</title>
 <link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
 <style>
   .card { padding: 20px 24px; margin-bottom: 20px; }
   .card h2 { margin: 0 0 10px; font-size: 17px; }
@@ -94,6 +95,11 @@
 <script src="format.js"></script>
 <script src="tips.js"></script>
 <script>
+addStatic({
+  "Coin-Profil": "Coin profile", "Lade Daten …": "Loading data …", "Marktübersicht": "Markets", "Lade Profil …": "Loading profile …",
+  "Daten: CoinGecko (Beschreibung, Kategorien, Angebot, Links) · Einschätzung regelbasiert nach Erfahrungswerten, keine Anlageberatung · Profil wird einen Tag zwischengespeichert.":
+    "Data: CoinGecko (description, categories, supply, links) · assessment rule-based on rules of thumb, not investment advice · profile is cached for one day.",
+});
 // $, esc, dash, pct, change, usd, usd6, signed, tone kommen aus format.js; tipAttr aus tips.js
 const params = new URLSearchParams(location.search);
 const symbol = (params.get("symbol") || "").toUpperCase();
@@ -105,11 +111,11 @@ $("back").href = "coin.html?" + query;
 // Mengen kompakt, z. B. 766,8 Mio.
 const amount = (v) => {
   if (v == null) return dash;
-  const [div, unit] = v >= 1e12 ? [1e12, " Bio."] : v >= 1e9 ? [1e9, " Mrd."] : v >= 1e6 ? [1e6, " Mio."] : [1, ""];
-  return (v / div).toLocaleString("de-DE", { maximumFractionDigits: div === 1 ? 0 : 2 }) + unit;
+  const [div, unit] = v >= 1e12 ? [1e12, L(" Bio.", "T")] : v >= 1e9 ? [1e9, L(" Mrd.", "B")] : v >= 1e6 ? [1e6, L(" Mio.", "M")] : [1, ""];
+  return (v / div).toLocaleString(LOCALE, { maximumFractionDigits: div === 1 ? 0 : 2 }) + unit;
 };
-const date = (s) => s ? new Date(s).toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" }) : "";
-const list = (items, empty = "nichts Ausgeprägtes") =>
+const date = (s) => s ? new Date(s).toLocaleDateString(LOCALE, { day: "numeric", month: "short", year: "numeric" }) : "";
+const list = (items, empty = L("nichts Ausgeprägtes", "nothing pronounced")) =>
   items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="none">${empty}</li>`;
 
 function fact(label, val, det = "", tip = "") {
@@ -123,29 +129,34 @@ function profileCard(p) {
   const a = p.assessment;
   const explained = p.categories.filter((c) => c.text);
   const other = p.categories.filter((c) => !c.text);
-  const catNames = p.categories.map((c) => c.de);
+  const catNames = p.categories.map((c) => c.label);
+  const kind = p.type.label;
+  const short = EN
+    ? `${esc(p.name)} is ${/^[aeiou]/i.test(kind) ? "an" : "a"} ${esc(kind.charAt(0).toLowerCase() + kind.slice(1))}${catNames.length
+        ? ` in the areas of ${esc(catNames.slice(0, 4).join(", "))}` : ""}. ${esc(p.type.text)}`
+    : `${esc(p.name)} ist ein ${esc(kind.replace(/^(Nativer|Abgeleiteter)/, (m) => m.toLowerCase()))}${catNames.length
+        ? ` aus den Bereichen ${esc(catNames.slice(0, 4).join(", "))}` : ""}. ${esc(p.type.text)}`;
   return `
     <section class="card">
       <div class="profile-head">
         ${p.image ? `<img src="${esc(p.image)}" alt="">` : ""}
         <div>
           <div class="name">${esc(p.name)} <span class="muted">${esc(p.symbol)}</span></div>
-          <div class="kind">${esc(p.type.label)}${p.facts.rank ? ` · Rang ${p.facts.rank}` : ""}</div>
+          <div class="kind">${esc(p.type.label)}${p.facts.rank ? ` · ${L("Rang", "Rank")} ${p.facts.rank}` : ""}</div>
         </div>
         <div class="risk-box">
-          <div class="label"><span${tipAttr("risk")}>Risiko</span></div>
+          <div class="label"><span${tipAttr("risk")}>${L("Risiko", "Risk")}</span></div>
           <span class="risk-badge risk-${esc(a.risk.key)}">${esc(a.risk.label)}</span>
         </div>
       </div>
       <div class="summary">
-        <p><b>Kurz gesagt:</b> ${esc(p.name)} ist ein ${esc(p.type.label.replace(/^(Nativer|Abgeleiteter)/, (m) => m.toLowerCase()))}${catNames.length
-          ? ` aus den Bereichen ${esc(catNames.slice(0, 4).join(", "))}` : ""}. ${esc(p.type.text)}</p>
+        <p><b>${L("Kurz gesagt:", "In short:")}</b> ${short}</p>
       </div>
-      ${explained.length ? `<div class="label" style="margin-top:14px">Kategorien – was der Coin macht</div>
-        <ul class="cats">${explained.map((c) => `<li><b>${esc(c.de)}</b>${c.de !== c.name
+      ${explained.length ? `<div class="label" style="margin-top:14px">${L("Kategorien – was der Coin macht", "Categories – what the coin does")}</div>
+        <ul class="cats">${explained.map((c) => `<li><b>${esc(c.label)}</b>${c.label !== c.name
           ? ` <span class="orig">(${esc(c.name)})</span>` : ""}<div class="text">${esc(c.text)}</div></li>`).join("")}</ul>` : ""}
       ${other.length ? `<div class="chips">${other.map((c) => `<span class="chip">${esc(c.name)}</span>`).join("")}</div>` : ""}
-      ${p.facts.notice ? `<div class="notice"><b>Hinweis von CoinGecko:</b> ${esc(p.facts.notice)}</div>` : ""}
+      ${p.facts.notice ? `<div class="notice"><b>${L("Hinweis von CoinGecko:", "Notice from CoinGecko:")}</b> ${esc(p.facts.notice)}</div>` : ""}
     </section>`;
 }
 
@@ -153,16 +164,18 @@ function assessmentCard(p) {
   const a = p.assessment;
   return `
     <section class="card">
-      <h2>Wie ist ${esc(p.name)} einzuschätzen?</h2>
-      <div><span class="risk-badge risk-${esc(a.risk.key)}">Risiko ${esc(a.risk.label)}</span></div>
+      <h2>${L(`Wie ist ${esc(p.name)} einzuschätzen?`, `How to assess ${esc(p.name)}?`)}</h2>
+      <div><span class="risk-badge risk-${esc(a.risk.key)}">${L("Risiko", "Risk")} ${esc(a.risk.label)}</span></div>
       <p class="assess-text">${esc(a.risk.text)}</p>
       <div class="cols">
-        <div class="pro"><div class="label">Stärken</div><ul>${list(a.pro)}</ul></div>
-        <div class="contra"><div class="label">Risiken</div><ul>${list(a.contra)}</ul></div>
+        <div class="pro"><div class="label">${L("Stärken", "Strengths")}</div><ul>${list(a.pro)}</ul></div>
+        <div class="contra"><div class="label">${L("Risiken", "Risks")}</div><ul>${list(a.contra)}</ul></div>
       </div>
-      ${a.notes.length ? `<div class="cols"><div class="notes"><div class="label">Gut zu wissen</div><ul>${list(a.notes)}</ul></div></div>` : ""}
-      <div class="foot">Regelbasiert aus Größe, Art des Coins, Angebot und Verwässerung, Handel und Kursgeschichte.
-        Bewertet nicht die Technik oder das Team – dafür Whitepaper und Website lesen. Keine Anlageberatung.</div>
+      ${a.notes.length ? `<div class="cols"><div class="notes"><div class="label">${L("Gut zu wissen", "Good to know")}</div><ul>${list(a.notes)}</ul></div></div>` : ""}
+      <div class="foot">${L(`Regelbasiert aus Größe, Art des Coins, Angebot und Verwässerung, Handel und Kursgeschichte.
+        Bewertet nicht die Technik oder das Team – dafür Whitepaper und Website lesen. Keine Anlageberatung.`,
+        `Rule-based from size, type of coin, supply and dilution, trading and price history.
+        Does not rate the technology or the team – read the whitepaper and website for that. Not investment advice.`)}</div>
     </section>`;
 }
 
@@ -170,17 +183,17 @@ function marketCard(c) {
   const s = c.situation;
   return `
     <section class="card">
-      <h2>Aktuelle Marktlage</h2>
+      <h2>${L("Aktuelle Marktlage", "Current market situation")}</h2>
       <div class="market">
-        <div><div class="label"><span${tipAttr("score")}>Überhitzungs-Score</span></div>
+        <div><div class="label"><span${tipAttr("score")}>${L("Überhitzungs-Score", "Overheating score")}</span></div>
           <span class="big">${signed(c.score)}</span> <span class="${tone(c.score)}">${esc(c.verdict)}</span></div>
-        ${s ? `<div><div class="label"><span${tipAttr("situation")}>Lage</span></div>${esc(s.title)}</div>` : ""}
-        ${s && s.action ? `<div><div class="label"><span${tipAttr("action")}>Empfehlung</span></div>
+        ${s ? `<div><div class="label"><span${tipAttr("situation")}>${L("Lage", "Situation")}</span></div>${esc(s.title)}</div>` : ""}
+        ${s && s.action ? `<div><div class="label"><span${tipAttr("action")}>${L("Empfehlung", "Suggestion")}</span></div>
           <span class="act act-${esc(s.action_tone || "wait")}">${esc(s.action)}</span></div>` : ""}
       </div>
       ${s ? `<p class="assess-text">${esc(s.summary)}</p>` : ""}
-      <div class="foot">Kurzfristige Stimmung, unabhängig von der Einschätzung oben.
-        <a href="coin.html?${query}">Chart, Signale und Begründung auf der Detailseite →</a></div>
+      <div class="foot">${L("Kurzfristige Stimmung, unabhängig von der Einschätzung oben.", "Short-term sentiment, independent of the assessment above.")}
+        <a href="coin.html?${query}">${L("Chart, Signale und Begründung auf der Detailseite →", "Chart, signals and reasoning on the detail page →")}</a></div>
     </section>`;
 }
 
@@ -192,8 +205,8 @@ function descriptionCard(p) {
   const translate = "https://translate.google.com/?sl=en&tl=de&op=translate&text=" + encodeURIComponent(text.slice(0, 4500));
   return `
     <section class="card desc">
-      <h2>Was ist ${esc(p.name)}?</h2>
-      ${d.lang === "en" ? `<div class="lang-note">Die Projektbeschreibung gibt es bei CoinGecko nur auf Englisch.
+      <h2>${L("Was ist", "What is")} ${esc(p.name)}?</h2>
+      ${d.lang === "en" && !EN ? `<div class="lang-note">Die Projektbeschreibung gibt es bei CoinGecko nur auf Englisch.
         <a href="${esc(translate)}" target="_blank" rel="noopener noreferrer">Im Google Übersetzer auf Deutsch lesen →</a></div>` : ""}
       ${d.paragraphs.map((x) => `<p lang="${esc(d.lang)}">${esc(x)}</p>`).join("")}
     </section>`;
@@ -203,29 +216,29 @@ function factsCard(p) {
   const f = p.facts, l = p.links;
   const inCirc = f.max_supply ? f.circulating_supply / f.max_supply : f.total_supply ? f.circulating_supply / f.total_supply : null;
   const tiles = [
-    fact("Blockchain", f.platform ? `Token auf ${esc(f.platform)}` : "eigene Blockchain",
-      f.chains > 1 ? `auf ${f.chains} Chains verfügbar` : ""),
-    f.genesis_date ? fact("Start", date(f.genesis_date), `vor ${Math.floor(f.age_days / 365)} Jahren`) : "",
-    f.hashing_algorithm ? fact("Algorithmus", esc(f.hashing_algorithm)) : "",
-    f.block_time_minutes ? fact("Blockzeit", `${String(f.block_time_minutes).replace(".", ",")} Min.`) : "",
-    fact("Marktkapitalisierung", usd6(f.market_cap), f.rank ? `Rang ${f.rank}` : "", "mcap"),
-    f.fdv ? fact("Voll verwässert (FDV)", usd6(f.fdv), f.mc_fdv != null ? `Marktkap. = ${Math.round(f.mc_fdv * 100)} % davon` : "", "fdv") : "",
-    fact("Im Umlauf", amount(f.circulating_supply),
-      inCirc != null ? `${Math.round(inCirc * 100)} % der ${f.max_supply ? "Höchstmenge" : "Gesamtmenge"}` : "", "supply"),
-    fact("Höchstmenge", f.max_supply ? amount(f.max_supply) : "keine Obergrenze",
-      f.total_supply ? `bisher geschaffen: ${amount(f.total_supply)}` : "", "supply"),
-    fact("Volumen 24 h", usd6(f.volume_24h), f.turnover != null ? `Umschlag ${pct(f.turnover).replace("+", "")} der Marktkap.` : "", "volume"),
-    f.tvl ? fact("Gebundenes Kapital (TVL)", usd6(f.tvl)) : "",
-    f.ath ? fact("Allzeithoch", usd(f.ath), `${f.ath_change != null ? change(f.ath_change) + " · " : ""}${date(f.ath_date)}`, "ath") : "",
-    f.atl ? fact("Allzeittief", usd(f.atl), `${f.atl_change != null ? change(f.atl_change) + " · " : ""}${date(f.atl_date)}`, "atl") : "",
-    f.change_1y != null ? fact("1 Jahr", change(f.change_1y)) : "",
-    f.country ? fact("Herkunft", esc(f.country)) : "",
-    f.watchlists ? fact("Auf Watchlists", amount(f.watchlists), f.votes_up != null ? `${Math.round(f.votes_up * 100)} % positive Stimmen` : "", "watchlists") : "",
+    fact("Blockchain", f.platform ? `${L("Token auf", "Token on")} ${esc(f.platform)}` : L("eigene Blockchain", "own blockchain"),
+      f.chains > 1 ? L(`auf ${f.chains} Chains verfügbar`, `available on ${f.chains} chains`) : ""),
+    f.genesis_date ? fact("Start", date(f.genesis_date), L(`vor ${Math.floor(f.age_days / 365)} Jahren`, `${Math.floor(f.age_days / 365)} years ago`)) : "",
+    f.hashing_algorithm ? fact(L("Algorithmus", "Algorithm"), esc(f.hashing_algorithm)) : "",
+    f.block_time_minutes ? fact(L("Blockzeit", "Block time"), `${String(f.block_time_minutes).replace(".", DEC)} min`) : "",
+    fact(L("Marktkapitalisierung", "Market cap"), usd6(f.market_cap), f.rank ? `${L("Rang", "Rank")} ${f.rank}` : "", "mcap"),
+    f.fdv ? fact(L("Voll verwässert (FDV)", "Fully diluted (FDV)"), usd6(f.fdv), f.mc_fdv != null ? `${L("Marktkap.", "Market cap")} = ${Math.round(f.mc_fdv * 100)}${PCT} ${L("davon", "of it")}` : "", "fdv") : "",
+    fact(L("Im Umlauf", "Circulating"), amount(f.circulating_supply),
+      inCirc != null ? `${Math.round(inCirc * 100)}${PCT} ${L("der", "of")} ${f.max_supply ? L("Höchstmenge", "max supply") : L("Gesamtmenge", "total supply")}` : "", "supply"),
+    fact(L("Höchstmenge", "Max supply"), f.max_supply ? amount(f.max_supply) : L("keine Obergrenze", "no cap"),
+      f.total_supply ? `${L("bisher geschaffen", "created so far")}: ${amount(f.total_supply)}` : "", "supply"),
+    fact(L("Volumen 24 h", "Volume 24 h"), usd6(f.volume_24h), f.turnover != null ? `${L("Umschlag", "Turnover")} ${pct(f.turnover).replace("+", "")} ${L("der Marktkap.", "of market cap")}` : "", "volume"),
+    f.tvl ? fact(L("Gebundenes Kapital (TVL)", "Total value locked (TVL)"), usd6(f.tvl)) : "",
+    f.ath ? fact(L("Allzeithoch", "All-time high"), usd(f.ath), `${f.ath_change != null ? change(f.ath_change) + " · " : ""}${date(f.ath_date)}`, "ath") : "",
+    f.atl ? fact(L("Allzeittief", "All-time low"), usd(f.atl), `${f.atl_change != null ? change(f.atl_change) + " · " : ""}${date(f.atl_date)}`, "atl") : "",
+    f.change_1y != null ? fact(L("1 Jahr", "1 year"), change(f.change_1y)) : "",
+    f.country ? fact(L("Herkunft", "Origin"), esc(f.country)) : "",
+    f.watchlists ? fact(L("Auf Watchlists", "On watchlists"), amount(f.watchlists), f.votes_up != null ? `${Math.round(f.votes_up * 100)}${PCT} ${L("positive Stimmen", "positive votes")}` : "", "watchlists") : "",
   ].filter(Boolean).join("");
   const link = (url, label) => url ? `<a class="navlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : "";
   return `
     <section class="card">
-      <h2>Was ${esc(p.name)} hat – Fakten</h2>
+      <h2>${L(`Was ${esc(p.name)} hat – Fakten`, `${esc(p.name)} – facts`)}</h2>
       <div class="facts">${tiles}</div>
       <div class="links">${[link(l.homepage, "Website"), link(l.whitepaper, "Whitepaper"), link(l.github, "GitHub"),
         link(l.explorer, "Explorer"), link(l.twitter, "X / Twitter"), link(l.reddit, "Reddit"), link(l.coingecko, "CoinGecko")].join("")}</div>
@@ -245,7 +258,7 @@ function render() {
 function showRateLimit(retryIn) {
   let left = retryIn;
   const draw = () => {
-    $("content").innerHTML = `<section class="card status">CoinGecko-Limit erreicht (kostenlose API ohne Key). Neuer Versuch in ${left} s …</section>`;
+    $("content").innerHTML = `<section class="card status">${L("CoinGecko-Limit erreicht (kostenlose API ohne Key). Neuer Versuch in", "CoinGecko limit reached (free API without key). Retrying in")} ${left} s …</section>`;
   };
   draw();
   const timer = setInterval(() => {
@@ -262,13 +275,13 @@ async function loadProfile() {
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     profile = p;
-    document.title = `${p.name} – Profil`;
-    $("title").textContent = `Über ${p.name}`;
-    $("updated").textContent = "Profil-Stand: " + new Date(p.updated).toLocaleString("de-DE");
+    document.title = `${p.name} – ${L("Profil", "Profile")}`;
+    $("title").textContent = `${L("Über", "About")} ${p.name}`;
+    $("updated").textContent = L("Profil-Stand: ", "Profile as of: ") + new Date(p.updated).toLocaleString(LOCALE);
     render();
   } catch (e) {
     if (e.retryIn) { showRateLimit(e.retryIn); return; }
-    $("content").innerHTML = `<section class="card status error">Profil für ${esc(symbol)} konnte nicht geladen werden (${esc(e.message)}). Läuft server.py?</section>`;
+    $("content").innerHTML = `<section class="card status error">${L(`Profil für ${esc(symbol)} konnte nicht geladen werden (${esc(e.message)}). Läuft server.py?`, `Profile for ${esc(symbol)} could not be loaded (${esc(e.message)}). Is server.py running?`)}</section>`;
     $("updated").textContent = "";
   }
 }
@@ -290,7 +303,7 @@ async function loadMarket() {
 }
 
 if (!/^[A-Z0-9]{1,15}$/.test(symbol)) {
-  $("content").innerHTML = '<section class="card status error">Kein gültiges Symbol in der Adresse (z. B. about.html?symbol=BTC).</section>';
+  $("content").innerHTML = `<section class="card status error">${L("Kein gültiges Symbol in der Adresse (z. B. about.html?symbol=BTC).", "No valid symbol in the address (e.g. about.html?symbol=BTC).")}</section>`;
   $("updated").textContent = "";
 } else {
   loadProfile();

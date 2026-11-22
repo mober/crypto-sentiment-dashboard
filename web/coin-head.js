@@ -10,27 +10,27 @@ const MOOD_TONE = { fear: "tone-cold", greed: "tone-hot", neutral: "tone-neutral
 function lageBlock(c) {
   const s = c.situation;
   if (!s) return "";
-  const list = (items) => items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : '<li class="none">nichts Ausgeprägtes</li>';
+  const list = (items) => items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="none">${L("nichts Ausgeprägtes", "nothing pronounced")}</li>`;
   // die zwei Signale mit dem größten Ausschlag
   const drivers = [...c.signals].sort((a, b) => Math.abs(b.points) - Math.abs(a.points)).slice(0, 2)
-    .map((x) => `${esc(x.name)} <b>${signed(x.points)}</b>`).join(", ");
+    .map((x) => `${esc(signalName(x.name))} <b>${signed(x.points)}</b>`).join(", ");
   return `
     <div class="lage" id="hero-lage">
       <div class="lage-head">
-        <span class="label"><span${tipAttr("situation")}>Lage</span></span>
+        <span class="label"><span${tipAttr("situation")}>${L("Lage", "Situation")}</span></span>
         <span class="verdict ${MOOD_TONE[s.mood] || "tone-neutral"}">${esc(s.title)}</span>
       </div>
       <div class="lage-sum">${esc(s.summary)}</div>
       <div class="lage-text">${esc(s.text)}</div>
       ${s.action ? `<div class="lage-action act-${esc(s.action_tone || "wait")}">
-        <div><span class="label"><span${tipAttr("action")}>Empfehlung</span></span> <span class="act">${esc(s.action)}</span></div>
+        <div><span class="label"><span${tipAttr("action")}>${L("Empfehlung", "Suggestion")}</span></span> <span class="act">${esc(s.action)}</span></div>
         <div class="why">${esc(s.action_text)}</div>
       </div>` : ""}
       <div class="lage-cols">
-        <div class="pro"><div class="label">Für steigende Kurse spricht</div><ul>${list(s.pro)}</ul></div>
-        <div class="contra"><div class="label">Dagegen spricht</div><ul>${list(s.contra)}</ul></div>
+        <div class="pro"><div class="label">${L("Für steigende Kurse spricht", "In favour of rising prices")}</div><ul>${list(s.pro)}</ul></div>
+        <div class="contra"><div class="label">${L("Dagegen spricht", "Against")}</div><ul>${list(s.contra)}</ul></div>
       </div>
-      <div class="lage-foot">${drivers ? `Stärkste Signale im Score: ${drivers} · ` : ""}Einordnung nach Erfahrungswerten.</div>
+      <div class="lage-foot">${drivers ? `${L("Stärkste Signale im Score:", "Strongest signals in the score:")} ${drivers} · ` : ""}${L("Einordnung nach Erfahrungswerten.", "Assessment based on rules of thumb.")}</div>
     </div>`;
 }
 
@@ -40,6 +40,7 @@ let newsData = null, newsName = "";
 
 const ago = (t) => {
   const min = Math.max(0, (Date.now() / 1000 - t) / 60);
+  if (EN) return min < 60 ? `${Math.round(min)} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`;
   return min < 60 ? `vor ${Math.round(min)} Min.` : min < 48 * 60 ? `vor ${Math.round(min / 60)} Std.` : `vor ${Math.round(min / 1440)} Tagen`;
 };
 
@@ -50,7 +51,7 @@ function renderNews() {
   const who = esc(newsName || symbol);
   el.hidden = !items.length;
   el.innerHTML = !items.length ? "" : `
-    <div class="label news-head"><span${tipAttr("news")}>${newsData.general ? `Keine aktuellen Meldungen zu ${who} – neueste Krypto-News` : `News zu ${who}`}</span></div>
+    <div class="label news-head"><span${tipAttr("news")}>${newsData.general ? L(`Keine aktuellen Meldungen zu ${who} – neueste Krypto-News`, `No recent news on ${who} – latest crypto news`) : L(`News zu ${who}`, `News on ${who}`)}</span></div>
     <ul>${items.map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="${esc(i.teaser)}">${esc(i.title)}</a>`
       + `<span class="meta">${esc(i.source)} · ${ago(i.time)}</span></li>`).join("")}</ul>`;
   setupCollapse(el);
@@ -73,11 +74,11 @@ function renderHero(c) {
   const st = c.data.market_stats || {};
   const ch = st.change || {};
   const fng = c.fear_greed;
-  const changes = [["24 h", ch["24h"]], ["7 T", ch["7d"]]].filter(([, v]) => v != null)
+  const changes = [["24 h", ch["24h"]], [L("7 T", "7 d"), ch["7d"]]].filter(([, v]) => v != null)
     .map(([label, v]) => `<span>${label} ${change(v)}</span>`).join("");
   const facts = [
-    mc ? `Marktkap. ${usd6(mc.usd)}${mc.rank ? ` · Rang ${mc.rank}` : ""}` : "Marktkap. n/a",
-    st.ath_change == null ? "" : st.ath_change < 0 ? `<b>${pct(-st.ath_change).replace("+", "")}</b> unter dem Allzeithoch` : "<b>auf dem Allzeithoch</b>",
+    mc ? `${L("Marktkap.", "Market cap")} ${usd6(mc.usd)}${mc.rank ? ` · ${L("Rang", "Rank")} ${mc.rank}` : ""}` : L("Marktkap. n/a", "Market cap n/a"),
+    st.ath_change == null ? "" : st.ath_change < 0 ? `<b>${pct(-st.ath_change).replace("+", "")}</b> ${L("unter dem Allzeithoch", "below the all-time high")}` : `<b>${L("auf dem Allzeithoch", "at the all-time high")}</b>`,
     fng ? `Fear &amp; Greed <b>${fng.value}</b> (${fngZone(fng.value).name})` : "",
   ].filter(Boolean).join(" · ");
   const coinName = c.data.name || symbol;
@@ -86,7 +87,7 @@ function renderHero(c) {
   $("hero").className = "card hero";
   $("hero").innerHTML = `
     <div>
-      <a class="about-link" href="${esc(aboutHref)}" title="Beschreibung, Kategorie, Fakten und Einschätzung">Was ist ${esc(coinName)}? Profil &amp; Einschätzung →</a>
+      <a class="about-link" href="${esc(aboutHref)}" title="${L("Beschreibung, Kategorie, Fakten und Einschätzung", "Description, category, facts and assessment")}">${L(`Was ist ${esc(coinName)}? Profil &amp; Einschätzung →`, `What is ${esc(coinName)}? Profile &amp; assessment →`)}</a>
       <div class="price-line">
         <div class="price" id="hero-price">${ma ? usd(ma.price) : c.data.price != null ? usd(c.data.price) : "–"}</div>
         ${changes ? `<div class="chg">${changes}</div>` : ""}
@@ -94,7 +95,7 @@ function renderHero(c) {
       <div class="mcap">${facts}</div>
     </div>
     <div class="score-box">
-      <div class="label">Überhitzungs-Score</div>
+      <div class="label">${L("Überhitzungs-Score", "Overheating score")}</div>
       <div class="score">${signed(c.score)}</div>
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
       <div class="track" id="score-track"></div>
@@ -115,14 +116,15 @@ function bdRow(name, reason, points, share, total = false, n = 1, weight = 1) {
   // Tooltip: allgemeine Erklärung (tips.js) plus Einordnung des aktuellen Werts
   const key = total ? "score" : SIGNAL_TIPS[name];
   const now = total
-    ? `Aktuell: ${signed(points)} = gewichteter Durchschnitt aus ${n} Signalen.`
-    : `Aktuell: ${reason} → ${signed(points)} Punkte, Gewicht ${weight.toLocaleString("de-DE")}. Das macht ${num1(share)} im Score aus.`;
+    ? L(`Aktuell: ${signed(points)} = gewichteter Durchschnitt aus ${n} Signalen.`, `Now: ${signed(points)} = weighted average of ${n} signals.`)
+    : L(`Aktuell: ${reason} → ${signed(points)} Punkte, Gewicht ${weight.toLocaleString(LOCALE)}. Das macht ${num1(share)} im Score aus.`,
+      `Now: ${reason} → ${signed(points)} points, weight ${weight.toLocaleString(LOCALE)}. That accounts for ${num1(share)} of the score.`);
   const tip = key && TIPS[key] ? ` data-tip="${key}" data-tip-now="${esc(now)}" tabindex="0"` : "";
   return `
     <div class="bd-row${total ? " total" : ""}">
       <div class="bd-label"><div class="bd-name"><span${tip}>${esc(name)}</span></div>${reason ? `<div class="bd-reason">${esc(reason)}</div>` : ""}</div>
-      <div class="bd-track" role="img" aria-label="${esc(name)}: ${signed(points)} von −100 bis +100">${bar}</div>
-      <div class="bd-val">${signed(points)}${share != null ? `<span class="share">${num1(share)} im Score</span>` : ""}</div>
+      <div class="bd-track" role="img" aria-label="${esc(name)}: ${signed(points)} ${L("von −100 bis +100", "from −100 to +100")}">${bar}</div>
+      <div class="bd-val">${signed(points)}${share != null ? `<span class="share">${num1(share)} ${L("im Score", "in score")}</span>` : ""}</div>
     </div>`;
 }
 
@@ -136,26 +138,27 @@ function renderBreakdown(c) {
   }
   $("breakdown").innerHTML = `
     <div class="breakdown-head">
-      <div class="label">Zusammensetzung des Überhitzungs-Scores</div>
-      <div class="note">${n} Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)</div>
+      <div class="label">${L("Zusammensetzung des Überhitzungs-Scores", "Breakdown of the overheating score")}</div>
+      <div class="note">${n} ${L("Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)", "signals · score = weighted average (trend and options volatility count more, Fear &amp; Greed and RSI less)")}</div>
     </div>
-    ${c.signals.map((s) => bdRow(s.name + (w(s) !== 1 ? ` ×${w(s).toLocaleString("de-DE")}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s))).join("")}
-    ${bdRow("Überhitzungs-Score", c.verdict, c.score, null, true, n)}
-    <div class="bd-axis"><span></span><div class="ticks"><span>−100 Angst</span><span>0</span><span>Gier +100</span></div><span></span></div>`;
+    ${c.signals.map((s) => bdRow(signalName(s.name) + (w(s) !== 1 ? ` ×${w(s).toLocaleString(LOCALE)}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s))).join("")}
+    ${bdRow(L("Überhitzungs-Score", "Overheating score"), c.verdict, c.score, null, true, n)}
+    <div class="bd-axis"><span></span><div class="ticks"><span>−100 ${L("Angst", "Fear")}</span><span>0</span><span>${L("Gier", "Greed")} +100</span></div><span></span></div>`;
   setupCollapse($("breakdown"));  // Kopfzeile wurde neu geschrieben
 }
 
 // Kennzahlen aus den CoinGecko-Marktdaten (kommen mit dem Score, keine eigene Abfrage)
-const big = (v) => v.toLocaleString("de-DE", { notation: "compact", compactDisplay: "long", maximumSignificantDigits: 4 })
+const big = (v) => v.toLocaleString(LOCALE, { notation: "compact", compactDisplay: EN ? "short" : "long", maximumSignificantDigits: 4 })
   .replace(/ Millionen?/, " Mio.").replace(/ Milliarden?/, " Mrd.").replace(/ Billionen?/, " Bio.");
 const pctSigned = (v) => {
   const a = Math.abs(v * 100);
-  const txt = a >= 1000 ? numDe(a, 0) : a.toFixed(1).replace(".", ",");
-  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${txt} %`;
+  const txt = a >= 1000 ? numDe(a, 0) : a.toFixed(1).replace(".", DEC);
+  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${txt}${PCT}`;
 };
-const dateDe = (iso) => new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+const dateDe = (iso) => new Date(iso).toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" });
 const yearsAgo = (iso) => {
   const days = (Date.now() - new Date(iso)) / 864e5;
+  if (EN) return days < 60 ? `${Math.round(days)} days ago` : days < 730 ? `${Math.round(days / 30.4)} months ago` : `${numDe(days / 365.25)} years ago`;
   return days < 60 ? `vor ${Math.round(days)} Tagen` : days < 730 ? `vor ${Math.round(days / 30.4)} Monaten` : `vor ${numDe(days / 365.25)} Jahren`;
 };
 
@@ -200,10 +203,10 @@ function candleTiles() {
   const pos = hi.high > lo.low ? Math.min(100, Math.max(0, (price - lo.low) / (hi.high - lo.low) * 100)) : 50;
   const day = (k) => fmtDate(k.time, { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" });
   const full = win.length >= WEEKS52_DAYS;
-  const w52 = statTile("w52", full ? "Hoch / Tief 52 Wochen" : `Hoch / Tief seit Handelsstart (${win.length} T)`,
+  const w52 = statTile("w52", full ? L("Hoch / Tief 52 Wochen", "High / low 52 weeks") : L(`Hoch / Tief seit Handelsstart (${win.length} T)`, `High / low since listing (${win.length} d)`),
     `${usd(lo.low)} – ${usd(hi.high)}`,
-    `<div class="det">${chgSpan(price / hi.high - 1)} vom Hoch (${day(hi)}) · ${chgSpan(price / lo.low - 1)} vom Tief (${day(lo)})</div>`
-    + `<div class="range-bar" title="Aktueller Kurs innerhalb der 52-Wochen-Spanne"><div style="left:${pos}%"></div></div>`);
+    `<div class="det">${chgSpan(price / hi.high - 1)} ${L("vom Hoch", "from high")} (${day(hi)}) · ${chgSpan(price / lo.low - 1)} ${L("vom Tief", "from low")} (${day(lo)})</div>`
+    + `<div class="range-bar" title="${L("Aktueller Kurs innerhalb der 52-Wochen-Spanne", "Current price within the 52-week range")}"><div style="left:${pos}%"></div></div>`);
 
   // Volatilität 30 T, eingeordnet gegen den Durchschnitt der 30-T-Werte im letzten Jahr
   let vol = "";
@@ -218,11 +221,11 @@ function candleTiles() {
     const avg = hist.length >= 60 ? hist.reduce((a, b) => a + b, 0) / hist.length : null;
     const rel = avg ? now / avg : null;
     // Einordnung: Erfahrungswerte, ±25 % Abweichung vom eigenen Jahresdurchschnitt
-    const word = rel == null ? "" : rel >= 1.25 ? "deutlich höher als üblich" : rel <= 0.75 ? "deutlich ruhiger als üblich" : "im üblichen Rahmen";
-    const pct0 = (v) => numDe(v * 100, 0) + " %";
-    vol = statTile("vol30", "Volatilität 30 T", pct0(now),
-      `<div class="det">≈ ±${(now / Math.sqrt(365) * 100).toFixed(1).replace(".", ",")} % pro Tag`
-      + (avg ? ` · Ø 1 J <b>${pct0(avg)}</b>, ${word}` : "") + "</div>");
+    const word = rel == null ? "" : rel >= 1.25 ? L("deutlich höher als üblich", "much higher than usual") : rel <= 0.75 ? L("deutlich ruhiger als üblich", "much calmer than usual") : L("im üblichen Rahmen", "within the usual range");
+    const pct0 = (v) => numDe(v * 100, 0) + PCT;
+    vol = statTile("vol30", L("Volatilität 30 T", "Volatility 30 d"), pct0(now),
+      `<div class="det">≈ ±${(now / Math.sqrt(365) * 100).toFixed(1).replace(".", DEC)}${PCT} ${L("pro Tag", "per day")}`
+      + (avg ? ` · ${L("Ø 1 J", "avg 1 y")} <b>${pct0(avg)}</b>, ${word}` : "") + "</div>");
   }
   // Größter Rückgang im letzten Jahr (Schlusskurse, Hoch → späteres Tief)
   const dayC = (i) => fmtDate(d[i].time, { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" });
@@ -235,9 +238,9 @@ function candleTiles() {
   }
   const curDd = price / closes[peak] - 1;  // peak = höchster Schlusskurs im Zeitraum
   const recovered = ddTrough < d.length - 1 ? price / closes[ddTrough] - 1 : null;
-  const dd = ddMax < 0 ? statTile("drawdown", full ? "Max. Rückgang 1 J" : "Max. Rückgang seit Start", chgSpan(ddMax),
-    `<div class="det">${dayC(ddPeak)} → ${dayC(ddTrough)}${recovered != null ? ` · seither ${chgSpan(recovered)}` : ""}</div>`
-    + `<div class="det">Aktuell ${curDd < 0 ? `${chgSpan(curDd)} unter dem Hoch (${dayC(peak)})` : "<b>auf dem Hoch</b>"}</div>`) : "";
+  const dd = ddMax < 0 ? statTile("drawdown", full ? L("Max. Rückgang 1 J", "Max. drawdown 1 y") : L("Max. Rückgang seit Start", "Max. drawdown since listing"), chgSpan(ddMax),
+    `<div class="det">${dayC(ddPeak)} → ${dayC(ddTrough)}${recovered != null ? ` · ${L("seither", "since then")} ${chgSpan(recovered)}` : ""}</div>`
+    + `<div class="det">${L("Aktuell", "Now")} ${curDd < 0 ? `${chgSpan(curDd)} ${L("unter dem Hoch", "below the high")} (${dayC(peak)})` : `<b>${L("auf dem Hoch", "at the high")}</b>`}</div>`) : "";
 
   // Abstand zu MA50 und MA200 der Tages-Schlusskurse, dazu Lage der beiden zueinander
   let ma = "";
@@ -251,10 +254,10 @@ function candleTiles() {
       const above = ma50[last] > ma200[last];
       let i = last;
       while (i > 0 && ma200[i - 1] != null && (ma50[i - 1] > ma200[i - 1]) === above) i--;
-      const since = ma200[i - 1] != null ? ` seit ${dayC(i)}` : "";
-      cross = `<div class="det">MA50 ${above ? "über" : "unter"} MA200${since} (${above ? "„Golden Cross“" : "„Death Cross“"})</div>`;
+      const since = ma200[i - 1] != null ? ` ${L("seit", "since")} ${dayC(i)}` : "";
+      cross = `<div class="det">MA50 ${above ? L("über", "above") : L("unter", "below")} MA200${since} (${above ? L("„Golden Cross“", "“golden cross”") : L("„Death Cross“", "“death cross”")})</div>`;
     }
-    ma = statTile("maDist", "Abstand zu den Durchschnitten", "",
+    ma = statTile("maDist", L("Abstand zu den Durchschnitten", "Distance to moving averages"), "",
       `<div class="ma-rows">${rows}</div>${cross}`).replace('<div class="val"></div>', "");
   }
   return { w52, vol, dd, ma };
@@ -274,47 +277,47 @@ function drawStats() {
   const tiles = [];
 
   if (st && st.ath != null) {
-    tiles.push(statTile("ath", "Allzeithoch", usd(st.ath),
-      `<div class="det">${st.ath_change != null ? `${chgSpan(st.ath_change)} darunter · ` : ""}${st.ath_date ? `${dateDe(st.ath_date)} (${yearsAgo(st.ath_date)})` : ""}</div>`));
+    tiles.push(statTile("ath", L("Allzeithoch", "All-time high"), usd(st.ath),
+      `<div class="det">${st.ath_change != null ? `${chgSpan(st.ath_change)} ${L("darunter", "below")} · ` : ""}${st.ath_date ? `${dateDe(st.ath_date)} (${yearsAgo(st.ath_date)})` : ""}</div>`));
   }
   if (st && st.atl != null) {
-    tiles.push(statTile("atl", "Allzeittief", usd(st.atl),
-      `<div class="det">${st.atl_change != null ? `${chgSpan(st.atl_change)} darüber · ` : ""}${st.atl_date ? dateDe(st.atl_date) : ""}</div>`));
+    tiles.push(statTile("atl", L("Allzeittief", "All-time low"), usd(st.atl),
+      `<div class="det">${st.atl_change != null ? `${chgSpan(st.atl_change)} ${L("darüber", "above")} · ` : ""}${st.atl_date ? dateDe(st.atl_date) : ""}</div>`));
   }
   if (w52) tiles.push(w52);
   if (st && st.low_24h != null && st.high_24h != null && st.high_24h > st.low_24h) {
     const price = c.data.price ?? (dailyCandles && dailyCandles.length ? dailyCandles[dailyCandles.length - 1].close : null);
     const pos = price != null ? Math.min(100, Math.max(0, (price - st.low_24h) / (st.high_24h - st.low_24h) * 100)) : null;
-    tiles.push(statTile("range24", "Spanne 24 h", `${usd(st.low_24h)} – ${usd(st.high_24h)}`,
-      `<div class="det">Schwankung ${pctSigned((st.high_24h - st.low_24h) / st.low_24h).replace("+", "")}</div>`
-      + (pos != null ? `<div class="range-bar" title="Aktueller Kurs innerhalb der Spanne"><div style="left:${pos}%"></div></div>` : "")));
+    tiles.push(statTile("range24", L("Spanne 24 h", "Range 24 h"), `${usd(st.low_24h)} – ${usd(st.high_24h)}`,
+      `<div class="det">${L("Schwankung", "Swing")} ${pctSigned((st.high_24h - st.low_24h) / st.low_24h).replace("+", "")}</div>`
+      + (pos != null ? `<div class="range-bar" title="${L("Aktueller Kurs innerhalb der Spanne", "Current price within the range")}"><div style="left:${pos}%"></div></div>` : "")));
   }
   if (dd) tiles.push(dd);
   if (ma) tiles.push(ma);
   if (vol) tiles.push(vol);
   if (st) {
     const ch = st.change || {};
-    tiles.push(statTile("changes", "Kursänderung", "",
-      `<div class="changes"><span>24 h</span><span>7 T</span><span>30 T</span><span>1 J</span>${["24h", "7d", "30d", "1y"].map((k) => chgSpan(ch[k])).join("")}</div>`)
+    tiles.push(statTile("changes", L("Kursänderung", "Price change"), "",
+      `<div class="changes"><span>24 h</span><span>${L("7 T", "7 d")}</span><span>${L("30 T", "30 d")}</span><span>${L("1 J", "1 y")}</span>${["24h", "7d", "30d", "1y"].map((k) => chgSpan(ch[k])).join("")}</div>`)
       .replace('<div class="val"></div>', ""));
   }
   if (st && st.volume_24h != null) {
     const turn = mc && mc.usd ? st.volume_24h / mc.usd : null;
-    tiles.push(statTile("volume", "Handelsvolumen 24 h", usd6(st.volume_24h),
-      turn != null ? `<div class="det">Umschlag <b>${(turn * 100).toFixed(1).replace(".", ",")} %</b> der Marktkap.</div>` : ""));
+    tiles.push(statTile("volume", L("Handelsvolumen 24 h", "Trading volume 24 h"), usd6(st.volume_24h),
+      turn != null ? `<div class="det">${L("Umschlag", "Turnover")} <b>${(turn * 100).toFixed(1).replace(".", DEC)}${PCT}</b> ${L("der Marktkap.", "of market cap")}</div>` : ""));
   }
   if (st && st.fdv != null && mc && mc.usd) {
     const ratio = mc.usd / st.fdv;
-    tiles.push(statTile("fdv", "Voll verwässert (FDV)", usd6(st.fdv),
-      `<div class="det">Marktkap. = <b>${numDe(Math.min(1, ratio) * 100, 0)} %</b> davon</div>`));
+    tiles.push(statTile("fdv", L("Voll verwässert (FDV)", "Fully diluted (FDV)"), usd6(st.fdv),
+      `<div class="det">${L("Marktkap.", "Market cap")} = <b>${numDe(Math.min(1, ratio) * 100, 0)}${PCT}</b> ${L("davon", "of it")}</div>`));
   }
   if (st && st.circulating_supply != null) {
     const max = st.max_supply || null;
     const share = max ? st.circulating_supply / max : null;
     const det = max
-      ? `<div class="det"><b>${numDe(share * 100, 1)} %</b> von max. ${big(max)}</div><div class="meter"><div style="width:${Math.min(100, share * 100)}%"></div></div>`
-      : `<div class="det">kein Maximum festgelegt${st.total_supply ? ` · ausgegeben ${big(st.total_supply)}` : ""}</div>`;
-    tiles.push(statTile("supply", "Umlaufmenge", `${big(st.circulating_supply)} ${esc(c.symbol)}`, det));
+      ? `<div class="det"><b>${numDe(share * 100, 1)}${PCT}</b> ${L("von max.", "of max.")} ${big(max)}</div><div class="meter"><div style="width:${Math.min(100, share * 100)}%"></div></div>`
+      : `<div class="det">${L("kein Maximum festgelegt", "no maximum set")}${st.total_supply ? ` · ${L("ausgegeben", "issued")} ${big(st.total_supply)}` : ""}</div>`;
+    tiles.push(statTile("supply", L("Umlaufmenge", "Circulating supply"), `${big(st.circulating_supply)} ${esc(c.symbol)}`, det));
   }
   $("stats-grid").innerHTML = tiles.join("");
   $("stats").hidden = !tiles.length;
@@ -330,7 +333,7 @@ function applyStatsOpen() {
   $("stats-grid").hidden = !statsOpen;
   $("stats-toggle").setAttribute("aria-expanded", String(statsOpen));
   const n = $("stats-grid").children.length;
-  $("stats-hint").textContent = statsOpen ? "" : `${n} Kennzahlen ausgeblendet`;
+  $("stats-hint").textContent = statsOpen ? "" : L(`${n} Kennzahlen ausgeblendet`, `${n} key figures hidden`);
 }
 
 $("stats-toggle").addEventListener("click", () => {
@@ -361,7 +364,7 @@ function setupCollapse(sec) {
   if (!btn) {
     // Pfeil vor den Titel; ist die Kopfzeile selbst das Label (News), direkt hinein
     (head.classList.contains("label") ? head : head.firstElementChild).insertAdjacentHTML("afterbegin",
-      '<button class="collapse-btn" type="button" title="Karte ein- oder ausklappen"><span class="chev" aria-hidden="true">▼</span></button>');
+      `<button class="collapse-btn" type="button" title="${L("Karte ein- oder ausklappen", "Expand or collapse card")}"><span class="chev" aria-hidden="true">▼</span></button>`);
     btn = head.querySelector(".collapse-btn");
   }
   const open = !isCollapsed(sec.id);
@@ -411,17 +414,17 @@ async function loadHero() {
       if (!res.ok) throw new Error("HTTP " + res.status);
       coin = await res.json();
     }
-    if (!coin) throw new Error("keine Daten");
+    if (!coin) throw new Error(L("keine Daten", "no data"));
     renderHero(coin);
     // Name von CoinGecko, sonst aus der Coin-ID abgeleitet (z. B. "avalanche-2" → "avalanche")
     const name = coin.data.name || coinId.replace(/-\d+$/, "").replace(/-/g, " ");
     loadNews(name);
     setInterval(() => loadNews(name), NEWS_REFRESH_MS);
-    $("updated").textContent = updated ? "Score-Stand: " + new Date(updated).toLocaleString("de-DE") : "";
+    $("updated").textContent = updated ? L("Score-Stand: ", "Score as of: ") + new Date(updated).toLocaleString(LOCALE) : "";
   } catch (e) {
     $("hero").className = "card status error";
-    $("hero").textContent = `${symbol} konnte nicht geladen werden (${e.message}). Läuft server.py?`;
+    $("hero").textContent = L(`${symbol} konnte nicht geladen werden (${e.message}). Läuft server.py?`, `${symbol} could not be loaded (${e.message}). Is server.py running?`);
     $("updated").textContent = "";
-    $("breakdown").innerHTML = '<div class="status error">Score nicht verfügbar.</div>';
+    $("breakdown").innerHTML = `<div class="status error">${L("Score nicht verfügbar.", "Score not available.")}</div>`;
   }
 }

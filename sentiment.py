@@ -587,6 +587,65 @@ CATEGORY_DE = [
     ("infrastructure", "Infrastruktur", "Grundlegende Technik, auf der andere Projekte aufbauen."),
     ("rollup", "Rollup", "Bündelt Transaktionen und schreibt sie gesammelt auf eine Basis-Blockchain."),
 ]
+# Englische Fassung je deutschem Kategorienamen aus CATEGORY_DE: (Name, Erklärung)
+CATEGORY_EN = {
+    "Stablecoin": ("Stablecoin", "Pegged to a fixed value, usually the US dollar. Not supposed to fluctuate; "
+                   "the risk lies in the backing and the issuer."),
+    "Memecoin": ("Memecoin", "Little or no technical utility. The price lives on attention, community and trends – "
+                 "and swings accordingly."),
+    "Layer 1": ("Layer 1", "Its own blockchain with its own consensus. The coin pays the network fees and secures it "
+                "(staking or mining)."),
+    "Layer 2": ("Layer 2", "Builds on another blockchain (usually Ethereum), bundles transactions and makes them faster "
+                "and cheaper."),
+    "Layer 0": ("Layer 0", "Infrastructure on which separate blockchains are launched and connected."),
+    "Smart-Contract-Plattform": ("Smart contract platform", "Programs (smart contracts) run on the chain, e.g. for DeFi, "
+                                 "NFTs or games. The more applications, the more demand for the coin to pay fees."),
+    "Proof of Work": ("Proof of Work", "The network is secured by mining: computing power in exchange for new coins."),
+    "Proof of Stake": ("Proof of Stake", "The network is secured by deposited coins (staking); stakers earn rewards for it."),
+    "Liquid Restaking": ("Liquid Restaking", "Receipt for restaked coins; follows the price of the underlying coin, with "
+                         "additional protocol risk."),
+    "Liquid Staking": ("Liquid Staking", "Tradable receipt for staked coins; follows the price of the underlying coin plus "
+                       "staking yield."),
+    "Restaking": ("Restaking", "Already staked coins additionally secure other services – more yield, more risk."),
+    "Wrapped Token": ("Wrapped token", "Representation of another coin on a different blockchain; follows its price. "
+                      "Risk: the custody or bridge behind it."),
+    "Bridged Token": ("Bridged token", "Copy brought to another chain via a bridge; follows the original. Risk: the bridge."),
+    "DEX": ("DEX", "Decentralized exchange: trading directly from your own wallet. The token usually benefits from trading "
+            "volume (fees, voting rights)."),
+    "Perpetuals": ("Perpetuals", "Trading leveraged futures without expiry. Revenue depends on trading volume, i.e. market "
+                   "activity."),
+    "Derivate": ("Derivatives", "Trading futures, options and the like on the blockchain."),
+    "Kredite": ("Lending", "Lending and borrowing coins against collateral; revenue from interest."),
+    "Rendite-Protokoll": ("Yield protocol", "Bundles investment strategies to earn yield on coins."),
+    "DeFi": ("DeFi", "Financial services without a bank: trading, loans, interest – as smart contracts."),
+    "Oracle": ("Oracle", "Brings outside data (prices, events) onto the blockchain so smart contracts can react to it."),
+    "RWA": ("RWA", "Brings real-world assets such as bonds, real estate or commodities onto the blockchain as tokens."),
+    "Gold-Token": ("Gold token", "Tokens backed by physical gold; they follow the gold price."),
+    "KI-Agenten": ("AI agents", "Software agents with artificial intelligence acting autonomously on the blockchain. "
+                   "Young, highly speculative field."),
+    "KI": ("AI", "Projects around artificial intelligence, e.g. computing power, data or models. Strongly trend-driven."),
+    "Gaming": ("Gaming", "Games or gaming platforms; the token serves as in-game currency or reward."),
+    "Play to Earn": ("Play to Earn", "Players earn tokens by playing. The model depends on an influx of new players."),
+    "Metaverse": ("Metaverse", "Virtual worlds with their own land, items and currency."),
+    "NFT": ("NFT", "Unique digital objects (art, collectibles, rights) on the blockchain."),
+    "DePIN": ("DePIN", "Decentralized physical infrastructure: users provide hardware (wireless, storage, computing) and "
+              "are paid in tokens."),
+    "Speicher": ("Storage", "Decentralized data storage, paid in tokens."),
+    "Privacy-Coin": ("Privacy coin", "Transactions are (partly) anonymous. Technically interesting, tricky from a regulatory "
+                     "point of view (exchange delistings possible)."),
+    "Privatsphäre": ("Privacy", "Technology for confidential transactions or data."),
+    "Zero Knowledge": ("Zero Knowledge", "Cryptographic proofs that show something without revealing the data – the basis "
+                       "for scaling and privacy."),
+    "Interoperabilität": ("Interoperability", "Connects different blockchains so value and data can flow between them."),
+    "Börsen-Token": ("Exchange token", "Token of a crypto exchange; often brings fee discounts. Depends heavily on the "
+                     "exchange's business and regulation."),
+    "Zahlungen": ("Payments", "Meant for fast and cheap payments."),
+    "SocialFi": ("SocialFi", "Social networks with their own token, e.g. for rewards or memberships."),
+    "Governance": ("Governance", "The token grants voting rights on the protocol's development."),
+    "Launchpad": ("Launchpad", "Platform for sales of new tokens; holders often get priority access."),
+    "Infrastruktur": ("Infrastructure", "Basic technology that other projects build on."),
+    "Rollup": ("Rollup", "Bundles transactions and writes them to a base blockchain in batches."),
+}
 # Kategorien, die nichts über den Coin selbst sagen (Ökosysteme, Indizes, Portfolios von Investoren …)
 CATEGORY_SKIP = re.compile(r"ecosystem|index|portfolio|holdings|made in|hodler|alpha|binance|coinbase|"
                            r"world liberty|launchpool|native$|tokens? list|^fdv|x402|-themed|inspired", re.I)
@@ -612,19 +671,22 @@ def _plain_paragraphs(text: str) -> List[str]:
     return [p.strip() for p in re.split(r"\n\s*\n|\r\n\r\n", text) if p.strip()]
 
 
-def _categories_de(names: List[str]) -> List[Dict[str, Any]]:
-    """Aussagekräftige Kategorien, deutsch benannt, ohne Doppelungen (gleicher deutscher Name)."""
+def _categories_de(names: List[str], lang: str = "de") -> List[Dict[str, Any]]:
+    """Aussagekräftige Kategorien ohne Doppelungen (gleicher deutscher Name).
+
+    id: deutscher Name (Schlüssel für coin_type), label/text: Anzeige in der Sprache, name: Original von CoinGecko."""
     out, seen = [], set()
     for name in names or []:
         if not name or CATEGORY_SKIP.search(name):
             continue
         low = name.lower()
         de = next(((n, t) for key, n, t in CATEGORY_DE if key in low), None)
-        label = de[0] if de else name
-        if label in seen:
+        cid = de[0] if de else name
+        if cid in seen:
             continue
-        seen.add(label)
-        out.append({"name": name, "de": label, "text": de[1] if de else None})
+        seen.add(cid)
+        label, text = (CATEGORY_EN.get(cid, (cid, de[1])) if lang == "en" else de) if de else (name, None)
+        out.append({"name": name, "id": cid, "label": label, "text": text})
     return out[:CATEGORY_MAX]
 
 
@@ -632,153 +694,208 @@ def _platform_name(pid: str) -> str:
     return PLATFORM_NAMES.get(pid) or pid.replace("-", " ").title()
 
 
-def coin_type(cats: List[Dict[str, Any]], platform: Optional[str]) -> Dict[str, str]:
+def coin_type(cats: List[Dict[str, Any]], platform: Optional[str], lang: str = "de") -> Dict[str, str]:
     """Grobe Art des Coins: bestimmt, wovon der Kurs im Kern abhängt."""
-    labels = {c["de"] for c in cats}
-    on = f" auf {_platform_name(platform)}" if platform else ""
-    own = on or " mit eigener Blockchain"
+    L = _l(lang)
+    labels = {c["id"] for c in cats}
+    on = (L(" auf ", " on ") + _platform_name(platform)) if platform else ""
+    own = on or L(" mit eigener Blockchain", " with its own blockchain")
     if "Stablecoin" in labels:
         return {"key": "stable", "label": "Stablecoin" + on,
-                "text": "Soll den Wert seiner Kopplung (meist 1 US-Dollar) halten. Kein Anlageobjekt für Kursgewinne; "
-                        "entscheidend sind Deckung, Transparenz und Herausgeber."}
+                "text": L("Soll den Wert seiner Kopplung (meist 1 US-Dollar) halten. Kein Anlageobjekt für Kursgewinne; "
+                          "entscheidend sind Deckung, Transparenz und Herausgeber.",
+                          "Meant to hold the value of its peg (usually 1 US dollar). Not an investment for price gains; "
+                          "what matters is backing, transparency and the issuer.")}
     if labels & {"Wrapped Token", "Bridged Token", "Liquid Staking", "Liquid Restaking", "Gold-Token"}:
-        return {"key": "derivative", "label": "Abgeleiteter Token" + on,
-                "text": "Bildet einen anderen Wert ab (einen Coin, gestakte Coins oder Gold) und folgt dessen Kurs. "
-                        "Zusätzliches Risiko: Verwahrung, Brücke oder Protokoll dahinter."}
+        return {"key": "derivative", "label": L("Abgeleiteter Token", "Derivative token") + on,
+                "text": L("Bildet einen anderen Wert ab (einen Coin, gestakte Coins oder Gold) und folgt dessen Kurs. "
+                          "Zusätzliches Risiko: Verwahrung, Brücke oder Protokoll dahinter.",
+                          "Represents another asset (a coin, staked coins or gold) and follows its price. "
+                          "Additional risk: the custody, bridge or protocol behind it.")}
     if "Memecoin" in labels:
         return {"key": "meme", "label": "Memecoin" + own,
-                "text": "Kein nennenswerter Nutzen hinter dem Token; der Kurs hängt fast nur an Stimmung, "
-                        "Community und Aufmerksamkeit."}
+                "text": L("Kein nennenswerter Nutzen hinter dem Token; der Kurs hängt fast nur an Stimmung, "
+                          "Community und Aufmerksamkeit.",
+                          "No significant utility behind the token; the price depends almost entirely on sentiment, "
+                          "community and attention.")}
     if "Börsen-Token" in labels:
-        return {"key": "exchange", "label": "Börsen-Token" + own,
-                "text": "Der Wert hängt am Geschäft der Börse (Handelsvolumen, Gebührenrabatte, Rückkäufe) und an "
-                        "deren Regulierung."}
+        return {"key": "exchange", "label": L("Börsen-Token", "Exchange token") + own,
+                "text": L("Der Wert hängt am Geschäft der Börse (Handelsvolumen, Gebührenrabatte, Rückkäufe) und an "
+                          "deren Regulierung.",
+                          "The value depends on the exchange's business (trading volume, fee discounts, buybacks) and "
+                          "its regulation.")}
     if not platform:
-        return {"key": "native", "label": "Nativer Coin einer eigenen Blockchain",
-                "text": "Der Coin ist die Grundwährung seiner Blockchain: Mit ihm werden Gebühren bezahlt und das Netz "
-                        "gesichert. Sein Wert hängt an der Nutzung dieses Netzes."}
+        return {"key": "native", "label": L("Nativer Coin einer eigenen Blockchain", "Native coin of its own blockchain"),
+                "text": L("Der Coin ist die Grundwährung seiner Blockchain: Mit ihm werden Gebühren bezahlt und das Netz "
+                          "gesichert. Sein Wert hängt an der Nutzung dieses Netzes.",
+                          "The coin is the base currency of its blockchain: it pays the fees and secures the network. "
+                          "Its value depends on how much the network is used.")}
     return {"key": "token", "label": "Token" + on,
-            "text": f"Läuft als Token{on} und nutzt deren Sicherheit. Sein Wert hängt am Erfolg der Anwendung "
-                    "dahinter und daran, welchen Nutzen der Token darin hat (Gebühren, Stimmrechte, Anteil an "
-                    "Einnahmen)."}
+            "text": L(f"Läuft als Token{on} und nutzt deren Sicherheit. Sein Wert hängt am Erfolg der Anwendung "
+                      "dahinter und daran, welchen Nutzen der Token darin hat (Gebühren, Stimmrechte, Anteil an "
+                      "Einnahmen).",
+                      f"Runs as a token{on} and uses its security. Its value depends on the success of the application "
+                      "behind it and on the token's role in it (fees, voting rights, share of revenue).")}
 
 
 def _frac(v: Optional[float]) -> Optional[float]:
     return v / 100 if v is not None else None
 
 
-def coin_assessment(kind: str, f: Dict[str, Any]) -> Dict[str, Any]:
+def coin_assessment(kind: str, f: Dict[str, Any], lang: str = "de") -> Dict[str, Any]:
     """Regelbasierte Einschätzung aus Größe, Art, Angebot, Handel und Kursgeschichte.
 
     Ergebnis: Risikostufe (für Krypto-Verhältnisse) mit Punkten je Faktor, Stärken, Risiken.
-    Erfahrungswerte, keine Bewertung des Projekts selbst."""
+    Erfahrungswerte, keine Bewertung des Projekts selbst. risk.key bleibt deutsch (CSS-Klasse)."""
+    L = _l(lang)
     pro, contra, notes = [], [], []
     risk = 0
     rank = f.get("rank")
     if rank is None:
         risk += 4
-        contra.append("Ohne Rang bei CoinGecko: sehr klein oder kaum gehandelt.")
+        contra.append(L("Ohne Rang bei CoinGecko: sehr klein oder kaum gehandelt.",
+                        "No rank on CoinGecko: very small or hardly traded."))
     elif rank <= 10:
-        pro.append(f"Einer der zehn größten Coins (Rang {rank}): etabliert, viel Liquidität, breite Börsenlistung.")
+        pro.append(L(f"Einer der zehn größten Coins (Rang {rank}): etabliert, viel Liquidität, breite Börsenlistung.",
+                     f"One of the ten largest coins (rank {rank}): established, deep liquidity, widely listed."))
     elif rank <= 50:
         risk += 1
-        pro.append(f"Große Marktkapitalisierung (Rang {rank}): bekannt und gut handelbar.")
+        pro.append(L(f"Große Marktkapitalisierung (Rang {rank}): bekannt und gut handelbar.",
+                     f"Large market cap (rank {rank}): well known and easy to trade."))
     elif rank <= 200:
         risk += 2
-        notes.append(f"Mittlere Größe (Rang {rank}): mehr Potenzial, aber auch deutlich größere Schwankungen als "
-                     "bei den Großen.")
+        notes.append(L(f"Mittlere Größe (Rang {rank}): mehr Potenzial, aber auch deutlich größere Schwankungen als "
+                       "bei den Großen.",
+                       f"Mid-sized (rank {rank}): more potential, but also much larger swings than the big ones."))
     elif rank <= 500:
         risk += 3
-        contra.append(f"Kleiner Coin (Rang {rank}): stark schwankend, kann leicht bewegt werden.")
+        contra.append(L(f"Kleiner Coin (Rang {rank}): stark schwankend, kann leicht bewegt werden.",
+                        f"Small coin (rank {rank}): highly volatile, easy to move."))
     else:
         risk += 4
-        contra.append(f"Sehr kleiner Coin (Rang {rank}): hohes Risiko, Kurse lassen sich leicht bewegen.")
+        contra.append(L(f"Sehr kleiner Coin (Rang {rank}): hohes Risiko, Kurse lassen sich leicht bewegen.",
+                        f"Very small coin (rank {rank}): high risk, prices are easy to move."))
 
     if kind == "meme":
         risk += 2
-        contra.append("Memecoin: kein fundamentaler Wert dahinter; Einbrüche von 80–90 % sind üblich, wenn die "
-                      "Aufmerksamkeit nachlässt.")
+        contra.append(L("Memecoin: kein fundamentaler Wert dahinter; Einbrüche von 80–90 % sind üblich, wenn die "
+                        "Aufmerksamkeit nachlässt.",
+                        "Memecoin: no fundamental value behind it; crashes of 80–90% are common once attention fades."))
 
     mc_fdv = f.get("mc_fdv")   # Anteil der Marktkap. am voll verwässerten Wert = Anteil im Umlauf
     if mc_fdv is not None and kind not in ("stable", "derivative"):
+        share = round(mc_fdv * 100)
         if mc_fdv < 0.5:
             risk += 2
-            contra.append(f"Erst {round(mc_fdv * 100)} % der Coins im Umlauf: Freigaben (Unlocks) für Team und "
-                          "Investoren können den Kurs über Jahre drücken.")
+            contra.append(L(f"Erst {share} % der Coins im Umlauf: Freigaben (Unlocks) für Team und "
+                            "Investoren können den Kurs über Jahre drücken.",
+                            f"Only {share}% of coins in circulation: unlocks for team and investors can weigh on "
+                            "the price for years."))
         elif mc_fdv < 0.8:
             risk += 1
-            contra.append(f"{round(mc_fdv * 100)} % der Coins im Umlauf: weitere Freigaben verwässern noch.")
+            contra.append(L(f"{share} % der Coins im Umlauf: weitere Freigaben verwässern noch.",
+                            f"{share}% of coins in circulation: further unlocks still dilute."))
         elif mc_fdv >= 0.95:
-            pro.append("Fast alle Coins sind bereits im Umlauf: kaum Verwässerung durch neue Freigaben.")
+            pro.append(L("Fast alle Coins sind bereits im Umlauf: kaum Verwässerung durch neue Freigaben.",
+                         "Almost all coins are already in circulation: hardly any dilution from new unlocks."))
     if kind not in ("stable", "derivative"):
         if f.get("max_supply"):
-            pro.append("Feste Obergrenze der Menge: Es können nicht beliebig viele Coins entstehen.")
+            pro.append(L("Feste Obergrenze der Menge: Es können nicht beliebig viele Coins entstehen.",
+                         "Fixed supply cap: coins cannot be created without limit."))
         elif f.get("max_supply_infinite") or f.get("total_supply"):
-            notes.append("Keine feste Obergrenze: Neue Coins können laufend hinzukommen (Inflation). Entscheidend "
-                         "ist, ob Gebühren-Verbrennung oder Nachfrage das ausgleichen.")
+            notes.append(L("Keine feste Obergrenze: Neue Coins können laufend hinzukommen (Inflation). Entscheidend "
+                           "ist, ob Gebühren-Verbrennung oder Nachfrage das ausgleichen.",
+                           "No fixed cap: new coins can keep being added (inflation). What matters is whether fee "
+                           "burning or demand offsets it."))
 
     turnover = f.get("turnover")
     if turnover is not None and kind != "stable":
         if turnover < 0.01:
             risk += 1
-            contra.append("Wenig Handel (unter 1 % der Marktkap. am Tag): größere Käufe oder Verkäufe bewegen den "
-                          "Kurs spürbar.")
+            contra.append(L("Wenig Handel (unter 1 % der Marktkap. am Tag): größere Käufe oder Verkäufe bewegen den "
+                            "Kurs spürbar.",
+                            "Little trading (under 1% of market cap per day): larger buys or sells move the price "
+                            "noticeably."))
         elif turnover > 0.5:
             risk += 1
-            contra.append(f"Sehr reger Handel ({round(turnover * 100)} % der Marktkap. am Tag): spricht für "
-                          "kurzfristige Spekulation.")
+            contra.append(L(f"Sehr reger Handel ({round(turnover * 100)} % der Marktkap. am Tag): spricht für "
+                            "kurzfristige Spekulation.",
+                            f"Very heavy trading ({round(turnover * 100)}% of market cap per day): points to "
+                            "short-term speculation."))
         elif turnover >= 0.03:
-            pro.append("Gesunder Handel: genug Umsatz, um ohne große Kurssprünge zu kaufen oder zu verkaufen.")
+            pro.append(L("Gesunder Handel: genug Umsatz, um ohne große Kurssprünge zu kaufen oder zu verkaufen.",
+                         "Healthy trading: enough volume to buy or sell without big price jumps."))
 
     ath_change = f.get("ath_change")
     if ath_change is not None and kind not in ("stable", "derivative"):
+        below = round(-ath_change * 100)
         if ath_change <= -0.9:
             risk += 1
-            contra.append(f"{round(-ath_change * 100)} % unter dem Allzeithoch: Viele frühere Käufer liegen im Minus; "
-                          "eine Rückkehr zum Hoch ist bei so tiefen Abstürzen selten.")
+            contra.append(L(f"{below} % unter dem Allzeithoch: Viele frühere Käufer liegen im Minus; "
+                            "eine Rückkehr zum Hoch ist bei so tiefen Abstürzen selten.",
+                            f"{below}% below the all-time high: many earlier buyers are at a loss; a return to the "
+                            "high is rare after crashes this deep."))
         elif ath_change <= -0.7:
-            notes.append(f"{round(-ath_change * 100)} % unter dem Allzeithoch: Der Kurs hat einen großen Teil "
-                         "seines früheren Werts verloren.")
+            notes.append(L(f"{below} % unter dem Allzeithoch: Der Kurs hat einen großen Teil "
+                           "seines früheren Werts verloren.",
+                           f"{below}% below the all-time high: the price has lost a large part of its former value."))
         elif ath_change >= -0.1:
-            notes.append("Nahe am Allzeithoch: starke Phase, aber Käufe hier sind historisch teuer.")
+            notes.append(L("Nahe am Allzeithoch: starke Phase, aber Käufe hier sind historisch teuer.",
+                           "Close to the all-time high: strong phase, but buying here has historically been expensive."))
 
     change_1y = f.get("change_1y")
     if change_1y is not None and kind not in ("stable", "derivative") and change_1y <= -0.7:
         risk += 1
-        contra.append(f"Im letzten Jahr {pct_word(change_1y)}: anhaltender Abwärtstrend.")
+        contra.append(L(f"Im letzten Jahr {pct_word(change_1y)}: anhaltender Abwärtstrend.",
+                        f"{pct_word(change_1y, 'en')} over the last year: persistent downtrend."))
 
     age_days = f.get("age_days")
     if age_days is not None:
         if age_days < 365:
             risk += 1
-            contra.append("Jünger als ein Jahr: wenig Erfahrung, wie sich der Coin in schwachen Marktphasen hält.")
+            contra.append(L("Jünger als ein Jahr: wenig Erfahrung, wie sich der Coin in schwachen Marktphasen hält.",
+                            "Less than a year old: little evidence of how the coin holds up in weak markets."))
         elif age_days > 5 * 365:
-            pro.append(f"Seit über {int(age_days // 365)} Jahren am Markt: hat schon mehrere Marktzyklen überstanden.")
+            years = int(age_days // 365)
+            pro.append(L(f"Seit über {years} Jahren am Markt: hat schon mehrere Marktzyklen überstanden.",
+                         f"On the market for over {years} years: has already survived several market cycles."))
 
     if f.get("notice"):
         risk += 1
-        contra.append("CoinGecko zeigt einen Warnhinweis zu diesem Coin (siehe oben).")
+        contra.append(L("CoinGecko zeigt einen Warnhinweis zu diesem Coin (siehe oben).",
+                        "CoinGecko shows a warning for this coin (see above)."))
 
     if kind == "stable":
         level = {"key": "stable", "label": "Stablecoin",
-                 "text": "Kursrisiko gering, solange die Kopplung hält. Das eigentliche Risiko sind Deckung und "
-                         "Herausgeber: Bricht die Kopplung, kann der Wert schnell fallen."}
+                 "text": L("Kursrisiko gering, solange die Kopplung hält. Das eigentliche Risiko sind Deckung und "
+                           "Herausgeber: Bricht die Kopplung, kann der Wert schnell fallen.",
+                           "Low price risk as long as the peg holds. The real risk is backing and issuer: if the peg "
+                           "breaks, the value can drop quickly.")}
     else:
         if kind == "derivative":
-            notes.append("Folgt einem anderen Wert: Für die Einschätzung zählt vor allem der zugrunde liegende Coin.")
-        levels = [(1, "moderat", "Für Krypto-Verhältnisse vergleichsweise solide. Schwankungen von 50 % und mehr "
-                                 "sind trotzdem möglich."),
-                  (3, "erhöht", "Deutlich schwankungsanfälliger als die großen Coins; nur mit Geld, auf das man "
-                                "länger verzichten kann."),
-                  (5, "hoch", "Spekulativ: hohe Gewinne wie Verluste möglich; höchstens als kleine Beimischung."),
-                  (99, "sehr hoch", "Hochspekulativ: Totalverlust ist ein realistisches Szenario.")]
-        key, text = next((k, t) for limit, k, t in levels if risk <= limit)
-        level = {"key": key.replace(" ", "-"), "label": key, "text": text}
+            notes.append(L("Folgt einem anderen Wert: Für die Einschätzung zählt vor allem der zugrunde liegende Coin.",
+                           "Follows another asset: what matters most for the assessment is the underlying coin."))
+        levels = [(1, "moderat", L("moderat", "moderate"),
+                   L("Für Krypto-Verhältnisse vergleichsweise solide. Schwankungen von 50 % und mehr sind trotzdem möglich.",
+                     "Comparatively solid by crypto standards. Swings of 50% and more are still possible.")),
+                  (3, "erhöht", L("erhöht", "elevated"),
+                   L("Deutlich schwankungsanfälliger als die großen Coins; nur mit Geld, auf das man länger verzichten kann.",
+                     "Much more volatile than the big coins; only with money you can do without for a long time.")),
+                  (5, "hoch", L("hoch", "high"),
+                   L("Spekulativ: hohe Gewinne wie Verluste möglich; höchstens als kleine Beimischung.",
+                     "Speculative: large gains and losses possible; at most a small addition to a portfolio.")),
+                  (99, "sehr hoch", L("sehr hoch", "very high"),
+                   L("Hochspekulativ: Totalverlust ist ein realistisches Szenario.",
+                     "Highly speculative: total loss is a realistic scenario."))]
+        key, label, text = next((k, lb, t) for limit, k, lb, t in levels if risk <= limit)
+        level = {"key": key.replace(" ", "-"), "label": label, "text": text}
     return {"risk": level, "risk_points": risk, "pro": pro, "contra": contra, "notes": notes}
 
 
-def pct_word(v: float) -> str:
-    """Änderung als Wort, z. B. „−72 %“ → „72 % verloren“."""
+def pct_word(v: float, lang: str = "de") -> str:
+    """Änderung als Wort, z. B. „−72 %“ → „72 % verloren“ bzw. „lost 72%“."""
+    if lang == "en":
+        return f"lost {round(-v * 100)}%" if v < 0 else f"gained {round(v * 100)}%"
     return f"{round(-v * 100)} % verloren" if v < 0 else f"{round(v * 100)} % gewonnen"
 
 
@@ -789,20 +906,25 @@ def resolve_coin_id(symbol: str) -> Optional[str]:
     return coins[0]["id"] if coins else None
 
 
-def get_coin_profile(coin_id: str) -> Dict[str, Any]:
-    """Beschreibung, Kategorien, Fakten, Links und Einschätzung eines Coins (eine CoinGecko-Abfrage)."""
+def get_coin_profile(coin_id: str) -> Dict[str, Dict[str, Any]]:
+    """Beschreibung, Kategorien, Fakten, Links und Einschätzung eines Coins (eine CoinGecko-Abfrage),
+    je Sprache aus LANGS: {"de": {...}, "en": {...}}."""
     d = fetch_json(f"https://api.coingecko.com/api/v3/coins/{urllib.parse.quote(coin_id)}"
                    "?localization=true&tickers=false&market_data=true&community_data=false"
                    "&developer_data=false&sparkline=false")
+    return {lang: _coin_profile(d, lang) for lang in LANGS}
+
+
+def _coin_profile(d: Dict[str, Any], ui_lang: str) -> Dict[str, Any]:
     md = d.get("market_data") or {}
     usd = lambda key: (md.get(key) or {}).get("usd")   # noqa: E731
     desc = d.get("description") or {}
     de, en = _plain_paragraphs(desc.get("de", "")), _plain_paragraphs(desc.get("en", ""))
     # CoinGecko füllt „de“ oft nicht oder kopiert den englischen Text hinein
-    lang = "de" if de and de != en else "en"
+    lang = "de" if ui_lang == "de" and de and de != en else "en"
     platform = d.get("asset_platform_id")
-    cats = _categories_de(d.get("categories") or [])
-    kind = coin_type(cats, platform)
+    cats = _categories_de(d.get("categories") or [], ui_lang)
+    kind = coin_type(cats, platform, ui_lang)
     mcap, volume = usd("market_cap"), usd("total_volume")
     genesis = d.get("genesis_date")
     age_days = None
@@ -853,7 +975,7 @@ def get_coin_profile(coin_id: str) -> Dict[str, Any]:
             "reddit": links.get("subreddit_url") if (links.get("subreddit_url") or "").rstrip("/").count("/") > 3 else None,
             "coingecko": f"https://www.coingecko.com/en/coins/{d.get('id')}",
         },
-        "assessment": coin_assessment(kind["key"], facts),
+        "assessment": coin_assessment(kind["key"], facts, ui_lang),
     }
 
 
@@ -1033,6 +1155,15 @@ NEWS_FEEDS = [
     ("CVJ", "https://cvj.ch/feed/"),
     ("Bitcoin Kurier", "https://bitcoin-kurier.de/feed/"),
 ]
+NEWS_FEEDS_EN = [   # englische Oberfläche
+    ("Cointelegraph", "https://cointelegraph.com/rss"),
+    ("Decrypt", "https://decrypt.co/feed"),
+    ("Bitcoin Magazine", "https://bitcoinmagazine.com/feed"),
+    ("CryptoSlate", "https://cryptoslate.com/feed/"),
+    ("The Block", "https://www.theblock.co/rss.xml"),
+    ("BeInCrypto", "https://beincrypto.com/feed/"),
+    ("CryptoPotato", "https://cryptopotato.com/feed/"),
+]
 NEWS_MAX_BYTES = 3_000_000   # mehr wird von einem Feed nicht gelesen
 NEWS_PER_COIN = 5
 NEWS_TEASER_LEN = 220
@@ -1069,10 +1200,11 @@ def get_news_feed(source: str, url: str) -> List[Dict[str, Any]]:
     return items
 
 
-def get_news() -> List[Dict[str, Any]]:
-    """Alle Feeds parallel, neueste zuerst; ValueError, wenn kein Feed erreichbar ist."""
-    with ThreadPoolExecutor(max_workers=len(NEWS_FEEDS)) as pool:
-        results = list(pool.map(lambda f: safe(get_news_feed, *f), NEWS_FEEDS))
+def get_news(lang: str = "de") -> List[Dict[str, Any]]:
+    """Alle Feeds der Sprache parallel, neueste zuerst; ValueError, wenn kein Feed erreichbar ist."""
+    feeds = NEWS_FEEDS_EN if lang == "en" else NEWS_FEEDS
+    with ThreadPoolExecutor(max_workers=len(feeds)) as pool:
+        results = list(pool.map(lambda f: safe(get_news_feed, *f), feeds))
     if not any(results):
         raise ValueError("kein News-Feed erreichbar")
     return sorted((i for r in results if r for i in r), key=lambda i: -i["time"])
@@ -1140,8 +1272,20 @@ def scale(value: float, anchors: List[Tuple[float, int]]) -> int:
     return anchors[-1][1]
 
 
-def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Liefert Einzelsignale von -100 (Angst) über 0 (neutral) bis +100 (überhitzt/Gier)."""
+LANGS = ("de", "en")   # Sprachen der Oberfläche; Texte vom Server je Sprache (Parameter lang, Standard deutsch)
+
+
+def _l(lang: str):
+    """Wählt den Text zur Sprache: L("deutsch", "english")."""
+    return (lambda de, en: en) if lang == "en" else (lambda de, en: de)
+
+
+def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
+    """Liefert Einzelsignale von -100 (Angst) über 0 (neutral) bis +100 (überhitzt/Gier).
+
+    name ist der Schlüssel des Signals (deutsch, auch für SIGNAL_WEIGHTS und die Tooltips);
+    die Anzeige übersetzt ihn im Browser. reason ist in der gewünschten Sprache."""
+    L = _l(lang)
     signals = []
 
     def add(name: str, points: int, reason: str, hot: str, cold: str, neutral: str) -> None:
@@ -1152,68 +1296,72 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
     fng = d.get("fear_greed")
     if fng:
         v = fng["value"]
-        add("Fear & Greed", scale(v, FNG_SCALE), f"{v}", "Gier", "Angst", "neutral")
+        add("Fear & Greed", scale(v, FNG_SCALE), f"{v}", L("Gier", "greed"), L("Angst", "fear"), "neutral")
 
     fr = d.get("funding")
     if fr:
         r = fr["avg_7d"]
         takt = fr.get("interval_h", FUNDING_BASE_HOURS)
-        note = f" (Takt {takt} h, umgerechnet)" if takt != FUNDING_BASE_HOURS else ""
-        add("Funding Rate", scale(r, FUNDING_SCALE), f"Ø {r:.4%} / 8h{note}",
-            "Longs zahlen viel", "Shorts dominieren", "normal")
+        note = L(f" (Takt {takt} h, umgerechnet)", f" (every {takt} h, converted)") if takt != FUNDING_BASE_HOURS else ""
+        add("Funding Rate", scale(r, FUNDING_SCALE), f"{L('Ø', 'avg')} {r:.4%} / 8h{note}",
+            L("Longs zahlen viel", "longs pay a lot"), L("Shorts dominieren", "shorts dominate"), "normal")
 
     oi = d.get("open_interest")
     if oi:
         c = oi["change_7d"]
-        add("Open Interest", scale(c, OI_SCALE), f"{c:+.1%} in 7 Tagen",
-            "viel neuer Hebel", "starker Hebelabbau", "normal")
+        add("Open Interest", scale(c, OI_SCALE), L(f"{c:+.1%} in 7 Tagen", f"{c:+.1%} in 7 days"),
+            L("viel neuer Hebel", "lots of new leverage"), L("starker Hebelabbau", "strong deleveraging"), "normal")
 
     ma = d.get("price_ma200")
     if ma:
         dist = ma["distance"]
         add("Preis vs. MA200", scale(dist, MA200_SCALE), f"{dist:+.1%}",
-            "stark gestreckt", "deutlich unter dem Trend", "im Trendbereich")
+            L("stark gestreckt", "strongly extended"), L("deutlich unter dem Trend", "well below trend"),
+            L("im Trendbereich", "near trend"))
 
     rs = d.get("rsi")
     if rs:
         v = rs["value"]
-        add("RSI (14)", scale(v, RSI_SCALE), f"{v:.0f}", "überkauft", "überverkauft", "neutral")
+        add("RSI (14)", scale(v, RSI_SCALE), f"{v:.0f}", L("überkauft", "overbought"),
+            L("überverkauft", "oversold"), "neutral")
 
     dv = d.get("dvol")
     if dv:
         v, z = dv["value"], dv["z"]
         add("Optionsvola (DVOL)", scale(z, DVOL_SCALE), f"{v:.1f} ({z:+.1f}σ)",
-            "ungewöhnlich ruhig, Sorglosigkeit", "ungewöhnlich hoch, Absicherung gefragt", "normal")
+            L("ungewöhnlich ruhig, Sorglosigkeit", "unusually calm, complacency"),
+            L("ungewöhnlich hoch, Absicherung gefragt", "unusually high, hedging in demand"), "normal")
 
     mo = d.get("momentum")
     if mo:
         c7, c30, turnover = mo["change_7d"], mo["change_30d"], mo["turnover"]
+        up, down, mid = L("starker Anstieg", "strong rise"), L("starker Rückgang", "strong decline"), L("moderat", "moderate")
         if c7 is not None:
-            add("Momentum 7T", scale(c7, MOMENTUM_7D_SCALE), f"{c7:+.1%}",
-                "starker Anstieg", "starker Rückgang", "moderat")
+            add("Momentum 7T", scale(c7, MOMENTUM_7D_SCALE), f"{c7:+.1%}", up, down, mid)
         if c30 is not None:
-            add("Momentum 30T", scale(c30, MOMENTUM_30D_SCALE), f"{c30:+.1%}",
-                "starker Anstieg", "starker Rückgang", "moderat")
+            add("Momentum 30T", scale(c30, MOMENTUM_30D_SCALE), f"{c30:+.1%}", up, down, mid)
         if turnover is not None and c7 is not None:
             pts = scale(turnover, TURNOVER_SCALE) * (1 if c7 >= 0 else -1)
-            add("Umschlag", pts, f"{turnover:.0%} der Marktkap. pro Tag",
-                "Spekulationsrausch", "Panikverkäufe", "normal")
+            add("Umschlag", pts, L(f"{turnover:.0%} der Marktkap. pro Tag", f"{turnover:.0%} of market cap per day"),
+                L("Spekulationsrausch", "speculative frenzy"), L("Panikverkäufe", "panic selling"), "normal")
         if not rs and mo["rsi_hourly"] is not None:
             v = mo["rsi_hourly"]
-            add("RSI (14 Std.)", scale(v, RSI_SCALE), f"{v:.0f}", "überkauft", "überverkauft", "neutral")
+            add("RSI (14 Std.)", scale(v, RSI_SCALE), f"{v:.0f}", L("überkauft", "overbought"),
+                L("überverkauft", "oversold"), "neutral")
 
     mv = d.get("mvrv")
     if mv:
         v = mv["value"]
-        add("MVRV", scale(v, MVRV_SCALE), f"{v:.2f}".replace(".", ","),
-            "Halter weit im Gewinn" if v >= 3 else "Halter deutlich im Gewinn",
-            "Halter im Schnitt im Verlust" if v < 1 else "nahe am Einstand der Halter", "normal")
+        add("MVRV", scale(v, MVRV_SCALE), L(f"{v:.2f}".replace(".", ","), f"{v:.2f}"),
+            L("Halter weit im Gewinn", "holders deep in profit") if v >= 3 else L("Halter deutlich im Gewinn", "holders well in profit"),
+            L("Halter im Schnitt im Verlust", "holders at a loss on average") if v < 1
+            else L("nahe am Einstand der Halter", "near holders' cost basis"), "normal")
 
     ls = d.get("long_short")
     if ls:
         r = ls["ratio"]
         add("Long/Short Ratio", scale(r, LS_SCALE), f"{r:.2f}",
-            "Masse stark long", "Masse short", "ausgeglichen")
+            L("Masse stark long", "crowd heavily long"), L("Masse short", "crowd short"), L("ausgeglichen", "balanced"))
 
     return signals
 
@@ -1226,24 +1374,31 @@ def total_score(signals: List[Dict[str, Any]]) -> int:
     return round(sum(s["points"] * x for s, x in zip(signals, w)) / sum(w))
 
 
-def verdict(total: int, count: int) -> str:
+def verdict(total: int, count: int, lang: str = "de") -> str:
+    L = _l(lang)
     if count == 0:
-        return "Keine Daten verfügbar."
+        return L("Keine Daten verfügbar.", "No data available.")
     if total >= VERDICT_HOT:
-        return "ÜBERHITZT: Vorsicht, keine neuen Hebelpositionen, Gewinne sichern erwägen."
+        return L("ÜBERHITZT: Vorsicht, keine neuen Hebelpositionen, Gewinne sichern erwägen.",
+                 "OVERHEATED: be careful, no new leveraged positions, consider taking profits.")
     if total >= VERDICT_WARM:
-        return "Leicht gierig: Markt läuft heiß, nicht der FOMO folgen."
+        return L("Leicht gierig: Markt läuft heiß, nicht der FOMO folgen.",
+                 "Slightly greedy: the market is running hot, don't chase FOMO.")
     if total <= -VERDICT_HOT:
-        return "EXTREME ANGST: allein kein verlässliches Kaufsignal – Trendwende abwarten."
+        return L("EXTREME ANGST: allein kein verlässliches Kaufsignal – Trendwende abwarten.",
+                 "EXTREME FEAR: not a reliable buy signal on its own – wait for the trend to turn.")
     if total <= -VERDICT_WARM:
-        return "Leicht ängstlich: kein Verkaufssignal, Einstieg am besten mit Trendbestätigung."
-    return "Neutral: Keine Extreme erkennbar."
+        return L("Leicht ängstlich: kein Verkaufssignal, Einstieg am besten mit Trendbestätigung.",
+                 "Slightly fearful: no sell signal, best to enter with trend confirmation.")
+    return L("Neutral: Keine Extreme erkennbar.", "Neutral: no extremes visible.")
 
 
-def _pct_de(v: float, digits: int = 1, sign: bool = True) -> str:
-    """Anteil als Prozent in deutscher Schreibweise, z. B. −12,3 %."""
+def _pct_de(v: float, digits: int = 1, sign: bool = True, lang: str = "de") -> str:
+    """Anteil als Prozent in der Schreibweise der Sprache, z. B. −12,3 % bzw. −12.3%."""
     r = round(v * 100, digits)
     pre = ("+" if r > 0 else "−" if r < 0 else "") if sign else ""
+    if lang == "en":
+        return f"{pre}{abs(r):.{digits}f}%"
     return f"{pre}{abs(r):.{digits}f} %".replace(".", ",")
 
 
@@ -1307,7 +1462,55 @@ ACTIONS_EXTREME = {
 }
 
 
-def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> Optional[Dict[str, Any]]:
+SITUATIONS_EN = {
+    ("fear", "up"): ("Pullback in an uptrend",
+                     "Fearful mood while the uptrend is intact. Phases like this were often favourable historically."),
+    ("fear", "down"): ("Fear in a downtrend",
+                       "Possible bottoming, but the trend points down (“falling knife”)."),
+    ("greed", "up"): ("Running hot",
+                      "Greedy mood in an uptrend. The trend holds, but pullbacks become more likely."),
+    ("greed", "down"): ("Bounce in a downtrend",
+                        "Greedy mood although the trend points down. Bounces like this are often short-lived."),
+    ("neutral", "up"): ("Calm uptrend",
+                        "Trend up, mood without extremes: no contrarian signal."),
+    ("neutral", "down"): ("Downtrend without extremes",
+                          "Trend down, mood neither panicked nor greedy: no contrarian signal."),
+    ("fear", None): ("Fearful mood", "The trend cannot be determined (not enough price data)."),
+    ("greed", None): ("Greedy mood", "The trend cannot be determined (not enough price data)."),
+    ("neutral", None): ("Mood without extremes", "The trend cannot be determined (not enough price data)."),
+}
+ACTIONS_EN = {
+    ("fear", "up"): ("Buy the dip", "buy",
+                     "Add gradually on pullbacks in an intact uptrend; place protection just below the MA200."),
+    ("fear", "down"): ("Wait", "wait",
+                       "Don't catch the falling knife: enter only once the price reclaims the MA200 or fear eases."),
+    ("greed", "up"): ("Hold, don't add", "hold",
+                      "The trend holds, but entries are expensive now. Keep existing positions and trail your stops."),
+    ("greed", "down"): ("Reduce", "sell",
+                        "Use the bounce against the downtrend to reduce positions."),
+    ("neutral", "up"): ("Hold", "hold",
+                        "Trend intact, no extreme: let positions run, add preferably on pullbacks."),
+    ("neutral", "down"): ("Don't buy", "sell",
+                          "Downtrend without excess: no entry, rather trim existing positions."),
+    ("fear", None): ("Watch", "wait",
+                     "Fear alone has not been a reliable buy signal so far; without a trend there is no confirmation."),
+    ("greed", None): ("Don't add", "hold",
+                      "Greed argues against new buys; without a trend there is no confirmation for more."),
+    ("neutral", None): ("Wait", "wait",
+                        "Neither mood nor trend gives a clear signal."),
+}
+ACTIONS_EXTREME_EN = {
+    ("fear", "down"): ("Wait", "wait",
+                       "Extreme fear has not been a reliable bottom so far – the price often kept falling. "
+                       "Enter only once the trend turns (price back above the MA200)."),
+    ("greed", "up"): ("Take profits", "sell",
+                      "Overheated: take part of the profits, let the rest run with tight protection."),
+    ("greed", "down"): ("Sell", "sell",
+                        "Overheated bounce in a downtrend: reduce positions."),
+}
+
+
+def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int, lang: str = "de") -> Optional[Dict[str, Any]]:
     """Lagebild für den Kopf der Detailseite: Einordnung aus Stimmung und Trend, ein Satz zur Lage,
     eine Handlungsempfehlung (ACTIONS) und was für bzw. gegen steigende Kurse spricht.
 
@@ -1316,6 +1519,9 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> O
     abgebauter Hebel sprechen eher für steigende Kurse, Gier und viel Hebel dagegen."""
     if not signals:
         return None
+    L = _l(lang)
+    en = lang == "en"
+    pct = lambda v, digits=1, sign=True: _pct_de(v, digits, sign, lang)   # noqa: E731
     pts = {s["name"]: s["points"] for s in signals}
     pro: List[str] = []
     contra: List[str] = []
@@ -1335,96 +1541,137 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> O
     ma = d.get("price_ma200")
     if ma:
         dist = ma["distance"]
-        trend, basis = ("up" if dist >= 0 else "down"), "MA200"
-        where = f"{_pct_de(abs(dist), sign=False)} {'über' if dist >= 0 else 'unter'} dem MA200"
-        trend_text = f"{'Aufwärtstrend' if dist >= 0 else 'Abwärtstrend'} ({where})"
-        (pro if dist >= 0 else contra).append(
-            f"Kurs {where}: langfristiger {'Aufwärtstrend' if dist >= 0 else 'Abwärtstrend'}")
+        up = dist >= 0
+        trend, basis = ("up" if up else "down"), "MA200"
+        if en:
+            where = f"{pct(abs(dist), sign=False)} {'above' if up else 'below'} the MA200"
+            trend_text = f"{'Uptrend' if up else 'Downtrend'} ({where})"
+            (pro if up else contra).append(f"Price {where}: long-term {'uptrend' if up else 'downtrend'}")
+        else:
+            where = f"{pct(abs(dist), sign=False)} {'über' if up else 'unter'} dem MA200"
+            trend_text = f"{'Aufwärtstrend' if up else 'Abwärtstrend'} ({where})"
+            (pro if up else contra).append(f"Kurs {where}: langfristiger {'Aufwärtstrend' if up else 'Abwärtstrend'}")
     else:
         c30 = ((d.get("market_stats") or {}).get("change") or {}).get("30d")
         if c30 is None:
             c30 = (d.get("momentum") or {}).get("change_30d")
         if c30:
-            trend, basis = ("up" if c30 > 0 else "down"), "30 Tage"
-            trend_text = f"{'Aufwärts' if c30 > 0 else 'Abwärts'}bewegung ({_pct_de(c30)} in 30 Tagen)"
-            (pro if c30 > 0 else contra).append(
-                f"Kurs {_pct_de(c30)} in 30 Tagen (kein MA200 verfügbar, Trend nur grob)")
+            trend, basis = ("up" if c30 > 0 else "down"), L("30 Tage", "30 days")
+            if en:
+                trend_text = f"{'Upward' if c30 > 0 else 'Downward'} move ({pct(c30)} in 30 days)"
+                (pro if c30 > 0 else contra).append(f"Price {pct(c30)} in 30 days (no MA200 available, trend only rough)")
+            else:
+                trend_text = f"{'Aufwärts' if c30 > 0 else 'Abwärts'}bewegung ({pct(c30)} in 30 Tagen)"
+                (pro if c30 > 0 else contra).append(f"Kurs {pct(c30)} in 30 Tagen (kein MA200 verfügbar, Trend nur grob)")
 
     def num(v: float, digits: int) -> str:
-        return f"{v:.{digits}f}".replace(".", ",")
+        s = f"{v:.{digits}f}"
+        return s if en else s.replace(".", ",")
 
     fng, rs, fr, oi = d.get("fear_greed"), d.get("rsi"), d.get("funding"), d.get("open_interest")
     ls, dv, mo = d.get("long_short"), d.get("dvol"), d.get("momentum") or {}
     if fng:
         strong("Fear & Greed",
-               (f"Fear & Greed {fng['value']}: Angst am Markt (allein bisher ein schwaches Signal)", ""),
-               (f"Fear & Greed {fng['value']}: Gier am Markt (allein bisher ein schwaches Signal)", ""))
+               (L(f"Fear & Greed {fng['value']}: Angst am Markt (allein bisher ein schwaches Signal)",
+                  f"Fear & Greed {fng['value']}: fear in the market (a weak signal on its own so far)"), ""),
+               (L(f"Fear & Greed {fng['value']}: Gier am Markt (allein bisher ein schwaches Signal)",
+                  f"Fear & Greed {fng['value']}: greed in the market (a weak signal on its own so far)"), ""))
     if ma:
         strong("Preis vs. MA200", ("", ""),
-               ("Kurs weit über dem MA200: stark gestreckt, anfällig für Rücksetzer", "stark gestreckt"))
+               (L("Kurs weit über dem MA200: stark gestreckt, anfällig für Rücksetzer",
+                  "Price far above the MA200: strongly extended, prone to pullbacks"),
+                L("stark gestreckt", "strongly extended")))
     if rs:
         low, high = RSI_SCALE[0][0], RSI_SCALE[-1][0]   # 30 / 70: erst dort gilt der RSI als überverkauft / überkauft
-        sold = "überverkauft" if rs["value"] <= low else "schwach, nahe am überverkauften Bereich"
-        bought = "überkauft" if rs["value"] >= high else "stark, nahe am überkauften Bereich"
+        r0 = num(rs["value"], 0)
+        sold = L("überverkauft", "oversold") if rs["value"] <= low else L("schwach, nahe am überverkauften Bereich", "weak, close to oversold")
+        bought = L("überkauft", "overbought") if rs["value"] >= high else L("stark, nahe am überkauften Bereich", "strong, close to overbought")
         strong("RSI (14)",
-               (f"RSI {num(rs['value'], 0)}: {sold}, Gegenbewegungen sind häufig",
-                "überverkauft" if rs["value"] <= low else "RSI schwach"),
-               (f"RSI {num(rs['value'], 0)}: {bought}, Rücksetzer sind häufig",
-                "überkauft" if rs["value"] >= high else "RSI stark"))
+               (L(f"RSI {r0}: {sold}, Gegenbewegungen sind häufig", f"RSI {r0}: {sold}, rebounds are common"),
+                L("überverkauft", "oversold") if rs["value"] <= low else L("RSI schwach", "RSI weak")),
+               (L(f"RSI {r0}: {bought}, Rücksetzer sind häufig", f"RSI {r0}: {bought}, pullbacks are common"),
+                L("überkauft", "overbought") if rs["value"] >= high else L("RSI stark", "RSI strong")))
     if mo.get("rsi_hourly") is not None:
+        rh = num(mo["rsi_hourly"], 0)
         strong("RSI (14 Std.)",
-               (f"RSI (Stunden) {num(mo['rsi_hourly'], 0)}: kurzfristig überverkauft", "kurzfristig überverkauft"),
-               (f"RSI (Stunden) {num(mo['rsi_hourly'], 0)}: kurzfristig überkauft", "kurzfristig überkauft"))
+               (L(f"RSI (Stunden) {rh}: kurzfristig überverkauft", f"RSI (hourly) {rh}: oversold short term"),
+                L("kurzfristig überverkauft", "oversold short term")),
+               (L(f"RSI (Stunden) {rh}: kurzfristig überkauft", f"RSI (hourly) {rh}: overbought short term"),
+                L("kurzfristig überkauft", "overbought short term")))
     mvd = d.get("mvrv")
     if mvd:
         mvs = num(mvd["value"], 2)
         v = mvd["value"]
         strong("MVRV",
-               (f"MVRV {mvs}: Halter im Schnitt im Verlust – bei Bitcoin lagen frühere Tiefs hier", "Halter im Verlust")
-               if v < 1 else (f"MVRV {mvs}: Kurs nahe am durchschnittlichen Einstand der Halter, "
-                              "historisch eine eher günstige Zone", "nahe am Einstand"),
-               (f"MVRV {mvs}: Halter weit im Gewinn – bei Bitcoin lagen frühere Hochs hier", "Halter weit im Gewinn")
-               if v >= 3 else (f"MVRV {mvs}: Halter deutlich im Gewinn, Gewinnmitnahmen werden wahrscheinlicher",
-                               "Halter deutlich im Gewinn"))
+               (L(f"MVRV {mvs}: Halter im Schnitt im Verlust – bei Bitcoin lagen frühere Tiefs hier",
+                  f"MVRV {mvs}: holders at a loss on average – earlier Bitcoin lows were here"),
+                L("Halter im Verlust", "holders at a loss"))
+               if v < 1 else (L(f"MVRV {mvs}: Kurs nahe am durchschnittlichen Einstand der Halter, "
+                                "historisch eine eher günstige Zone",
+                                f"MVRV {mvs}: price near holders' average cost basis, historically a rather cheap zone"),
+                              L("nahe am Einstand", "near cost basis")),
+               (L(f"MVRV {mvs}: Halter weit im Gewinn – bei Bitcoin lagen frühere Hochs hier",
+                  f"MVRV {mvs}: holders deep in profit – earlier Bitcoin tops were here"),
+                L("Halter weit im Gewinn", "holders deep in profit"))
+               if v >= 3 else (L(f"MVRV {mvs}: Halter deutlich im Gewinn, Gewinnmitnahmen werden wahrscheinlicher",
+                                 f"MVRV {mvs}: holders well in profit, profit taking becomes more likely"),
+                               L("Halter deutlich im Gewinn", "holders well in profit")))
     if fr:
-        rate = f"Funding {_pct_de(fr['avg_7d'], 4)} pro 8 h"
+        rate = L(f"Funding {pct(fr['avg_7d'], 4)} pro 8 h", f"Funding {pct(fr['avg_7d'], 4)} per 8 h")
         strong("Funding Rate",
-               (f"{rate}: Shorts dominieren, ein Short-Squeeze ist möglich", "Shorts dominieren"),
-               (f"{rate}: Longs zahlen viel, der Markt ist gehebelt long", "viel Long-Hebel"))
+               (L(f"{rate}: Shorts dominieren, ein Short-Squeeze ist möglich", f"{rate}: shorts dominate, a short squeeze is possible"),
+                L("Shorts dominieren", "shorts dominate")),
+               (L(f"{rate}: Longs zahlen viel, der Markt ist gehebelt long", f"{rate}: longs pay a lot, the market is leveraged long"),
+                L("viel Long-Hebel", "heavy long leverage")))
     if oi:
-        chg = f"Open Interest {_pct_de(oi['change_7d'])} in 7 Tagen"
+        chg = L(f"Open Interest {pct(oi['change_7d'])} in 7 Tagen", f"Open interest {pct(oi['change_7d'])} in 7 days")
         strong("Open Interest",
-               (f"{chg}: Hebel wurde abgebaut, weniger Liquidationsdruck", "Hebel wird abgebaut"),
-               (f"{chg}: viel neuer Hebel, Risiko von Liquidationswellen", "viel neuer Hebel"))
+               (L(f"{chg}: Hebel wurde abgebaut, weniger Liquidationsdruck", f"{chg}: leverage was reduced, less liquidation pressure"),
+                L("Hebel wird abgebaut", "deleveraging")),
+               (L(f"{chg}: viel neuer Hebel, Risiko von Liquidationswellen", f"{chg}: lots of new leverage, risk of liquidation cascades"),
+                L("viel neuer Hebel", "lots of new leverage")))
     if ls:
         ratio = f"Long/Short {num(ls['ratio'], 2)}"
         strong("Long/Short Ratio",
-               (f"{ratio}: ungewöhnlich viele Konten short (Kontraindikator)", "Masse short"),
-               (f"{ratio}: die Masse ist stark long (Kontraindikator)", "Masse stark long"))
+               (L(f"{ratio}: ungewöhnlich viele Konten short (Kontraindikator)", f"{ratio}: unusually many accounts short (contrarian indicator)"),
+                L("Masse short", "crowd short")),
+               (L(f"{ratio}: die Masse ist stark long (Kontraindikator)", f"{ratio}: the crowd is heavily long (contrarian indicator)"),
+                L("Masse stark long", "crowd heavily long")))
     if dv:
         z = f"{'+' if dv['z'] >= 0 else '−'}{num(abs(dv['z']), 1)}σ"
         strong("Optionsvola (DVOL)",
-               (f"Optionsvola ungewöhnlich hoch ({z}): Absicherung gefragt, viel Angst ist eingepreist", "hohe Optionsvola"),
-               (f"Optionsvola ungewöhnlich niedrig ({z}): Sorglosigkeit", "niedrige Optionsvola"))
+               (L(f"Optionsvola ungewöhnlich hoch ({z}): Absicherung gefragt, viel Angst ist eingepreist",
+                  f"Options volatility unusually high ({z}): hedging in demand, a lot of fear is priced in"),
+                L("hohe Optionsvola", "high options volatility")),
+               (L(f"Optionsvola ungewöhnlich niedrig ({z}): Sorglosigkeit", f"Options volatility unusually low ({z}): complacency"),
+                L("niedrige Optionsvola", "low options volatility")))
     if mo.get("change_7d") is not None:
-        c7 = _pct_de(mo["change_7d"])
+        c7 = pct(mo["change_7d"])
         strong("Momentum 7T",
-               (f"{c7} in 7 Tagen: starker Ausverkauf, eine Gegenbewegung ist möglich", "starker Ausverkauf"),
-               (f"{c7} in 7 Tagen: steiler Anstieg, anfällig für Rücksetzer", "steiler Anstieg"))
+               (L(f"{c7} in 7 Tagen: starker Ausverkauf, eine Gegenbewegung ist möglich", f"{c7} in 7 days: heavy sell-off, a rebound is possible"),
+                L("starker Ausverkauf", "heavy sell-off")),
+               (L(f"{c7} in 7 Tagen: steiler Anstieg, anfällig für Rücksetzer", f"{c7} in 7 days: steep rise, prone to pullbacks"),
+                L("steiler Anstieg", "steep rise")))
     if mo.get("turnover") is not None:
         strong("Umschlag",
-               ("Sehr hoher Umschlag im Rückgang: Panikverkäufe, oft nahe an Zwischentiefs", "Panikverkäufe"),
-               ("Sehr hoher Umschlag im Anstieg: Spekulationsrausch", "Spekulationsrausch"))
+               (L("Sehr hoher Umschlag im Rückgang: Panikverkäufe, oft nahe an Zwischentiefs",
+                  "Very high turnover in a decline: panic selling, often near interim lows"), L("Panikverkäufe", "panic selling")),
+               (L("Sehr hoher Umschlag im Anstieg: Spekulationsrausch", "Very high turnover in a rise: speculative frenzy"),
+                L("Spekulationsrausch", "speculative frenzy")))
 
     mood = "greed" if total >= VERDICT_WARM else "fear" if total <= -VERDICT_WARM else "neutral"
-    mood_text = ("Stimmung überhitzt" if total >= VERDICT_HOT else "Stimmung leicht gierig" if total >= VERDICT_WARM
-                 else "Stimmung extrem ängstlich" if total <= -VERDICT_HOT
-                 else "Stimmung leicht ängstlich" if total <= -VERDICT_WARM else "Stimmung neutral")
+    mood_text = (L("Stimmung überhitzt", "mood overheated") if total >= VERDICT_HOT
+                 else L("Stimmung leicht gierig", "mood slightly greedy") if total >= VERDICT_WARM
+                 else L("Stimmung extrem ängstlich", "mood extremely fearful") if total <= -VERDICT_HOT
+                 else L("Stimmung leicht ängstlich", "mood slightly fearful") if total <= -VERDICT_WARM
+                 else L("Stimmung neutral", "mood neutral"))
     words = [w for w in words if w]
     summary = ", ".join(x for x in (trend_text, mood_text) if x) + ("; " + ", ".join(words[:3]) if words else "") + "."
-    title, text = SITUATIONS[(mood, trend)]
+    summary = summary[0].upper() + summary[1:]
+    title, text = (SITUATIONS_EN if en else SITUATIONS)[(mood, trend)]
     extreme = abs(total) >= VERDICT_HOT
-    action, tone, reason = (extreme and ACTIONS_EXTREME.get((mood, trend))) or ACTIONS[(mood, trend)]
+    actions, actions_x = (ACTIONS_EN, ACTIONS_EXTREME_EN) if en else (ACTIONS, ACTIONS_EXTREME)
+    action, tone, reason = (extreme and actions_x.get((mood, trend))) or actions[(mood, trend)]
     return {"mood": mood, "trend": trend, "trend_basis": basis, "title": title, "text": text,
             "summary": summary, "pro": pro, "contra": contra,
             "action": action, "action_tone": tone, "action_text": reason}

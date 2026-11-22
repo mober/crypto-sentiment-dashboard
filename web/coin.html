@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Coin-Details</title>
 <link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
 <!-- TradingView Lightweight Charts (Apache-2.0), feste Version -->
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <link rel="stylesheet" href="coin.css">
@@ -197,13 +198,47 @@
 <script src="coin-book.js"></script>
 <script src="coin-onchain.js"></script>
 <script>
+addStatic({
+  "Coin-Details": "Coin details", "Lade Daten …": "Loading data …", "Sparten": "Sectors", "Marktübersicht": "Markets",
+  "Kennzahlen": "Key figures", "Kennzahlen ein- oder ausklappen": "Expand or collapse key figures", "Kursverlauf": "Price chart",
+  "Gleitender Durchschnitt über 50 Kerzen ein- oder ausblenden": "Show or hide the moving average over 50 candles",
+  "Gleitender Durchschnitt über 200 Kerzen ein- oder ausblenden": "Show or hide the moving average over 200 candles",
+  "RSI-Fenster unter dem Chart ein- oder ausblenden": "Show or hide the RSI pane below the chart",
+  "Zeitraum": "Period", "Letzte 6 Stunden": "Last 6 hours", "Letzte 24 Stunden": "Last 24 hours", "Letzte Woche": "Last week",
+  "Letzter Monat": "Last month", "Letzte 3 Monate": "Last 3 months", "Letzte 6 Monate": "Last 6 months",
+  "Letztes Jahr": "Last year", "1J": "1Y", "Alle geladenen Kerzen (max. 1000)": "All loaded candles (max. 1000)", "Alle": "All",
+  "Zeitintervall": "Interval", "1T": "1D", "15 Minuten je Kerze": "15 minutes per candle", "5 Minuten je Kerze": "5 minutes per candle",
+  "3 Minuten je Kerze": "3 minutes per candle", "1 Minute je Kerze": "1 minute per candle", "Lade Kursdaten …": "Loading price data …",
+  "Orderbuch": "Order book", "Live über WebSocket von Binance": "Live via WebSocket from Binance", "Markt": "Market",
+  "Binance Spot (USDT-Paar): bis 5.000 Stufen je Seite": "Binance spot (USDT pair): up to 5,000 levels per side",
+  "Binance Futures (USDT-Perpetual): bis 1.000 Stufen je Seite, meist mehr Volumen nahe am Kurs": "Binance futures (USDT perpetual): up to 1,000 levels per side, usually more volume near the price",
+  "Bereich um den Kurs": "Range around the price", "±0,5 %": "±0.5%", "±1 %": "±1%", "±2 %": "±2%",
+  "Lade Orderbuch …": "Loading order book …", "Aufträge je Preisstufe": "Orders per price level", "Stufe": "Step",
+  "Preisstufen zusammenfassen": "Group price levels", "Preis (USDT)": "Price (USDT)", "Menge": "Amount", "Summe": "Total",
+  "Gebühren & Einnahmen": "Fees & revenue", "Derivate auf Binance Futures (USDT-Perpetual)": "Derivatives on Binance Futures (USDT perpetual)",
+  "Funding: 90 Tage, pro 8 h · Open Interest: 30 Tage in 4-h-Schritten (mehr liefert Binance nicht)": "Funding: 90 days, per 8 h · Open interest: 30 days in 4 h steps (Binance provides no more)",
+  "Lade …": "Loading …", "und Kurs": "and price", "(Coin Metrics, Tageswerte bis gestern)": "(Coin Metrics, daily values up to yesterday)",
+  "Netto-Zufluss zu Börsen": "Net inflow to exchanges", "je Tag": "per day", "Bestand auf Börsen": "Exchange balance",
+  "und Kurs (2 Jahre)": "and price (2 years)", "Liquidations-Heatmap": "Liquidation heatmap",
+  "(Modell, Binance Futures, 1 h, ~21 Tage)": "(model, Binance Futures, 1 h, ~21 days)", "Darstellung der Heatmap": "Heatmap view",
+  "Halbtransparente Einfärbung über dem Kurs": "Semi-transparent overlay on the price", "Farbverlauf": "Gradient",
+  "Dunkle Karte mit Farbverlauf und feineren Preisstufen": "Dark map with colour gradient and finer price levels",
+  "Schätzung aus Open Interest und angenommenen Hebeln – keine echten Aufträge": "Estimate from open interest and assumed leverage – no real orders",
+  "wenig": "few", "viele geschätzte Liquidationen": "many estimated liquidations", "Score-Verlauf": "Score history",
+  "(rückwirkend berechnet, 1 Jahr)": "(calculated retroactively, 1 year)", "Lade Score …": "Loading score …",
+  "Orderbuch: Binance Spot bzw. Futures, Momentaufnahme plus Änderungen per WebSocket direkt im Browser.": "Order book: Binance spot or futures, snapshot plus updates via WebSocket directly in the browser.",
+  "Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit": "Chart: Binance spot (USDT pair), Binance futures (perpetual) if the spot history is missing or short, rendered with",
+  "Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.": "Lightweight Charts · “live”: current candle every second directly from Binance · times in local time, daily candles in UTC.",
+  "Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko, Coin Metrics (On-Chain, MVRV) · News: RSS-Feeds deutschsprachiger Krypto-Medien.": "Data: alternative.me, Binance, Deribit, DefiLlama, CoinGecko, Coin Metrics (on-chain, MVRV) · News: RSS feeds of English-language crypto media.",
+});
+
 // --- Start ---------------------------------------------------------------
 
 if (!validSymbol) {
   $("hero").className = "card status error";
-  $("hero").textContent = "Kein gültiger Coin angegeben.";
+  $("hero").textContent = L("Kein gültiger Coin angegeben.", "No valid coin given.");
   $("updated").textContent = "";
-  chartMessage("Kein Coin gewählt.", true);
+  chartMessage(L("Kein Coin gewählt.", "No coin selected."), true);
   $("rsi-wrap").hidden = true;
   $("derivs").hidden = true;
   $("history").hidden = true;
@@ -212,11 +247,11 @@ if (!validSymbol) {
   $("onchain").hidden = true;
   $("breakdown").hidden = true;
 } else {
-  document.title = symbol + " – Details";
+  document.title = symbol + " – " + L("Details", "Details");
   $("title").textContent = symbol;
   loadHero();
   if (typeof LightweightCharts === "undefined") {
-    chartMessage("Chart-Bibliothek konnte nicht geladen werden (keine Internetverbindung?).", true);
+    chartMessage(L("Chart-Bibliothek konnte nicht geladen werden (keine Internetverbindung?).", "Chart library could not be loaded (no internet connection?)."), true);
     $("rsi-wrap").hidden = true;
     $("derivs").hidden = true;
     $("history").hidden = true;

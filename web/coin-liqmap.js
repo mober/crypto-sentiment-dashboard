@@ -87,7 +87,7 @@ function initLiqChart() {
     crosshair: { ...t.chart.crosshair, mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { ...t.chart.rightPriceScale, minimumWidth: PRICE_SCALE_WIDTH },
     timeScale: { ...t.chart.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 3, tickMarkFormatter: tickLabel },
-    localization: { locale: "de-DE", priceFormatter: fmtPrice, timeFormatter: (ts) => fmtDate(ts, {
+    localization: { locale: LOCALE, priceFormatter: fmtPrice, timeFormatter: (ts) => fmtDate(ts, {
       weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) },
     // Preisachse nicht von Hand ziehen: die Heatmap folgt nur automatischen Skalierungen
     handleScale: { axisPressedMouseMove: { time: true, price: false } },
@@ -208,7 +208,7 @@ function renderLiqLegend(p) {
   if (!liqModel || !liqCandles.length) { $("liq-legend").innerHTML = ""; return; }
   const last = liqCandles[liqCandles.length - 1];
   if (!p || p.time == null || !p.point) {
-    $("liq-legend").innerHTML = `<span>Kurs <b>${usd(last.close)}</b></span><span>Maus über die Karte: geschätztes Volumen je Niveau</span>`;
+    $("liq-legend").innerHTML = `<span>${L("Kurs", "Price")} <b>${usd(last.close)}</b></span><span>${L("Maus über die Karte: geschätztes Volumen je Niveau", "Hover over the map: estimated volume per level")}</span>`;
     return;
   }
   const i = liqModel.colAt.get(p.time);
@@ -219,8 +219,8 @@ function renderLiqLegend(p) {
   const lv = b >= 0 && b < liqModel.bins ? col.long[b] : 0, sv = b >= 0 && b < liqModel.bins ? col.short[b] : 0;
   const what = lv + sv > 0
     ? [lv > 0 ? `Longs ≈ <b>${usdShort(lv)}</b>` : "", sv > 0 ? `Shorts ≈ <b>${usdShort(sv)}</b>` : ""].filter(Boolean).join(" · ")
-    : "kaum geschätzte Liquidationen";
-  $("liq-legend").innerHTML = `<span>Niveau <b>${usd(price)}</b></span><span>${what}</span>`;
+    : L("kaum geschätzte Liquidationen", "hardly any estimated liquidations");
+  $("liq-legend").innerHTML = `<span>${L("Niveau", "Level")} <b>${usd(price)}</b></span><span>${what}</span>`;
 }
 
 // Schwebendes Infofeld an der Maus (Ansicht „Farbverlauf“): Zeit, Kurs am Fadenkreuz, geschätzte Liquidationen
@@ -232,7 +232,7 @@ function renderLiqTip(p) {
   const b = Math.floor((price - liqModel.lo) / liqModel.step), col = liqModel.cols[i];
   const v = b >= 0 && b < liqModel.bins ? col.long[b] + col.short[b] : 0;
   tip.innerHTML = `<div class="t">${fmtDate(p.time, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
-    <div><span>Kurs</span><b>${usd(price)}</b></div><div><span>Geschätzte Liq.</span><b>${v > 0 ? usdShort(v) : "–"}</b></div>`;
+    <div><span>${L("Kurs", "Price")}</span><b>${usd(price)}</b></div><div><span>${L("Geschätzte Liq.", "Estimated liq.")}</span><b>${v > 0 ? usdShort(v) : "–"}</b></div>`;
   tip.hidden = false;
   const box = $("liq-chart"), w = tip.offsetWidth, h = tip.offsetHeight, gap = 16;
   const x = p.point.x + gap + w > box.clientWidth - PRICE_SCALE_WIDTH ? p.point.x - gap - w : p.point.x + gap;
@@ -252,11 +252,11 @@ function renderLiqClusters() {
   const top = (arr, above) => [...arr].map((v, b) => ({ v, b })).filter((x) => x.v > 0 && (above ? mid(x.b) > price : mid(x.b) < price))
     .sort((a, b) => b.v - a.v).slice(0, 3).sort((a, b) => (above ? a.b - b.b : b.b - a.b));
   const fmt = (list) => list.length
-    ? list.map((x) => `<b>${usd(mid(x.b))}</b> (${num1((mid(x.b) / price - 1) * 100).replace(/,0$/, "")} %, ≈ ${usdShort(x.v)})`).join(" · ")
-    : "keine nennenswerten";
+    ? list.map((x) => `<b>${usd(mid(x.b))}</b> (${num1((mid(x.b) / price - 1) * 100).replace(/[,.]0$/, "")}${PCT}, ≈ ${usdShort(x.v)})`).join(" · ")
+    : L("keine nennenswerten", "none worth mentioning");
   $("liq-clusters").innerHTML = `
-    <span class="side">Darüber (Shorts):</span><span>${fmt(top(col.short, true))}</span>
-    <span class="side">Darunter (Longs):</span><span>${fmt(top(col.long, false))}</span>`;
+    <span class="side">${L("Darüber (Shorts):", "Above (shorts):")}</span><span>${fmt(top(col.short, true))}</span>
+    <span class="side">${L("Darunter (Longs):", "Below (longs):")}</span><span>${fmt(top(col.long, false))}</span>`;
 }
 
 async function loadLiquidations() {
@@ -264,7 +264,7 @@ async function loadLiquidations() {
     const res = await fetch("api/liquidations?symbol=" + encodeURIComponent(symbol));
     const p = await res.json().catch(() => ({}));
     if (res.status === 404) {
-      $("liq").innerHTML = `<div class="status">Für ${esc(symbol)} gibt es keine Binance-Futures – daher keine Liquidations-Heatmap.</div>`;
+      $("liq").innerHTML = `<div class="status">${L(`Für ${esc(symbol)} gibt es keine Binance-Futures – daher keine Liquidations-Heatmap.`, `There are no Binance Futures for ${esc(symbol)} – so no liquidation heatmap.`)}</div>`;
       return;
     }
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
@@ -282,6 +282,6 @@ async function loadLiquidations() {
     renderLiqClusters();
     scheduleLiqDraw();
   } catch (e) {
-    $("liq-msg").textContent = `Daten nicht verfügbar (${e.message}).`;
+    $("liq-msg").textContent = L(`Daten nicht verfügbar (${e.message}).`, `Data not available (${e.message}).`);
   }
 }

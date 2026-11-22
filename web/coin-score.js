@@ -61,10 +61,10 @@ function renderHistDetail(time) {
   const d = (time != null && histData.find((x) => x.time === time)) || histData[histData.length - 1];
   const date = fmtDate(d.time, { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
   const isToday = d === histData[histData.length - 1];
-  $("hist-legend").innerHTML = `<span>${isToday ? "Heute" : esc(date)}</span>`
+  $("hist-legend").innerHTML = `<span>${isToday ? L("Heute", "Today") : esc(date)}</span>`
     + `<span class="${scoreTone(d.score)}">Score <b>${signed(d.score)}</b></span>`
-    + (d.price != null ? `<span>Kurs <b>${usd(d.price)}</b></span>` : "");
-  $("hist-detail").innerHTML = `<span>${d.signals.length} Signale:</span>` + d.signals.map((x) =>
+    + (d.price != null ? `<span>${L("Kurs", "Price")} <b>${usd(d.price)}</b></span>` : "");
+  $("hist-detail").innerHTML = `<span>${d.signals.length} ${L("Signale", "signals")}:</span>` + d.signals.map((x) =>
     `<span class="${scoreTone(x.points)}">${esc(SHORT_NAMES[x.name] || x.name)} <b>${signed(x.points)}</b></span>`).join("");
 }
 
@@ -86,6 +86,8 @@ function histMarkers() {
 
 // Trefferquote: Wie entwickelte sich der Kurs bisher nach Tagen in der aktuellen Score-Zone?
 let trackRecord = null;
+const ZONE_NAMES_EN = { cold2: "extreme fear (to −40)", cold1: "fear (−40 to −15)", neutral: "neutral (−15 to +15)",
+  hot1: "greed (+15 to +40)", hot2: "overheated (from +40)" };   // deutsch kommen sie vom Server (SCORE_ZONES)
 const ZONE_OF = (v) => v <= -40 ? "cold2" : v <= -15 ? "cold1" : v < 15 ? "neutral" : v < 40 ? "hot1" : "hot2";  // wie score_zone in sentiment.py
 function renderTrack() {
   const el = $("score-track");
@@ -93,22 +95,28 @@ function renderTrack() {
   const z = trackRecord.zones[ZONE_OF(statsCoin.score)], all = trackRecord.all;
   const q = z && z["90d"], q30 = z && z["30d"];
   if (!q || q.n < 20 || !all["90d"]) { el.innerHTML = ""; return; }
-  const pc = (v) => Math.round(v * 100) + " %";
+  const pc = (v) => Math.round(v * 100) + PCT;
   const cls = (v, base) => v > base + 0.1 ? "up" : v < base - 0.1 ? "down" : "";
-  const since = new Date(trackRecord.since * 1000).toLocaleDateString("de-DE", { month: "2-digit", year: "numeric" });
-  el.innerHTML = `<span data-tip="trackRecord" tabindex="0">Bisher bei ${esc(symbol)}</span> nach „${esc(z.name)}“:
+  const since = new Date(trackRecord.since * 1000).toLocaleDateString(LOCALE, { month: "2-digit", year: "numeric" });
+  const zone = (EN && ZONE_NAMES_EN[ZONE_OF(statsCoin.score)]) || z.name;
+  el.innerHTML = EN
+    ? `<span data-tip="trackRecord" tabindex="0">So far for ${esc(symbol)}</span> after “${esc(zone)}”:
+    90 days later higher in <b class="${cls(q.up, all["90d"].up)}">${pc(q.up)}</b> of cases (median ${pctSignedDe(q.median)}),
+    on average across all days ${pc(all["90d"].up)}.${q30 ? ` After 30 days: ${pc(q30.up)} (all ${pc(all["30d"].up)}).` : ""}
+    <span class="muted">${q.n} days since ${since}, in hindsight – not a forecast.</span>`
+    : `<span data-tip="trackRecord" tabindex="0">Bisher bei ${esc(symbol)}</span> nach „${esc(zone)}“:
     90 Tage später in <b class="${cls(q.up, all["90d"].up)}">${pc(q.up)}</b> der Fälle höher (Median ${pctSignedDe(q.median)}),
     im Schnitt aller Tage ${pc(all["90d"].up)}.${q30 ? ` Nach 30 Tagen: ${pc(q30.up)} (alle ${pc(all["30d"].up)}).` : ""}
     <span class="muted">${q.n} Tage seit ${since}, rückblickend – keine Prognose.</span>`;
 }
-const pctSignedDe = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " %";
+const pctSignedDe = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toLocaleString(LOCALE, { maximumFractionDigits: 1 }) + PCT;
 
 async function loadHistory() {
   try {
     const res = await fetch("api/score-history?symbol=" + encodeURIComponent(symbol));
     const p = await res.json().catch(() => ({}));
     if (res.status === 404) {
-      $("history").innerHTML = `<div class="status">Für ${esc(symbol)} gibt es keinen Score-Verlauf (keine Kurs- oder Futures-Daten von Binance).</div>`;
+      $("history").innerHTML = `<div class="status">${L(`Für ${esc(symbol)} gibt es keinen Score-Verlauf (keine Kurs- oder Futures-Daten von Binance).`, `There is no score history for ${esc(symbol)} (no price or futures data from Binance).`)}</div>`;
       return;
     }
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
@@ -122,6 +130,6 @@ async function loadHistory() {
     renderHistDetail(null);
     $("hist-msg").hidden = true;
   } catch (e) {
-    $("hist-msg").textContent = `Score-Verlauf nicht verfügbar (${e.message}).`;
+    $("hist-msg").textContent = L(`Score-Verlauf nicht verfügbar (${e.message}).`, `Score history not available (${e.message}).`);
   }
 }

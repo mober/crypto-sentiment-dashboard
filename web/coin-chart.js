@@ -37,7 +37,7 @@ let loadToken = 0;       // verwirft Antworten, wenn inzwischen ein anderes Inte
 let pointerOn = null;    // "main" | "rsi": welches Chart Maus/Finger gerade bedient (für den Gleichlauf)
 let hoverTime = null;    // Kerze unter dem Fadenkreuz (null = keine): die OHLC-Zeile zeigt sie statt der letzten
 
-const fmtPrice = (v) => v.toLocaleString("de-DE", { minimumFractionDigits: precision, maximumFractionDigits: precision });
+const fmtPrice = (v) => v.toLocaleString(LOCALE, { minimumFractionDigits: precision, maximumFractionDigits: precision });
 
 // Einfacher gleitender Durchschnitt der Schlusskurse; die ersten period − 1 Kerzen haben keinen Wert
 function maData(period) {
@@ -85,7 +85,7 @@ function initChart() {
     rightPriceScale: { ...t.chart.rightPriceScale, minimumWidth: PRICE_SCALE_WIDTH },
     timeScale: { ...t.chart.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 5, tickMarkFormatter: tickLabel },
     layout: { ...t.chart.layout, attributionLogo: false },  // Namensnennung mit Link steht im Footer
-    localization: { locale: "de-DE", priceFormatter: fmtPrice, timeFormatter: crosshairLabel },
+    localization: { locale: LOCALE, priceFormatter: fmtPrice, timeFormatter: crosshairLabel },
   };
   chart = LC.createChart($("chart"), common);
   candleSeries = chart.addCandlestickSeries({ ...t.candles, priceLineVisible: true });
@@ -110,7 +110,7 @@ function initChart() {
   rsiSeries = rsiChart.addLineSeries({
     ...t.rsi, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
     autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
-    priceFormat: { type: "custom", formatter: (v) => v.toFixed(1).replace(".", ","), minMove: 0.1 },
+    priceFormat: { type: "custom", formatter: (v) => v.toFixed(1).replace(".", DEC), minMove: 0.1 },
   });
   rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
   const rsiLines = RSI_LEVELS.map((level) => rsiSeries.createPriceLine({
@@ -199,7 +199,7 @@ function renderOhlc(c) {
     <span>H <b>${fmtPrice(c.high)}</b></span>
     <span>L <b>${fmtPrice(c.low)}</b></span>
     <span>C <b>${fmtPrice(c.close)}</b></span>
-    <span class="${cls}">${chg >= 0 ? "+" : "−"}${Math.abs(chg * 100).toFixed(2).replace(".", ",")} %</span>
+    <span class="${cls}">${chg >= 0 ? "+" : "−"}${Math.abs(chg * 100).toFixed(2).replace(".", DEC)}${PCT}</span>
     <span>Vol <b>$${compact(c.volume)}</b></span>
     ${MA_PERIODS.map(ma).join("")}`;
 }
@@ -208,10 +208,10 @@ function renderRsiLegend(time) {
   const t = time ?? (candles.length ? candles[candles.length - 1].time : null);
   const v = t != null ? rsiByTime.get(t) : null;
   const cls = v == null ? "" : v >= RSI_LEVELS[0] ? "hot" : v <= RSI_LEVELS[1] ? "cold" : "";
-  const note = v == null ? "" : v >= RSI_LEVELS[0] ? " überkauft" : v <= RSI_LEVELS[1] ? " überverkauft" : "";
+  const note = v == null ? "" : v >= RSI_LEVELS[0] ? L(" überkauft", " overbought") : v <= RSI_LEVELS[1] ? L(" überverkauft", " oversold") : "";
   $("rsi-legend").innerHTML = candles.length
-    ? `<span class="${cls}">RSI (${RSI_PERIOD}) <b>${v != null ? v.toFixed(1).replace(".", ",") : "–"}</b>${note}</span>`
-      + `<span>Linien bei ${RSI_LEVELS.join(" / ")}</span>`
+    ? `<span class="${cls}">RSI (${RSI_PERIOD}) <b>${v != null ? v.toFixed(1).replace(".", DEC) : "–"}</b>${note}</span>`
+      + `<span>${L("Linien bei", "Lines at")} ${RSI_LEVELS.join(" / ")}</span>`
     : "";
 }
 
@@ -267,7 +267,7 @@ async function loadChart() {
   closeLive();
   document.querySelectorAll("#interval-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.interval === iv)));
   $("pair").innerHTML = `${esc(symbol)}/USDT <span class="note">${INTERVAL_LABEL[iv]}</span>`;
-  chartMessage("Lade Kursdaten …");
+  chartMessage(L("Lade Kursdaten …", "Loading price data …"));
   try {
     const { candles: data, source } = await fetchKlines(iv);
     if (token !== loadToken) return;
@@ -297,8 +297,9 @@ async function loadChart() {
     renderOhlc(null);
     renderRsiLegend(null);
     chartMessage(e.status === 404
-      ? `Für ${symbol} gibt es kein USDT-Paar auf Binance (weder Spot noch Futures) – daher vorerst kein Chart.`
-      : `Kursdaten konnten nicht geladen werden (${e.message}).`, e.status !== 404);
+      ? L(`Für ${symbol} gibt es kein USDT-Paar auf Binance (weder Spot noch Futures) – daher vorerst kein Chart.`,
+          `There is no USDT pair for ${symbol} on Binance (neither spot nor futures) – so no chart for now.`)
+      : L(`Kursdaten konnten nicht geladen werden (${e.message}).`, `Price data could not be loaded (${e.message}).`), e.status !== 404);
   }
 }
 

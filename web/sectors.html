@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sparten</title>
 <link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
 <style>
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   section.card { margin-bottom: 20px; }
@@ -164,6 +165,18 @@
 <script src="format.js"></script>
 <script src="tips.js"></script>
 <script>
+const NO_DATA = L("Keine Daten.", "No data.");
+addStatic({
+  "Sparten": "Sectors", "Lade Daten …": "Loading data …", "Marktübersicht": "Markets",
+  "Rotation: Hauptsparten in 24 h": "Rotation: main sectors in 24 h", "Veränderung der Marktkap. · Klick zeigt die Coins der Sparte": "Change in market cap · click shows the sector's coins",
+  "Lade …": "Loading …", "DeFi-Kapital (TVL)": "DeFi capital (TVL)",
+  "Total Value Locked nach DefiLlama · wo echtes Kapital liegt, nicht nur Marktkap.": "Total value locked per DefiLlama · where real capital sits, not just market cap",
+  "Gliederung": "Grouping", "Kategorien": "Categories", "Zeitraum": "Period", "7 T": "7 d", "Alle Sparten": "All sectors",
+  "Sparten überschneiden sich: ein Coin steht oft in mehreren": "Sectors overlap: a coin is often in several",
+  "Sparte filtern …": "Filter sectors …", "Sparte filtern": "Filter sectors", "Auswahl": "Selection", "Hauptsparten": "Main sectors",
+  "Alle": "All", "Sparte": "Sector", "Marktkap.": "Market cap", "Volumen 24h": "Volume 24h", "Umschlag": "Turnover", "TVL · 7 T": "TVL · 7 d",
+  "Größte Coins": "Largest coins", "Daten: CoinGecko (Kategorien), DefiLlama (TVL) · Aktualisiert sich alle 5 Minuten.": "Data: CoinGecko (categories), DefiLlama (TVL) · Refreshes every 5 minutes.",
+});
 const REFRESH_MS = 5 * 60 * 1000;
 // $, esc, dash, usd6, pct und change kommen aus format.js
 
@@ -195,7 +208,12 @@ const MAIN = [
   ["depin", "DePIN", "Anwendungen"],
   ["socialfi", "SocialFi", "Anwendungen"],
 ];
-const MAIN_INFO = new Map(MAIN.map(([id, name, group]) => [id, { name, group }]));
+// Englische Namen, wo sie vom deutschen abweichen
+const MAIN_EN = { "Interoperabilität": "Interoperability", "Speicher": "Storage", "Börsen-Token": "Exchange tokens",
+  "DeFi gesamt": "DeFi overall", "Kredite": "Lending", "KI": "AI", "KI-Agenten": "AI agents",
+  "Infrastruktur": "Infrastructure", "Finanzen": "Finance", "Anwendungen": "Applications" };
+const trMain = (x) => (EN && MAIN_EN[x]) || x;
+const MAIN_INFO = new Map(MAIN.map(([id, name, group]) => [id, { name: trMain(name), group: trMain(group) }]));
 const NOT_IN_CHART = new Set(["stablecoins"]);  // Marktkap. folgt der Menge, nicht dem Kurs
 const MARKET_REF = "layer-1";                    // Bezugsgröße für „der Gesamtmarkt“ (enthält BTC und ETH)
 
@@ -213,14 +231,14 @@ const categoryHref = (c) => `markets.html?category=${encodeURIComponent(c.id)}&n
 
 function rowTip(c) {
   return `${displayName(c)}${MAIN_INFO.has(c.id) ? ` (CoinGecko: ${c.name})` : ""}\n`
-    + `24 h: ${c.change_24h != null ? pct(c.change_24h, 2) : "–"} · Marktkap. ${usd6(c.market_cap).replace(/<[^>]+>/g, "")}`
-    + (c.volume_24h ? `\nVolumen 24 h: ${usd6(c.volume_24h).replace(/<[^>]+>/g, "")} · Umschlag ${pct(c.turnover).replace("+", "")}` : "");
+    + `24 h: ${c.change_24h != null ? pct(c.change_24h, 2) : "–"} · ${L("Marktkap.", "Market cap")} ${usd6(c.market_cap).replace(/<[^>]+>/g, "")}`
+    + (c.volume_24h ? `\n${L("Volumen 24 h", "Volume 24 h")}: ${usd6(c.volume_24h).replace(/<[^>]+>/g, "")} · ${L("Umschlag", "Turnover")} ${pct(c.turnover).replace("+", "")}` : "");
 }
 
 function renderBars() {
   const list = cats.filter((c) => MAIN_INFO.has(c.id) && !NOT_IN_CHART.has(c.id) && c.change_24h != null)
     .sort((a, b) => b.change_24h - a.change_24h);
-  if (!list.length) { $("bars").innerHTML = '<div class="status">Keine Daten.</div>'; return; }
+  if (!list.length) { $("bars").innerHTML = `<div class="status">${NO_DATA}</div>`; return; }
   // Skala symmetrisch auf die größte Bewegung, auf glatte Prozent gerundet
   const maxAbs = Math.max(0.01, ...list.map((c) => Math.abs(c.change_24h)));
   const lim = Math.ceil(maxAbs * 100) / 100;
@@ -239,8 +257,11 @@ function renderBars() {
   const ref = cats.find((c) => c.id === MARKET_REF);
   if (ref && ref.change_24h != null) {
     const better = list.filter((c) => c.id !== MARKET_REF && c.change_24h > ref.change_24h).length;
-    $("market-ref").innerHTML = `Bezug: Layer 1 (enthält BTC und ETH, ≈ Gesamtmarkt) ${change(ref.change_24h)} · `
-      + `<b>${better}</b> von ${list.length - 1} Sparten laufen besser, ${list.length - 1 - better} schlechter.`;
+    $("market-ref").innerHTML = EN
+      ? `Reference: Layer 1 (contains BTC and ETH, ≈ overall market) ${change(ref.change_24h)} · `
+        + `<b>${better}</b> of ${list.length - 1} sectors do better, ${list.length - 1 - better} worse.`
+      : `Bezug: Layer 1 (enthält BTC und ETH, ≈ Gesamtmarkt) ${change(ref.change_24h)} · `
+        + `<b>${better}</b> von ${list.length - 1} Sparten laufen besser, ${list.length - 1 - better} schlechter.`;
   }
 }
 
@@ -250,7 +271,7 @@ function renderTable() {
   if (q) list = list.filter((c) => displayName(c).toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
   const { key, dir } = sort;
   list.sort((a, b) => {
-    if (key === "name") return dir * displayName(a).localeCompare(displayName(b), "de");
+    if (key === "name") return dir * displayName(a).localeCompare(displayName(b), LANG);
     const va = a[key], vb = b[key];
     if (va == null) return 1;
     if (vb == null) return -1;
@@ -259,11 +280,11 @@ function renderTable() {
   document.querySelectorAll("th button[data-sort]").forEach((b) =>
     b.setAttribute("aria-sort", b.dataset.sort === key ? (dir < 0 ? "descending" : "ascending") : "none"));
   document.querySelectorAll(".tools .seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scope === scope)));
-  $("count").textContent = `${list.length} von ${scope === "main" ? MAIN_INFO.size : cats.length}`;
-  if (!list.length) { $("rows").innerHTML = '<tr><td colspan="8" class="status">Keine Sparte gefunden.</td></tr>'; return; }
+  $("count").textContent = `${list.length} ${L("von", "of")} ${scope === "main" ? MAIN_INFO.size : cats.length}`;
+  if (!list.length) { $("rows").innerHTML = `<tr><td colspan="8" class="status">${L("Keine Sparte gefunden.", "No sector found.")}</td></tr>`; return; }
   $("rows").innerHTML = list.map((c, i) => {
     const main = MAIN_INFO.has(c.id);
-    return `<tr data-href="${esc(categoryHref(c))}" title="Coins der Sparte ${esc(displayName(c))} anzeigen">
+    return `<tr data-href="${esc(categoryHref(c))}" title="${L(`Coins der Sparte ${esc(displayName(c))} anzeigen`, `Show coins of sector ${esc(displayName(c))}`)}">
       <td class="rank">${i + 1}</td>
       <td class="left"><span class="sname">${esc(displayName(c))}${main ? `<span class="orig">${esc(c.name)}</span>` : ""}</span></td>
       <td>${usd6(c.market_cap)}</td>
@@ -289,16 +310,16 @@ async function load() {
     attachTvl();
     renderBars();
     renderTable();
-    $("updated").textContent = `${cats.length} Sparten nach CoinGecko · Stand: ${new Date(p.updated).toLocaleString("de-DE")}`;
+    $("updated").textContent = `${cats.length} ${L("Sparten nach CoinGecko · Stand:", "sectors per CoinGecko · as of:")} ${new Date(p.updated).toLocaleString(LOCALE)}`;
   } catch (e) {
     if (e.retryIn) {
       // CoinGecko-Limit: nach der Pause automatisch erneut laden
-      if (!cats.length) $("bars").innerHTML = `<div class="status">CoinGecko-Limit erreicht (kostenlose API ohne Key). Neuer Versuch in ${e.retryIn} s …</div>`;
+      if (!cats.length) $("bars").innerHTML = `<div class="status">${L("CoinGecko-Limit erreicht (kostenlose API ohne Key). Neuer Versuch in", "CoinGecko limit reached (free API without key). Retrying in")} ${e.retryIn} s …</div>`;
       setTimeout(load, e.retryIn * 1000);
       return;
     }
-    $("bars").innerHTML = `<div class="status error">Daten konnten nicht geladen werden (${esc(e.message)}). Läuft server.py?</div>`;
-    if (!cats.length) $("rows").innerHTML = '<tr><td colspan="8" class="status error">Keine Daten.</td></tr>';
+    $("bars").innerHTML = `<div class="status error">${L("Daten konnten nicht geladen werden", "Data could not be loaded")} (${esc(e.message)}). ${L("Läuft server.py?", "Is server.py running?")}</div>`;
+    if (!cats.length) $("rows").innerHTML = `<tr><td colspan="8" class="status error">${NO_DATA}</td></tr>`;
   }
 }
 
@@ -331,7 +352,7 @@ $("rows").addEventListener("click", (e) => {
 // --- DeFi-TVL (DefiLlama) -------------------------------------------------------
 
 // Deutsche Namen für die größeren DefiLlama-Kategorien (sonst Originalname)
-const DEFI_NAMES = {
+const DEFI_NAMES = EN ? {} : {
   "Lending": "Kredite", "Liquid Staking": "Liquid Staking", "Staking Pool": "Staking-Pools", "Dexs": "DEX",
   "Risk Curators": "Risiko-Kuratoren", "Onchain Capital Allocator": "On-Chain-Kapitalverwalter", "Restaking": "Restaking",
   "Basis Trading": "Basis-Trading", "CDP": "Besicherte Stablecoins (CDP)", "Yield": "Rendite", "RWA": "RWA",
@@ -358,23 +379,23 @@ function renderTvl() {
   document.querySelectorAll("#tvl-view button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === tvlView)));
   document.querySelectorAll("#tvl-period button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.period === tvlPeriod)));
   const t = defi.total;
-  $("tvl-total").innerHTML = `DeFi gesamt <b>${usd6(t.tvl)}</b> · 24 h ${change(t.change_1d)} · 7 T ${change(t.change_7d)}`
-    + ` · ${t.protocols.toLocaleString("de-DE")} Protokolle`;
-  const label = tvlPeriod === "change_1d" ? "24 h" : "7 T";
+  $("tvl-total").innerHTML = `${L("DeFi gesamt", "DeFi overall")} <b>${usd6(t.tvl)}</b> · 24 h ${change(t.change_1d)} · ${L("7 T", "7 d")} ${change(t.change_7d)}`
+    + ` · ${t.protocols.toLocaleString(LOCALE)} ${L("Protokolle", "protocols")}`;
+  const label = tvlPeriod === "change_1d" ? "24 h" : L("7 T", "7 d");
   // die größten nach TVL, dann nach Veränderung sortiert
   const list = defi[tvlView].filter((c) => c[tvlPeriod] != null).slice(0, TVL_BARS)
     .sort((a, b) => b[tvlPeriod] - a[tvlPeriod]);
-  if (!list.length) { $("tvl-bars").innerHTML = '<div class="status">Keine Daten.</div>'; return; }
+  if (!list.length) { $("tvl-bars").innerHTML = `<div class="status">${NO_DATA}</div>`; return; }
   const lim = Math.ceil(Math.max(0.01, ...list.map((c) => Math.abs(c[tvlPeriod]))) * 100) / 100;
   const name = (c) => (tvlView === "categories" ? DEFI_NAMES[c.name] || c.name : c.name);
   $("tvl-bars").innerHTML = list.map((c) => {
     const v = c[tvlPeriod];
-    const tip = `${name(c)}${name(c) !== c.name ? ` (${c.name})` : ""}\nTVL ${plain(usd6(c.tvl))} · 24 h ${c.change_1d != null ? pct(c.change_1d, 2) : "–"} · 7 T ${c.change_7d != null ? pct(c.change_7d, 2) : "–"}`
-      + (c.top.length ? `\nGrößte: ${c.top.map((x) => x.name).join(", ")}` : "")
-      + (c.protocols ? ` (${c.protocols} Protokolle)` : "");
+    const tip = `${name(c)}${name(c) !== c.name ? ` (${c.name})` : ""}\nTVL ${plain(usd6(c.tvl))} · 24 h ${c.change_1d != null ? pct(c.change_1d, 2) : "–"} · ${L("7 T", "7 d")} ${c.change_7d != null ? pct(c.change_7d, 2) : "–"}`
+      + (c.top.length ? `\n${L("Größte", "Largest")}: ${c.top.map((x) => x.name).join(", ")}` : "")
+      + (c.protocols ? ` (${c.protocols} ${L("Protokolle", "protocols")})` : "");
     return `<div class="bar-row tvl-row" data-tip="row" data-tip-now="${esc(tip)}" tabindex="0">
         <div class="bar-name">${esc(name(c))}</div>
-        <div class="bar-track" role="img" aria-label="${esc(name(c))}: ${pct(v)} in ${label}">
+        <div class="bar-track" role="img" aria-label="${esc(name(c))}: ${pct(v)} ${L("in", "in")} ${label}">
           <div class="bar ${v >= 0 ? "pos" : "neg"}" style="width:${Math.abs(v) / lim * 50}%"></div></div>
         <div class="bar-val">${change(v)}</div>
         <div class="bar-tvl">${usd6(c.tvl)}</div>
@@ -404,7 +425,7 @@ async function loadDefi() {
     attachTvl();
     if (cats.length) renderTable();
   } catch (e) {
-    if (!defi) $("tvl-bars").innerHTML = `<div class="status error">TVL nicht verfügbar (${esc(e.message)}).</div>`;
+    if (!defi) $("tvl-bars").innerHTML = `<div class="status error">${L("TVL nicht verfügbar", "TVL not available")} (${esc(e.message)}).</div>`;
   }
 }
 

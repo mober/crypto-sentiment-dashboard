@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Liquidationen</title>
 <link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
 <style>
   /* Long = Longs zwangsgeschlossen (Kurs fiel) → rot; Short = Shorts zwangsgeschlossen (Kurs stieg) → grün */
   :root { --long: var(--down); --short: var(--up); }
@@ -188,17 +189,35 @@
 
 <script src="format.js"></script>
 <script>
+addStatic({
+  "Liquidationen": "Liquidations", "Echte Zwangsschließungen auf Binance, Bybit und OKX, live mitgeschnitten ·": "Real forced closures on Binance, Bybit and OKX, recorded live ·",
+  "Marktübersicht": "Markets", "Liquidations-Heatmap": "Liquidation heatmap", "Börse": "Exchange", "Lade Daten …": "Loading data …",
+  "vor allem Longs liquidiert": "mostly longs liquidated", "vor allem Shorts liquidiert": "mostly shorts liquidated",
+  "Fläche = Betrag · Klick filtert den Live-Feed": "Area = amount · click filters the live feed",
+  "Anteil je Börse": "Share per exchange", "Größte Liquidation": "Largest liquidation",
+  "Liquidationen je Stunde (24 h) und BTC-Kurs": "Liquidations per hour (24 h) and BTC price", "Verlauf": "History",
+  "7 T": "7 d", "30 T": "30 d", "90 T": "90 d", "1 J": "1 y", "Lade Verlauf …": "Loading history …",
+  "Am stärksten betroffen": "Hit hardest", "Summe": "Total", "Größte Liquidationen": "Largest liquidations", "Datum": "Date",
+  "Seite": "Side", "Betrag": "Amount", "Coin, z. B. BTC": "Coin, e.g. BTC", "Coin filtern": "Filter coin", "Börse filtern": "Filter exchange",
+  "Alle Börsen": "All exchanges", "Mindestbetrag": "Minimum amount", "ab $0": "from $0", "ab $10.000": "from $10,000",
+  "ab $100.000": "from $100,000", "ab $1 Mio.": "from $1M", "Zeit": "Time", "Preis": "Price", "Lade …": "Loading …",
+  "Long = Long-Position zwangsgeschlossen (Kurs fiel), Short = Short-Position zwangsgeschlossen (Kurs stieg). Binance meldet je Coin höchstens die größte Liquidation pro Sekunde; Hyperliquid und kleinere Börsen fehlen. Die Summen liegen deshalb unter denen von Aggregatoren wie CoinGlass.":
+    "Long = long position force-closed (price fell), short = short position force-closed (price rose). Binance reports at most the largest liquidation per coin and second; Hyperliquid and smaller exchanges are missing. The totals are therefore below those of aggregators such as CoinGlass.",
+});
 let win = "24h", group = "coin", ov = null, coinFilter = "", seenIds = new Set(), firstFeed = true;
 
 const money = (v) => {
-  if (v >= 1e9) return "$" + (v / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " Mrd.";
-  if (v >= 1e6) return "$" + (v / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " Mio.";
-  if (v >= 1e3) return "$" + (v / 1e3).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " Tsd.";
-  return "$" + v.toLocaleString("de-DE", { maximumFractionDigits: 0 });
+  if (v >= 1e9) return "$" + (v / 1e9).toLocaleString(LOCALE, { maximumFractionDigits: 2 }) + L(" Mrd.", "B");
+  if (v >= 1e6) return "$" + (v / 1e6).toLocaleString(LOCALE, { maximumFractionDigits: 2 }) + L(" Mio.", "M");
+  if (v >= 1e3) return "$" + (v / 1e3).toLocaleString(LOCALE, { maximumFractionDigits: 1 }) + L(" Tsd.", "K");
+  return "$" + v.toLocaleString(LOCALE, { maximumFractionDigits: 0 });
 };
-const share = (part, total) => total > 0 ? (part / total * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " %" : "–";
-const clock = (t) => new Date(t * 1000).toLocaleTimeString("de-DE");
-const WIN_LABEL = { "1h": "1 Stunde", "4h": "4 Stunden", "12h": "12 Stunden", "24h": "24 Stunden" };
+const share = (part, total) => total > 0 ? (part / total * 100).toLocaleString(LOCALE, { maximumFractionDigits: 1 }) + PCT : "–";
+const clock = (t) => new Date(t * 1000).toLocaleTimeString(LOCALE);
+const WIN_LABEL = EN ? { "1h": "hour", "4h": "4 hours", "12h": "12 hours", "24h": "24 hours" }
+  : { "1h": "1 Stunde", "4h": "4 Stunden", "12h": "12 Stunden", "24h": "24 Stunden" };
+const NO_DATA = L("Keine Daten", "No data");
+const OTHER = L("Andere", "Other");
 const sideTag = (s) => `<span class="tag ${s}">${s === "long" ? "Long" : "Short"}</span>`;
 
 /* Squarified Treemap: Kacheln möglichst quadratisch */
@@ -232,8 +251,8 @@ function renderTree() {
   const box = $("tree");
   let items = (group === "coin" ? ov.coins.map((c) => ({ ...c, key: c.coin })) : ov.exchanges.map((x) => ({ ...x, key: x.name })))
     .filter((d) => d.total > 0).map((d) => ({ ...d, v: d.total }));
-  if (group === "coin" && ov.coins_other > 0) items.push({ key: "Andere", v: ov.coins_other, total: ov.coins_other, long: 0, short: 0, other: true });
-  if (!items.length) { box.innerHTML = `<div class="status">Noch keine Liquidationen in den letzten ${WIN_LABEL[win]}.</div>`; return; }
+  if (group === "coin" && ov.coins_other > 0) items.push({ key: OTHER, v: ov.coins_other, total: ov.coins_other, long: 0, short: 0, other: true });
+  if (!items.length) { box.innerHTML = `<div class="status">${L(`Noch keine Liquidationen in den letzten ${WIN_LABEL[win]}.`, `No liquidations in the last ${WIN_LABEL[win]} yet.`)}</div>`; return; }
   const W = 1000, H = 1000 * box.clientHeight / Math.max(box.clientWidth, 1);
   box.innerHTML = squarify(items, 0, 0, W, H).map((r) => {
     const area = (r.w / W) * (r.h / H), cls = area < .004 ? "xxs" : area < .012 ? "xs" : area < .03 ? "s" : "";
@@ -248,7 +267,7 @@ function renderTree() {
 function renderTotals() {
   $("totals").innerHTML = ["1h", "4h", "12h", "24h"].map((k) => {
     const t = ov.totals[k], lp = t.total ? t.long / t.total * 100 : 50;
-    return `<div class="card tot"><div class="label"><span>${k} gesamt</span><span>${t.count.toLocaleString("de-DE")} Liq.</span></div>
+    return `<div class="card tot"><div class="label"><span>${k} ${L("gesamt", "total")}</span><span>${t.count.toLocaleString(LOCALE)} Liq.</span></div>
       <div class="big">${money(t.total)}</div>
       <div class="lsbar"><i style="width:${lp}%;background:var(--long)"></i><i style="width:${100 - lp}%;background:var(--short)"></i></div>
       <div class="lsrow"><span class="l">Long ${money(t.long)}</span><span class="s">Short ${money(t.short)}</span></div></div>`;
@@ -263,8 +282,8 @@ function renderBreakdown() {
       <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--long)" stroke-width="16" stroke-dasharray="${lp * c} ${c}" transform="rotate(-90 60 60)"/></svg>
     <div><div class="val">${lp >= .5 ? "Long" : "Short"} ${share(Math.max(t.long, t.short), t.total)}</div>
       <div class="lsrow" style="flex-direction:column;gap:2px"><span class="l">Long ${money(t.long)} · ${share(t.long, t.total)}</span><span class="s">Short ${money(t.short)} · ${share(t.short, t.total)}</span></div>
-      <div class="sub" style="margin-top:6px">${t.long > t.short ? "Longs dominant: Kurse fielen" : t.short > t.long ? "Shorts dominant: Kurse stiegen" : "ausgeglichen"}</div></div>`
-    : `<div class="status">Keine Daten</div>`;
+      <div class="sub" style="margin-top:6px">${t.long > t.short ? L("Longs dominant: Kurse fielen", "Longs dominant: prices fell") : t.short > t.long ? L("Shorts dominant: Kurse stiegen", "Shorts dominant: prices rose") : L("ausgeglichen", "balanced")}</div></div>`
+    : `<div class="status">${NO_DATA}</div>`;
 
   const total = ov.exchanges.reduce((s, x) => s + x.total, 0);
   $("exchanges").innerHTML = ov.exchanges.map((x) => {
@@ -272,23 +291,28 @@ function renderBreakdown() {
     return `<div class="ex-row"><b>${esc(x.name)}</b><div class="bar" title="Long ${money(x.long)} · Short ${money(x.short)}">
       <i style="width:${w * lp / 100}%;background:var(--long)"></i><i style="width:${w * (100 - lp) / 100}%;background:var(--short)"></i></div>
       <span style="text-align:right">${share(x.total, total)}</span></div>
-      <div class="sub" style="margin:-6px 0 0 80px">${money(x.total)} · ${x.count.toLocaleString("de-DE")} Liq.</div>`;
+      <div class="sub" style="margin:-6px 0 0 80px">${money(x.total)} · ${x.count.toLocaleString(LOCALE)} Liq.</div>`;
   }).join("");
 
-  const L = ov.largest;
-  $("largest").innerHTML = L ? `<div class="amt">${money(L.usd)}</div>
-      <div>${sideTag(L.side)} <b>${esc(L.coin)}</b> auf ${esc(L.exchange)}</div>
-      <div class="sub" style="margin-top:6px">${esc(L.symbol)} · Preis ${usd(L.price)} · ${clock(L.time)} Uhr</div>`
-    : `<div class="status">Keine Daten</div>`;
+  const big = ov.largest;
+  $("largest").innerHTML = big ? `<div class="amt">${money(big.usd)}</div>
+      <div>${sideTag(big.side)} <b>${esc(big.coin)}</b> ${L("auf", "on")} ${esc(big.exchange)}</div>
+      <div class="sub" style="margin-top:6px">${esc(big.symbol)} · ${L("Preis", "Price")} ${usd(big.price)} · ${clock(big.time)}${L(" Uhr", "")}</div>`
+    : `<div class="status">${NO_DATA}</div>`;
 }
 
 function renderSummary() {
-  const t = ov.totals[win], top = ov.coins[0], L = ov.largest;
-  if (!t.count) { $("summary").innerHTML = `In den letzten ${WIN_LABEL[win]} wurden noch keine Liquidationen erfasst.`; return; }
-  $("summary").innerHTML = `In den letzten <b>${WIN_LABEL[win]}</b> wurden <b>${t.count.toLocaleString("de-DE")}</b> Positionen liquidiert,
+  const t = ov.totals[win], top = ov.coins[0], big = ov.largest;
+  if (!t.count) { $("summary").innerHTML = L(`In den letzten ${WIN_LABEL[win]} wurden noch keine Liquidationen erfasst.`, `No liquidations recorded in the last ${WIN_LABEL[win]} yet.`); return; }
+  $("summary").innerHTML = EN
+    ? `In the last <b>${WIN_LABEL[win]}</b>, <b>${t.count.toLocaleString(LOCALE)}</b> positions were liquidated,
+    totalling <b>${money(t.total)}</b> (long ${share(t.long, t.total)}, short ${share(t.short, t.total)}).
+    ${top ? `Hit hardest: <b>${esc(top.coin)}</b> with ${money(top.total)}.` : ""}
+    ${big ? `The largest single liquidation: <b>${money(big.usd)}</b> on ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "long" : "short"} at ${usd(big.price)}).` : ""}`
+    : `In den letzten <b>${WIN_LABEL[win]}</b> wurden <b>${t.count.toLocaleString(LOCALE)}</b> Positionen liquidiert,
     zusammen <b>${money(t.total)}</b> (Long ${share(t.long, t.total)}, Short ${share(t.short, t.total)}).
     ${top ? `Am stärksten betroffen: <b>${esc(top.coin)}</b> mit ${money(top.total)}.` : ""}
-    ${L ? `Die größte einzelne Liquidation: <b>${money(L.usd)}</b> auf ${esc(L.exchange)} (${esc(L.symbol)}, ${L.side === "long" ? "Long" : "Short"} bei ${usd(L.price)}).` : ""}`;
+    ${big ? `Die größte einzelne Liquidation: <b>${money(big.usd)}</b> auf ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "Long" : "Short"} bei ${usd(big.price)}).` : ""}`;
 }
 
 let btc = null;
@@ -327,11 +351,14 @@ function renderStatus(st) {
   const hrs = st.coverage_hours, down = st.sources.filter((s) => !s.connected);
   $("live").classList.toggle("off", down.length === st.sources.length);
   const notes = [];
-  if (hrs < 24) notes.push(`Der Mitschnitt läuft seit ${clock(st.since)} Uhr (${hrs.toLocaleString("de-DE", { maximumFractionDigits: 1 })} h). Längere Zeitfenster sind erst nach dieser Laufzeit vollständig.`);
-  if (down.length) notes.push(`Gerade nicht verbunden: ${down.map((s) => s.name).join(", ")} – verbindet sich automatisch neu.`);
+  const hrsTxt = hrs.toLocaleString(LOCALE, { maximumFractionDigits: 1 });
+  if (hrs < 24) notes.push(L(`Der Mitschnitt läuft seit ${clock(st.since)} Uhr (${hrsTxt} h). Längere Zeitfenster sind erst nach dieser Laufzeit vollständig.`,
+    `Recording since ${clock(st.since)} (${hrsTxt} h). Longer windows are complete only after this runtime.`));
+  if (down.length) notes.push(L(`Gerade nicht verbunden: ${down.map((s) => s.name).join(", ")} – verbindet sich automatisch neu.`,
+    `Currently not connected: ${down.map((s) => s.name).join(", ")} – reconnects automatically.`));
   $("notice").hidden = !notes.length;
   $("notice").innerHTML = notes.join("<br>");
-  $("sources").innerHTML = "Quellen: " + st.sources.map((s) => `${s.name} <b class="${s.connected ? "ok" : "err"}">${s.connected ? "●" : "○"}</b> ${s.events.toLocaleString("de-DE")} seit Start`).join(" · ") + "<br>";
+  $("sources").innerHTML = L("Quellen: ", "Sources: ") + st.sources.map((s) => `${s.name} <b class="${s.connected ? "ok" : "err"}">${s.connected ? "●" : "○"}</b> ${s.events.toLocaleString(LOCALE)} ${L("seit Start", "since start")}`).join(" · ") + "<br>";
 }
 
 // Letzter Stand im Browser: beim Öffnen der Seite sofort anzeigen, danach frisch laden
@@ -358,7 +385,7 @@ async function loadOverview() {
     renderOverview();
   } catch (e) {
     if (ov && ov.window === win) return;   // letzten Stand stehen lassen
-    $("tree").innerHTML = `<div class="status">Fehler: ${esc(e.message)}</div>`;
+    $("tree").innerHTML = `<div class="status">${L("Fehler", "Error")}: ${esc(e.message)}</div>`;
   }
 }
 
@@ -372,7 +399,7 @@ async function loadFeed() {
     renderFeed(d);
   } catch (e) {
     if (!firstFeed) return;   // letzten Stand stehen lassen
-    $("feed").innerHTML = `<tr><td colspan="6" class="status">Fehler: ${esc(e.message)}</td></tr>`;
+    $("feed").innerHTML = `<tr><td colspan="6" class="status">${L("Fehler", "Error")}: ${esc(e.message)}</td></tr>`;
   }
 }
 
@@ -386,12 +413,12 @@ function renderFeed(d) {
     });
     firstFeed = false;
     if (seenIds.size > 5000) seenIds = new Set([...seenIds].slice(-1000));
-    $("feed").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6" class="status">Keine Liquidationen für diesen Filter.</td></tr>`;
+    $("feed").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6" class="status">${L("Keine Liquidationen für diesen Filter.", "No liquidations for this filter.")}</td></tr>`;
 }
 
 // --- Verlauf aus der Datenbank (Wochen bis 1 Jahr); folgt dem Coin-Filter
 let histDays = 30;
-const dayLabel = (d) => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+const dayLabel = (d) => d.toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit" });
 function bucketStart(t, hours) {
   const d = new Date(t * 1000);
   if (hours === 24) d.setHours(0, 0, 0, 0);
@@ -416,11 +443,11 @@ function renderHistory(h) {
   const bs = [...buckets.values()];
   const long = bs.reduce((a, b) => a + b.long, 0), short = bs.reduce((a, b) => a + b.short, 0), count = bs.reduce((a, b) => a + b.count, 0);
   const days = Math.max(1 / 24, (now - from) / 86400);
-  $("histScope").textContent = coinFilter ? "· " + coinFilter : "· alle Coins";
-  $("histBucket").textContent = size === 24 ? "je Tag" : "je 4 Stunden";
-  $("histSum").innerHTML = `<div>Summe<b>${money(long + short)}</b></div><div class="l">Longs<b>${money(long)}</b></div>
-    <div class="s">Shorts<b>${money(short)}</b></div><div>Positionen<b>${count.toLocaleString("de-DE")}</b></div>
-    <div>Ø pro Tag<b>${money((long + short) / days)}</b></div>`;
+  $("histScope").textContent = coinFilter ? "· " + coinFilter : L("· alle Coins", "· all coins");
+  $("histBucket").textContent = size === 24 ? L("je Tag", "per day") : L("je 4 Stunden", "per 4 hours");
+  $("histSum").innerHTML = `<div>${L("Summe", "Total")}<b>${money(long + short)}</b></div><div class="l">Longs<b>${money(long)}</b></div>
+    <div class="s">Shorts<b>${money(short)}</b></div><div>${L("Positionen", "Positions")}<b>${count.toLocaleString(LOCALE)}</b></div>
+    <div>${L("Ø pro Tag", "Avg per day")}<b>${money((long + short) / days)}</b></div>`;
 
   const W = 1000, H = 260, pad = { l: 64, r: 10, t: 14, b: 26 }, half = (H - pad.t - pad.b) / 2, mid = pad.t + half;
   const max = Math.max(1, ...bs.map((b) => Math.max(b.long, b.short)));
@@ -429,7 +456,7 @@ function renderHistory(h) {
   let svg = `<line x1="${pad.l}" x2="${W - pad.r}" y1="${mid}" y2="${mid}" stroke="var(--border)"/>`;
   bs.forEach((b, i) => {
     const x = pad.l + i * bw + gap / 2, sh = b.short / max * half, lh = b.long / max * half, d = new Date(b.t * 1000);
-    const when = size === 24 ? d.toLocaleDateString("de-DE") : `${d.toLocaleDateString("de-DE")} ${String(d.getHours()).padStart(2, "0")}–${String((d.getHours() + size) % 24).padStart(2, "0")} Uhr`;
+    const when = size === 24 ? d.toLocaleDateString(LOCALE) : `${d.toLocaleDateString(LOCALE)} ${String(d.getHours()).padStart(2, "0")}–${String((d.getHours() + size) % 24).padStart(2, "0")}${L(" Uhr", "h")}`;
     const tip = `<title>${when}\nShorts ${money(b.short)} · Longs ${money(b.long)}</title>`;
     svg += `<rect x="${x}" y="${mid - sh}" width="${Math.max(0.5, bw - gap)}" height="${sh}" fill="var(--short)">${tip}</rect>`;
     svg += `<rect x="${x}" y="${mid}" width="${Math.max(0.5, bw - gap)}" height="${lh}" fill="var(--long)">${tip}</rect>`;
@@ -437,19 +464,20 @@ function renderHistory(h) {
   });
   svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
   $("hist").innerHTML = count ? `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${svg}</svg>`
-    : `<div class="status">Für diesen Zeitraum sind noch keine Liquidationen gespeichert.</div>`;
+    : `<div class="status">${L("Für diesen Zeitraum sind noch keine Liquidationen gespeichert.", "No liquidations stored for this period yet.")}</div>`;
 
   $("histCoins").innerHTML = h.coins.map((c) => `<tr class="click" data-coin="${esc(c.coin)}"><td class="left"><b>${esc(c.coin)}</b></td>
     <td>${money(c.long)}</td><td>${money(c.short)}</td><td><b>${money(c.total)}</b></td></tr>`).join("")
     || `<tr><td colspan="4" class="status">–</td></tr>`;
-  $("histLargest").innerHTML = h.largest.map((o) => `<tr><td class="left">${new Date(o.time * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+  $("histLargest").innerHTML = h.largest.map((o) => `<tr><td class="left">${new Date(o.time * 1000).toLocaleString(LOCALE, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
     <td class="left">${esc(o.exchange)}</td><td class="left"><b>${esc(o.coin)}</b></td><td class="left">${sideTag(o.side)}</td>
     <td class="${o.usd >= 1e6 ? "whale" : ""}">${money(o.usd)}</td></tr>`).join("")
     || `<tr><td colspan="5" class="status">–</td></tr>`;
   const sinceDate = new Date(h.since * 1000);
-  $("histNote").textContent = `Gespeichert wird seit ${sinceDate.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })} Uhr`
-    + (now - h.since < histDays * 86400 ? " – der Zeitraum ist deshalb noch nicht vollständig." : ".")
-    + " Lücken entstehen, wenn der Server nicht lief.";
+  const sinceTxt = sinceDate.toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" });
+  $("histNote").textContent = L(`Gespeichert wird seit ${sinceTxt} Uhr`, `Stored since ${sinceTxt}`)
+    + (now - h.since < histDays * 86400 ? L(" – der Zeitraum ist deshalb noch nicht vollständig.", " – so the period is not complete yet.") : ".")
+    + L(" Lücken entstehen, wenn der Server nicht lief.", " Gaps occur when the server was not running.");
 }
 
 async function loadHistory() {
@@ -460,7 +488,7 @@ async function loadHistory() {
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     if (days === histDays && coin === coinFilter) renderHistory(d);
   } catch (e) {
-    $("hist").innerHTML = `<div class="status">Verlauf nicht verfügbar: ${esc(e.message)}</div>`;
+    $("hist").innerHTML = `<div class="status">${L("Verlauf nicht verfügbar", "History not available")}: ${esc(e.message)}</div>`;
   }
 }
 
@@ -490,7 +518,7 @@ $("tree").addEventListener("click", (e) => {
   const t = e.target.closest(".tile"); if (!t) return;
   const k = t.dataset.key;
   if (group === "exchange") { $("fEx").value = k; firstFeed = true; seenIds.clear(); loadFeed(); return; }
-  if (k !== "Andere") setCoin(coinFilter === k ? "" : k);
+  if (k !== OTHER) setCoin(coinFilter === k ? "" : k);
 });
 let typing;
 $("fCoin").addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => setCoin($("fCoin").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "")), 350); });
