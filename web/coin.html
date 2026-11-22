@@ -127,6 +127,28 @@
     </div>
   </section>
 
+  <section class="card onchain" id="onchain">
+    <div class="breakdown-head">
+      <div class="label"><span data-tip="onchain" tabindex="0">On-Chain</span> (Coin Metrics, Tageswerte bis gestern)</div>
+      <div class="note" id="oc-note"></div>
+    </div>
+    <div class="stats oc-stats" id="oc-stats"></div>
+    <div class="oc-grid">
+      <div class="oc-flow">
+        <div class="mini-head"><span class="mini-title"><span data-tip="ocFlow" tabindex="0">Netto-Zufluss zu Börsen</span> je Tag</span><span class="mini-legend" id="oc-flow-legend"></span></div>
+        <div class="mini-wrap"><div class="mini-chart" id="oc-flow-chart"></div></div>
+      </div>
+      <div class="oc-supply">
+        <div class="mini-head"><span class="mini-title"><span data-tip="ocSupply" tabindex="0">Bestand auf Börsen</span> und Kurs</span><span class="mini-legend" id="oc-supply-legend"></span></div>
+        <div class="mini-wrap"><div class="mini-chart" id="oc-supply-chart"></div></div>
+      </div>
+      <div class="oc-mvrv">
+        <div class="mini-head"><span class="mini-title"><span data-tip="ocMvrv" tabindex="0">MVRV</span> und Kurs (2 Jahre)</span><span class="mini-legend" id="oc-mvrv-legend"></span></div>
+        <div class="mini-wrap"><div class="mini-chart" id="oc-mvrv-chart"></div><div class="mini-msg" id="oc-msg">Lade …</div></div>
+      </div>
+    </div>
+  </section>
+
   <section class="card liq" id="liq">
     <div class="breakdown-head">
       <div class="label"><span data-tip="liqMap" tabindex="0">Liquidations-Heatmap</span> (Modell, Binance Futures, 1 h, ~21 Tage)</div>
@@ -159,7 +181,7 @@
 
   <footer>Orderbuch: Binance Spot bzw. Futures, Momentaufnahme plus Änderungen per WebSocket direkt im Browser.<br>
     Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
-    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · News: RSS-Feeds deutschsprachiger Krypto-Medien.</footer>
+    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko, Coin Metrics (On-Chain, MVRV) · News: RSS-Feeds deutschsprachiger Krypto-Medien.</footer>
 </main>
 
 <script src="format.js"></script>
@@ -172,6 +194,7 @@
 <script src="coin-liqmap.js"></script>
 <script src="coin-fees.js"></script>
 <script src="coin-book.js"></script>
+<script src="coin-onchain.js"></script>
 <script>
 // --- Start ---------------------------------------------------------------
 
@@ -185,6 +208,7 @@ if (!validSymbol) {
   $("history").hidden = true;
   $("liq").hidden = true;
   $("book").hidden = true;
+  $("onchain").hidden = true;
   $("breakdown").hidden = true;
 } else {
   document.title = symbol + " – Details";
@@ -196,6 +220,7 @@ if (!validSymbol) {
     $("derivs").hidden = true;
     $("history").hidden = true;
     $("liq").hidden = true;
+    $("onchain").hidden = true;
   } else {
     initChart();
     loadChart();
@@ -207,6 +232,8 @@ if (!validSymbol) {
     loadHistory();
     initLiqChart();
     loadLiquidations();
+    initOnchainCharts();
+    loadOnchain();
     setInterval(refreshChart, CHART_REFRESH_MS);
   }
   startBook();   // Orderbuch braucht keine Chart-Bibliothek (eigenes Canvas)

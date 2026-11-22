@@ -56,7 +56,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln). `coin.html` enthält nur HTML und
   den Start; Styles in `coin.css`, Code je Abschnitt in `coin-base.js` (gemeinsame Konstanten, `themeOptions`,
   `miniChart`, Kacheln), `coin-head.js` (Kopf, Lagebild, News, Kennzahlen, Score-Balken), `coin-chart.js`
-  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js`, `coin-book.js` –
+  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js`, `coin-book.js`, `coin-onchain.js` –
   normale Skripte ohne Module/Build, alle im selben globalen Bereich,
   `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):
   Art und Kategorien mit Erklärung, Risikostufe mit Stärken/Risiken, aktuelle Marktlage, Beschreibung
@@ -75,6 +75,11 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   (`book.floor`/`book.ceil`) wird nichts gezählt. Spot zuerst; fehlt das Paar oder ist es leer (delistet),
   Futures. Tiefenchart als eigenes Canvas (keine Chart-Bibliothek), Kennzahlen über `statTile`, Tooltips
   `orderbook`, `bookSpread`, `bookImbalance`, `bookWall`.
+- On-Chain-Karte (`coin-onchain.js`, Endpoint `/api/onchain?symbol=…`, `get_onchain` in `sentiment.py`, Cache 1 h):
+  Coin Metrics Community-API ohne Key. Börsenzu-/abflüsse und Bestand auf Börsen nur BTC/ETH, MVRV für viele
+  größere Coins; 2 Jahre Tageswerte. Erst alle Kennzahlen, bei HTTP 400 nur MVRV. **Coin Metrics antwortet auf
+  Abfragen, die es länger nicht gab, manchmal erst nach > 40 s** (danach < 1 s): Zeitgrenze `COINMETRICS_TIMEOUT`
+  60 s, Caches mit `stale=True`, Server lädt On-Chain und Score-Historie der Haupt-Coins beim Start vor.
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 
@@ -91,6 +96,10 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Vergleich alle Tage). Anzeige unter dem Score im Kopf der Detailseite (`renderTrack` in `coin-score.js`,
   Zonen wie `score_zone`). Gewichte oder Zonen ändern → beide Stellen und Tooltips `score`/`trackRecord` anpassen.
 - DVOL gibt es nur für BTC und ETH.
+- MVRV (`MVRV_SCALE`, Gewicht 1) kommt von Coin Metrics Community (`get_mvrv`, letzter Tageswert = gestern),
+  nicht für alle Coins (z. B. nicht SOL). `get_mvrv` wartet nie lange: bekannter Wert sofort (Erneuerung stündlich
+  im Hintergrund), nur der erste Abruf je Coin wartet bis `MVRV_WAIT` (8 s), sonst fehlt MVRV im Score vorerst. Skala aus BTC vor 2018, geprüft ab 2018 auf 7 Coins. Der Börsenbestand
+  wurde ebenfalls getestet, ist aber seit 2022 in der Richtung umgedreht → nur Anzeige, nicht im Score.
 - Funding wird auf 8 h umgerechnet (`normalize_funding`), da manche Coins alle 4 h oder 1 h zahlen;
   `FUNDING_SCALE` gilt pro 8 h.
 - Kerzen (Chart und MA200/RSI) kommen von Binance Spot; fehlt das Spot-Paar oder ist die

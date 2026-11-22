@@ -376,7 +376,7 @@ document.addEventListener("click", (e) => {
   setupCollapse(sec);
 });
 
-["chart-card", "book", "fees", "derivs", "liq", "history"].forEach((id) => setupCollapse($(id)));
+["chart-card", "book", "fees", "derivs", "onchain", "liq", "history"].forEach((id) => setupCollapse($(id)));
 
 async function loadDailyStats() {
   try {

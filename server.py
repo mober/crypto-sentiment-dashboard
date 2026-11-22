@@ -173,6 +173,7 @@ _fees_cache = TTLCache("fees", FEES_CACHE_SECONDS, stale=True)   # Schlüssel: "
 _news_cache = TTLCache("news", NEWS_CACHE_SECONDS, max_entries=1, stale=True)   # alle Feeds gemeinsam
 _liq_cache = TTLCache("liquidation-inputs", CACHE_SECONDS, stale=True)   # Stundenkerzen und OI
 _history_cache = TTLCache("score-history", CACHE_SECONDS, stale=True)   # Score je Tag
+_onchain_cache = TTLCache("onchain", 3600, max_entries=300, stale=True)   # Coin Metrics, Tageswerte
 _profile_cache = TTLCache("profile", PROFILE_CACHE_SECONDS, max_entries=300, stale=True)   # Schlüssel: CoinGecko-ID
 _profile_ids = TTLCache("profile-ids", 30 * 86400, max_entries=500)   # Symbol → CoinGecko-ID (ohne ID-Parameter)
 for _symbol, _coin_id in {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana"}.items():
@@ -536,6 +537,24 @@ def api_score_history(q: Query) -> Dict[str, Any]:
     return found(get_score_history(symbol), f"Kein Score-Verlauf für {symbol} (keine Binance-Daten)")
 
 
+def get_onchain(symbol: str) -> Optional[Dict[str, Any]]:
+    """Börsenflüsse, Börsenbestand und MVRV je Tag (Coin Metrics); None, wenn der Coin dort fehlt.
+    „Nicht vorhanden“ wird mitgecacht (Coin Metrics braucht manchmal > 20 s für diese Antwort)."""
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        try:
+            return sentiment.get_onchain(symbol) or {"available": False}
+        except Exception as exc:   # Netzfehler: letzten Stand behalten, bald erneut versuchen
+            print(f"  [warn] get_onchain: {exc}")
+            return None
+    result = _onchain_cache.get(symbol, load)
+    return result if result and result.get("available", True) else None
+
+
+def api_onchain(q: Query) -> Dict[str, Any]:
+    symbol = valid_symbol(q)
+    return found(get_onchain(symbol), f"Keine On-Chain-Daten für {symbol} bei Coin Metrics")
+
+
 def api_defi(q: Query) -> Dict[str, Any]:
     return found(get_defi_tvl(), "DefiLlama nicht erreichbar", 502)
 
@@ -603,6 +622,7 @@ ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
     "/api/coin-info": api_coin_info,
     "/api/klines": api_klines,
     "/api/score-history": api_score_history,
+    "/api/onchain": api_onchain,
     "/api/defi": api_defi,
     "/api/fees": api_fees,
     "/api/news": api_news,
@@ -661,6 +681,14 @@ def main() -> None:
     # Echte Liquidationen von Binance, Bybit und OKX im Hintergrund mitschneiden
     global _collector
     _collector = liquidations.Collector(DATA_DIR).start()
+
+    # On-Chain und Score-Historie (mit MVRV) für die Haupt-Coins vorladen: Coin Metrics antwortet
+    # auf eine Abfrage, die es länger nicht gab, manchmal erst nach über 40 s
+    def warm_onchain() -> None:
+        for sym in SYMBOLS:
+            get_onchain(sym)
+            get_score_history(sym)
+    threading.Thread(target=warm_onchain, daemon=True, name="onchain-warmup").start()
 
     # Dashboard-Daten schon beim Start laden, damit der erste Seitenaufruf nicht warten muss
     threading.Thread(target=_refresh_in_background, daemon=True, name="sentiment-warmup").start()

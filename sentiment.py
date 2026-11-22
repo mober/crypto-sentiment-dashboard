@@ -35,7 +35,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -65,6 +65,8 @@ MA200_SCALE = [(-0.20, -100), (0.10, 0), (0.35, 100)]  # +10 % = normaler Aufwä
 LS_SCALE = [(0.9, -100), (2.0, 0), (3.5, 100)]      # Long- zu Short-Accounts; auf Binance meist ~2
 RSI_SCALE = [(30, -100), (50, 0), (70, 100)]
 DVOL_SCALE = [(-1.5, 100), (0.0, 0), (1.5, -100)]   # z-Wert: ruhig = Sorglosigkeit, hoch = Panik
+# MVRV (Coin Metrics): Ankerpunkte nur aus BTC vor 2018, geprüft ab 2018 auf BTC, ETH, XRP, LTC, DOGE, ADA, LINK
+MVRV_SCALE = [(0.9, -100), (1.6, 0), (3.5, 100)]
 # Ersatz-Signale aus CoinGecko-Kursdaten für Coins ohne Binance-Futures oder -Kursdaten
 MOMENTUM_7D_SCALE = [(-0.25, -100), (0.0, 0), (0.25, 100)]
 MOMENTUM_30D_SCALE = [(-0.50, -100), (0.0, 0), (0.50, 100)]
@@ -111,14 +113,15 @@ def coingecko_retry_in() -> float:
     return max(0.0, _cg_next - time.time())
 
 
-def fetch_json(url: str) -> Any:
+def fetch_json(url: str, timeout: float = 0) -> Any:
+    """JSON abfragen; timeout 0 = Standard (TIMEOUT)."""
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     coingecko = COINGECKO_HOST in url
     for attempt in range(RATE_LIMIT_RETRIES + 1):
         if coingecko:
             _coingecko_wait()
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code != 429:
@@ -1172,6 +1175,13 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
             v = mo["rsi_hourly"]
             add("RSI (14 Std.)", scale(v, RSI_SCALE), f"{v:.0f}", "überkauft", "überverkauft", "neutral")
 
+    mv = d.get("mvrv")
+    if mv:
+        v = mv["value"]
+        add("MVRV", scale(v, MVRV_SCALE), f"{v:.2f}".replace(".", ","),
+            "Halter weit im Gewinn" if v >= 3 else "Halter deutlich im Gewinn",
+            "Halter im Schnitt im Verlust" if v < 1 else "nahe am Einstand der Halter", "normal")
+
     ls = d.get("long_short")
     if ls:
         r = ls["ratio"]
@@ -1338,6 +1348,17 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> O
         strong("RSI (14 Std.)",
                (f"RSI (Stunden) {num(mo['rsi_hourly'], 0)}: kurzfristig überverkauft", "kurzfristig überverkauft"),
                (f"RSI (Stunden) {num(mo['rsi_hourly'], 0)}: kurzfristig überkauft", "kurzfristig überkauft"))
+    mvd = d.get("mvrv")
+    if mvd:
+        mvs = num(mvd["value"], 2)
+        v = mvd["value"]
+        strong("MVRV",
+               (f"MVRV {mvs}: Halter im Schnitt im Verlust – bei Bitcoin lagen frühere Tiefs hier", "Halter im Verlust")
+               if v < 1 else (f"MVRV {mvs}: Kurs nahe am durchschnittlichen Einstand der Halter, "
+                              "historisch eine eher günstige Zone", "nahe am Einstand"),
+               (f"MVRV {mvs}: Halter weit im Gewinn – bei Bitcoin lagen frühere Hochs hier", "Halter weit im Gewinn")
+               if v >= 3 else (f"MVRV {mvs}: Halter deutlich im Gewinn, Gewinnmitnahmen werden wahrscheinlicher",
+                               "Halter deutlich im Gewinn"))
     if fr:
         rate = f"Funding {_pct_de(fr['avg_7d'], 4)} pro 8 h"
         strong("Funding Rate",
@@ -1493,7 +1514,7 @@ def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[D
 
     Jeder Tag nutzt die Daten, die bis zu seinem Ende (UTC) vorlagen; der heutige Tag die bis jetzt.
     Enthalten sind nur Signale mit Historie: Fear & Greed, Funding, Open Interest und
-    Long/Short (Binance: nur 30 Tage), Preis vs. MA200, RSI und DVOL. Die CoinGecko-Ersatzsignale
+    Long/Short (Binance: nur 30 Tage), Preis vs. MA200, RSI, DVOL und MVRV. Die CoinGecko-Ersatzsignale
     fehlen. None, wenn es weder Binance-Kerzen noch -Futures gibt."""
     fut = "https://fapi.binance.com/futures/data"
     jobs = {
@@ -1505,6 +1526,7 @@ def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[D
     }
     if symbol in DVOL_SYMBOLS:
         jobs["dvol"] = (get_dvol_history, symbol, days)
+    jobs["mvrv"] = (get_mvrv_history, symbol, days + 2)
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         futures = {k: pool.submit(safe, *job) for k, job in jobs.items()}
         got = {k: f.result() for k, f in futures.items()}
@@ -1518,6 +1540,7 @@ def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[D
     oi = [(h["timestamp"] // 1000, float(h["sumOpenInterestValue"])) for h in got["oi"] or []]
     ls = [(h["timestamp"] // 1000, float(h["longShortRatio"])) for h in got["ls"] or []]
     dvol = got.get("dvol") or []
+    mvrv = got.get("mvrv") or []
 
     now = time.time()
     today = int(now // 86400 * 86400)
@@ -1548,6 +1571,9 @@ def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[D
         if j >= DVOL_WINDOW and end - dvol[j][0] <= 2 * 86400:
             window = [c for _, c in dvol[j - DVOL_WINDOW:j]]  # wie get_dvol: die 90 Tage davor
             d["dvol"] = {"value": dvol[j][1], "z": (dvol[j][1] - statistics.mean(window)) / statistics.stdev(window)}
+        m = _as_of(mvrv, end - 1, 2 * 86400)   # Wert des Tages selbst (Zeitstempel 00:00), nicht des Folgetags
+        if m is not None:
+            d["mvrv"] = {"value": m}
         signals = score(d)
         if not signals:
             continue
@@ -1598,6 +1624,115 @@ def score_track_record(days: List[Dict[str, Any]], horizons: Tuple[int, ...] = (
             "since": min(with_price) if with_price else None}
 
 
+# --- On-Chain (Coin Metrics Community-API, kostenlos ohne Key) -------------------------------
+# Börsenflüsse und -bestand gibt es dort nur für BTC und ETH, MVRV für viele größere Coins (nicht SOL).
+# Tageswerte, der letzte Tag ist gestern. Anzeige auf der Detailseite (Karte „On-Chain“).
+COINMETRICS_URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+ONCHAIN_DAYS = 730
+COINMETRICS_TIMEOUT = 60
+ONCHAIN_METRICS = ("FlowInExUSD,FlowOutExUSD,SplyExNtv,CapMVRVCur,PriceUSD", "CapMVRVCur,PriceUSD")
+
+
+def get_mvrv_history(symbol: str, days: int, timeout: float = COINMETRICS_TIMEOUT) -> List[Tuple[int, float]]:
+    """MVRV je Tag als (Zeit, Wert); leer, wenn Coin Metrics den Coin nicht führt."""
+    start = time.strftime("%Y-%m-%d", time.gmtime(time.time() - days * 86400))
+    try:
+        rows = fetch_json(f"{COINMETRICS_URL}?assets={symbol.lower()}&metrics=CapMVRVCur&frequency=1d"
+                          f"&start_time={start}&page_size=10000", timeout).get("data") or []
+    except urllib.error.HTTPError as exc:
+        if exc.code in (400, 403, 404):
+            return []
+        raise
+    return [(int(datetime.strptime(r["time"][:10], "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()),
+             float(r["CapMVRVCur"])) for r in rows if r.get("CapMVRVCur")]
+
+
+# Aktueller MVRV-Wert für den Score. Coin Metrics antwortet meist in < 1 s, aber unregelmäßig auch erst
+# nach 40 s und mehr – deshalb wartet der Score nie darauf: Bekannte Werte (bis 2 Tage alt) kommen sofort
+# und werden im Hintergrund erneuert; nur der allererste Abruf je Coin wartet kurz (MVRV_WAIT).
+MVRV_REFRESH_SECONDS = 3600      # Tageswert: stündlich erneuern reicht
+MVRV_MAX_AGE = 2 * 86400         # älter wird nicht mehr verwendet
+MVRV_WAIT = 8
+_mvrv_cache: Dict[str, Tuple[float, Optional[Dict[str, Any]]]] = {}   # Symbol → (geladen um, Wert oder None)
+_mvrv_loading: set = set()
+_mvrv_lock = threading.Lock()
+
+
+def _load_mvrv(symbol: str) -> None:
+    try:
+        url = (f"{COINMETRICS_URL}?assets={symbol.lower()}&metrics=CapMVRVCur&frequency=1d"
+               f"&page_size=3&paging_from=end")   # gleichbleibende Adresse, ohne Datum
+        try:
+            rows = [r for r in fetch_json(url, COINMETRICS_TIMEOUT).get("data") or [] if r.get("CapMVRVCur")]
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (400, 403, 404):   # 400 = Coin nicht im kostenlosen Angebot
+                raise
+            rows = []
+        value = None
+        if rows:
+            r = rows[-1]
+            t = int(datetime.strptime(r["time"][:10], "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+            value = {"value": float(r["CapMVRVCur"]), "time": t}
+        _mvrv_cache[symbol] = (time.time(), value)
+    except Exception as exc:   # Netzfehler: alten Wert behalten, beim nächsten Aufruf erneut
+        print(f"  [warn] MVRV {symbol}: {exc}")
+    finally:
+        with _mvrv_lock:
+            _mvrv_loading.discard(symbol)
+
+
+def get_mvrv(symbol: str) -> Optional[Dict[str, Any]]:
+    """Aktuelles MVRV (letzter Tageswert, also gestern) für den Score; None ohne (aktuelle) Daten."""
+    hit = _mvrv_cache.get(symbol)
+    if not hit or time.time() - hit[0] > MVRV_REFRESH_SECONDS:
+        with _mvrv_lock:
+            start = symbol not in _mvrv_loading
+            _mvrv_loading.add(symbol)
+        if start:
+            th = threading.Thread(target=_load_mvrv, args=(symbol,), daemon=True, name=f"mvrv-{symbol}")
+            th.start()
+            if not hit:
+                th.join(MVRV_WAIT)
+                hit = _mvrv_cache.get(symbol)
+    if not hit or not hit[1] or time.time() - hit[1]["time"] > MVRV_MAX_AGE + 86400:
+        return None
+    return hit[1]
+
+
+def get_onchain(symbol: str, days: int = ONCHAIN_DAYS) -> Optional[Dict[str, Any]]:
+    """Börsenzu- und -abflüsse (USD), Bestand auf Börsen (Coins), MVRV und Kurs je Tag; None, wenn
+    Coin Metrics den Coin nicht führt. Erst alle Kennzahlen, sonst nur MVRV (Altcoins)."""
+    start = time.strftime("%Y-%m-%d", time.gmtime(time.time() - days * 86400))
+    rows = None
+    for metrics in ONCHAIN_METRICS:
+        url = (f"{COINMETRICS_URL}?assets={symbol.lower()}&metrics={metrics}&frequency=1d"
+               f"&start_time={start}&page_size=10000")
+        try:
+            # Coin Metrics braucht für eine Abfrage, die es länger nicht gab, manchmal über 40 s
+            rows = fetch_json(url, COINMETRICS_TIMEOUT).get("data") or None
+        except urllib.error.HTTPError as exc:
+            if exc.code in (400, 403, 404):   # Coin oder Kennzahl nicht im kostenlosen Angebot
+                continue
+            raise
+        if rows:
+            break
+    if not rows:
+        return None
+
+    def num(r: Dict[str, Any], k: str) -> Optional[float]:
+        v = r.get(k)
+        return float(v) if v not in (None, "") else None
+
+    out = [{"time": int(datetime.strptime(r["time"][:10], "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()),
+            "inflow": num(r, "FlowInExUSD"), "outflow": num(r, "FlowOutExUSD"),
+            "supply_ex": num(r, "SplyExNtv"), "mvrv": num(r, "CapMVRVCur"), "price": num(r, "PriceUSD")}
+           for r in rows]
+    has_flows = any(d["inflow"] is not None for d in out)
+    if not has_flows and not any(d["mvrv"] is not None for d in out):
+        return None
+    return {"symbol": symbol, "source": "Coin Metrics (Community)", "has_flows": has_flows, "days": out}
+
+
 def collect_global() -> Dict[str, Any]:
     """Marktweite Daten, unabhängig vom Coin."""
     return {
@@ -1623,6 +1758,7 @@ def collect_symbol(symbol: str, coin_id: Optional[str] = None,
         "price_ma200": price_vs_ma200(closes) if closes else None,
         "rsi": rsi(closes) if closes else None,
         "dvol": safe(get_dvol, symbol),
+        "mvrv": safe(get_mvrv, symbol),
     }
     no_futures = not (data["funding"] or data["open_interest"] or data["long_short"])
     if with_market or no_futures or not closes:
