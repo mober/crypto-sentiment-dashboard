@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import threading
 import time
 import webbrowser
@@ -148,6 +149,27 @@ def _refresh_in_background() -> None:
         print(f"Aktualisierung im Hintergrund fehlgeschlagen: {e}")
     finally:
         _cache["refreshing"] = False
+
+
+LIQ_HISTORY_DAYS = (7, 30, 90, 365)
+LIQ_HISTORY_CACHE_SECONDS = 60
+_liq_history_cache: Dict[tuple, Dict[str, Any]] = {}
+_liq_history_lock = threading.Lock()
+
+
+def get_liq_history(days: int, coin: Optional[str], exchange: Optional[str]) -> Dict[str, Any]:
+    """Liquidationen über Wochen/Monate aus SQLite (Stundensummen), 60 s gecacht."""
+    key = (days, coin, exchange)
+    with _liq_history_lock:
+        entry = _liq_history_cache.get(key)
+        if entry and time.time() - entry["time"] < LIQ_HISTORY_CACHE_SECONDS:
+            return entry["payload"]
+    payload = _collector.history(days, coin, exchange)
+    with _liq_history_lock:
+        _liq_history_cache[key] = {"time": time.time(), "payload": payload}
+        for k in [k for k, v in _liq_history_cache.items() if time.time() - v["time"] > LIQ_HISTORY_CACHE_SECONDS]:
+            del _liq_history_cache[k]
+    return payload
 
 
 def get_payload(force: bool = False) -> Dict[str, Any]:
@@ -536,6 +558,22 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             self.send_json(payload)
             return
+        if url.path == "/api/liq-history":
+            if _collector is None:
+                self.send_json({"error": "Liquidations-Collector läuft nicht"}, 503)
+                return
+            coin = (query.get("coin") or [""])[0].upper() or None
+            exchange = (query.get("exchange") or [""])[0] or None
+            try:
+                days = int((query.get("days") or ["30"])[0])
+            except ValueError:
+                days = 0
+            if days not in LIQ_HISTORY_DAYS or (coin and not SYMBOL_RE.match(coin)) \
+                    or (exchange and exchange not in LIQ_EXCHANGES):
+                self.send_json({"error": "ungültiger Zeitraum, Coin oder Börse"}, 400)
+                return
+            self.send_json(get_liq_history(days, coin, exchange))
+            return
         if url.path in ("/api/liq-overview", "/api/liq-feed"):
             if _collector is None:
                 self.send_json({"error": "Liquidations-Collector läuft nicht"}, 503)
@@ -597,9 +635,14 @@ def main() -> None:
     print(f"Dashboard läuft auf {url}  (Strg+C zum Beenden)")
     if not args.no_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
+    # systemd beendet mit SIGTERM: wie Strg+C behandeln, damit die letzten Liquidationen gespeichert werden
+    def on_sigterm(*_: Any) -> None:
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, on_sigterm)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        _collector.store.flush()
         print("\nBeendet.")
 
 

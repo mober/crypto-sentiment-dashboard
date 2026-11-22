@@ -18,9 +18,14 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `sentiment.py` – Datenabfragen, Score-Skalen und Bewertung (auch als CLI nutzbar)
 - `liquidations.py` – echte Liquidationen live von Binance, Bybit und OKX (eigener WebSocket-Client
   ohne Zusatzpakete, je Börse ein Thread, `Collector` startet in `server.main()`); 24 h im Speicher
-  und als JSON-Zeilen in `data/liquidations.jsonl` (überlebt Neustarts, stündlich verdichtet). Endpoints
-  `/api/liq-overview?window=1h|4h|12h|24h` (Summen aller Fenster, Coins und Börsen des Fensters,
-  größte Order, Stundenwerte 24 h, Status der Verbindungen) und `/api/liq-feed?coin=&exchange=&min=&limit=`.
+  für Übersicht und Feed, dauerhaft in SQLite `data/liquidations.db` (alle 5 s gesammelt geschrieben,
+  beim Beenden per SIGTERM ebenfalls). Tabellen: `events` (jede Liquidation, ohne Ablauf), Summentabellen
+  `hourly` (Stunde × Börse × Coin), `daily` (UTC-Tag × Börse × Coin), `hourly_ex` (Stunde × Börse), `meta`
+  (`since` = Beginn der Aufzeichnung). Eine alte `liquidations.jsonl` wird beim Start einmalig übernommen.
+  Endpoints `/api/liq-overview?window=1h|4h|12h|24h` (Summen aller Fenster, Coins und Börsen des Fensters,
+  größte Order, Stundenwerte 24 h, Status der Verbindungen), `/api/liq-feed?coin=&exchange=&min=&limit=` und
+  `/api/liq-history?days=7|30|90|365&coin=&exchange=` (Stundenwerte, Coins, Börsen, größte Orders aus SQLite,
+  Cache 60 s; Abschnitt „Verlauf“ auf der Seite, Balken je Tag bzw. 4 h in Ortszeit, gebildet im Browser).
   Test im Terminal: `python3 liquidations.py --seconds 60`
 - `server.py` – HTTP-Server mit Cache (5 Min.) und den Endpoints `/api/sentiment`,
   `/api/coin?symbol=…&id=…`, `/api/markets?page=…` (oder `?category=…`: größte 100 einer Sparte),

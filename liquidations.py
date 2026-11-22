@@ -2,8 +2,8 @@
 """Echte Liquidationen von Binance, Bybit und OKX, live über deren öffentliche WebSockets.
 
 Jede Börse läuft in einem eigenen Thread und meldet Zwangsschließungen an einen gemeinsamen
-Speicher (24 h im Arbeitsspeicher, zusätzlich als JSON-Zeilen in data/liquidations.jsonl,
-damit ein Neustart die Historie nicht verliert). Nur Python-Standardbibliothek; der
+Speicher (24 h im Arbeitsspeicher für die Live-Ansicht, dauerhaft in SQLite data/liquidations.db
+mit Stundensummen für lange Zeiträume). Nur Python-Standardbibliothek; der
 WebSocket-Client unten kann genau das, was die drei Streams brauchen (TLS, Text-Frames,
 Ping/Pong, Fragmente).
 
@@ -21,6 +21,7 @@ import json
 import os
 import re
 import socket
+import sqlite3
 import ssl
 import struct
 import threading
@@ -174,63 +175,219 @@ def _get_json(url: str) -> Any:
 # ---------------------------------------------------------------- Speicher
 
 class Store:
+    """Die letzten 24 h im Arbeitsspeicher (für Übersicht und Feed), alles zusätzlich in SQLite.
+
+    SQLite-Tabellen:
+      events  – jede einzelne Liquidation (bleibt dauerhaft)
+      hourly  – Summen je Stunde, Börse und Coin (für lange Zeiträume, schnell abfragbar)
+      meta    – z. B. "since" = Beginn der Aufzeichnung
+    Geschrieben wird gesammelt alle paar Sekunden (flush) aus einem eigenen Thread.
+    """
+
     def __init__(self, path: Optional[Path]) -> None:
         self.path = path
         self.events: Deque[Event] = deque()
         self.lock = threading.Lock()
         self.started = time.time()
-        self.first_seen = self.started   # ältestes gespeichertes Ereignis oder Startzeit
-        self._file = None
-        self._unflushed = 0
+        self.first_seen = self.started   # Beginn der Aufzeichnung (für die 24-h-Abdeckung)
+        self.recorded_since = self.started   # Beginn der dauerhaften Aufzeichnung
+        self._db: Optional[sqlite3.Connection] = None
+        self._db_lock = threading.Lock()
+        self._pending: List[Event] = []
         # Schon gesehene Ereignisse: OKX schickt beim (Neu-)Verbinden die letzten Liquidationen erneut
         self._keys: set = set()
         self._key_order: Deque[tuple] = deque()
         if path:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
+                self._open()
+                self._import_jsonl()
                 self._load()
-                self._compact()
-            except OSError as exc:
+            except (OSError, sqlite3.Error) as exc:
                 # Kein beschreibbares Verzeichnis: nur im Speicher sammeln, der Server läuft trotzdem
                 print(f"Liquidationen werden nicht gespeichert ({exc}); nur im Arbeitsspeicher.")
-                self.path, self._file = None, None
+                self.path, self._db = None, None
+
+    # --- Datenbank
+
+    def _open(self) -> None:
+        db = sqlite3.connect(str(self.path), check_same_thread=False, timeout=30)
+        db.execute("PRAGMA journal_mode=WAL")      # Lesen (History-Abfragen) blockiert das Schreiben nicht
+        db.execute("PRAGMA synchronous=NORMAL")
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS events (
+                t REAL NOT NULL, exchange TEXT NOT NULL, coin TEXT NOT NULL, side TEXT NOT NULL,
+                usd REAL NOT NULL, price REAL, symbol TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS events_t ON events (t);
+            CREATE INDEX IF NOT EXISTS events_usd ON events (usd);
+            CREATE TABLE IF NOT EXISTS hourly (
+                hour INTEGER NOT NULL, exchange TEXT NOT NULL, coin TEXT NOT NULL,
+                long_usd REAL NOT NULL DEFAULT 0, short_usd REAL NOT NULL DEFAULT 0,
+                long_n INTEGER NOT NULL DEFAULT 0, short_n INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (hour, exchange, coin));
+            CREATE INDEX IF NOT EXISTS hourly_coin ON hourly (coin, hour);
+            CREATE TABLE IF NOT EXISTS daily (
+                day INTEGER NOT NULL, exchange TEXT NOT NULL, coin TEXT NOT NULL,
+                long_usd REAL NOT NULL DEFAULT 0, short_usd REAL NOT NULL DEFAULT 0,
+                long_n INTEGER NOT NULL DEFAULT 0, short_n INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, exchange, coin));
+            CREATE INDEX IF NOT EXISTS daily_coin ON daily (coin, day);
+            CREATE TABLE IF NOT EXISTS hourly_ex (
+                hour INTEGER NOT NULL, exchange TEXT NOT NULL,
+                long_usd REAL NOT NULL DEFAULT 0, short_usd REAL NOT NULL DEFAULT 0,
+                long_n INTEGER NOT NULL DEFAULT 0, short_n INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (hour, exchange));
+            CREATE INDEX IF NOT EXISTS events_coin_usd ON events (coin, usd);
+            CREATE INDEX IF NOT EXISTS events_exchange_usd ON events (exchange, usd);
+            CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+        """)
+        row = db.execute("SELECT value FROM meta WHERE key = 'since'").fetchone()
+        if row:
+            self.recorded_since = float(row[0])
+        else:
+            db.execute("INSERT INTO meta VALUES ('since', ?)", (str(self.started),))
+        db.commit()
+        self._db = db
+
+    # Summentabellen: Name → (Schlüsselspalten, Schlüssel aus einem Ereignis)
+    _ROLLUPS = {
+        "hourly": ("hour, exchange, coin", lambda e: (int(e[0] // 3600) * 3600, e[1], e[2])),
+        "daily": ("day, exchange, coin", lambda e: (int(e[0] // 86400) * 86400, e[1], e[2])),   # UTC-Tage
+        "hourly_ex": ("hour, exchange", lambda e: (int(e[0] // 3600) * 3600, e[1])),
+    }
+
+    def _write(self, events: List[Event]) -> None:
+        if not events or not self._db:
+            return
+        with self._db_lock:
+            self._db.executemany("INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?)", events)
+            for table, (cols, key) in self._ROLLUPS.items():
+                sums: Dict[tuple, List[float]] = {}
+                for e in events:
+                    v = sums.setdefault(key(e), [0.0, 0.0, 0, 0])
+                    if e[3] == "long":
+                        v[0] += e[4]; v[2] += 1
+                    else:
+                        v[1] += e[4]; v[3] += 1
+                marks = ", ".join("?" * (cols.count(",") + 5))
+                self._db.executemany(f"""
+                    INSERT INTO {table} VALUES ({marks})
+                    ON CONFLICT ({cols}) DO UPDATE SET
+                      long_usd = long_usd + excluded.long_usd, short_usd = short_usd + excluded.short_usd,
+                      long_n = long_n + excluded.long_n, short_n = short_n + excluded.short_n
+                """, [(*k, *v) for k, v in sums.items()])
+            self._db.commit()
+
+    def flush(self) -> None:
+        """Gesammelte Ereignisse in die Datenbank schreiben."""
+        with self.lock:
+            pending, self._pending = self._pending, []
+        try:
+            self._write(pending)
+        except sqlite3.Error as exc:
+            print(f"Liquidationen konnten nicht gespeichert werden: {exc}")
+            with self.lock:
+                self._pending[:0] = pending   # beim nächsten Mal erneut versuchen
+
+    def _import_jsonl(self) -> None:
+        """Einmalig: bisherige JSON-Zeilen-Datei (Version vor SQLite) übernehmen."""
+        old = self.path.with_name("liquidations.jsonl")
+        if not old.exists():
+            return
+        events, seen = [], set()
+        with open(old, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    e = tuple(json.loads(line))
+                except ValueError:
+                    continue
+                key = (round(e[0], 3), e[1], e[6], round(e[4], 2)) if len(e) == 7 else None
+                if key and key not in seen:
+                    seen.add(key)
+                    events.append(e)
+        events.sort()
+        newest = self._db.execute("SELECT MAX(t) FROM events").fetchone()[0] or 0
+        self._write([e for e in events if e[0] > newest])
+        since_file = old.with_suffix(".since")
+        try:
+            since = float(since_file.read_text())
+        except (OSError, ValueError):
+            since = self.recorded_since
+        if events:
+            since = min(since, events[0][0])
+        if since < self.recorded_since:
+            self.recorded_since = since
+            with self._db_lock:
+                self._db.execute("UPDATE meta SET value = ? WHERE key = 'since'", (str(since),))
+                self._db.commit()
+        old.rename(old.with_suffix(".jsonl.imported"))
+        try:
+            since_file.unlink()
+        except OSError:
+            pass
+        print(f"{len(events)} Liquidationen aus {old.name} in die Datenbank übernommen.")
 
     def _load(self) -> None:
         cutoff = time.time() - KEEP_SECONDS
-        try:
-            with open(self.path, encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        e = tuple(json.loads(line))
-                    except ValueError:
-                        continue
-                    if len(e) == 7 and e[0] >= cutoff and self._remember(e):
-                        self.events.append(e)  # type: ignore[arg-type]
-        except FileNotFoundError:
-            return
-        if self.events:
-            self.events = deque(sorted(self.events))
-            meta = self.path.with_suffix(".since")
-            try:
-                since = float(meta.read_text())
-            except (OSError, ValueError):
-                since = self.events[0][0]
-            self.first_seen = max(since, cutoff)
+        with self._db_lock:
+            rows = self._db.execute("SELECT * FROM events WHERE t >= ? ORDER BY t", (cutoff,)).fetchall()
+        for e in rows:
+            if self._remember(e):
+                self.events.append(e)
+        # Abdeckung der 24 h: seit Beginn der Aufzeichnung (Ausfälle dazwischen werden nicht erkannt)
+        self.first_seen = max(self.recorded_since, cutoff)
 
-    def _compact(self) -> None:
-        """Datei neu schreiben (nur die letzten 24 h) und zum Anhängen öffnen."""
+    def history(self, days: int, coin: Optional[str], exchange: Optional[str]) -> Dict[str, Any]:
+        """Summen je Stunde für lange Zeiträume, dazu Coins, Börsen und größte Liquidationen im Zeitraum.
+
+        Für Tempo bei einem Jahr: Zeitreihe ohne Coin-Filter aus hourly_ex (wenige Zeilen je Stunde),
+        Summen je Coin/Börse aus daily für ganze Tage plus hourly für den angebrochenen ersten Tag."""
         if not self.path:
-            return
-        with self.lock:
-            if self._file:
-                self._file.close()
-            tmp = self.path.with_suffix(".tmp")
-            with open(tmp, "w", encoding="utf-8") as f:
-                for e in self.events:
-                    f.write(json.dumps(e, separators=(",", ":")) + "\n")
-            os.replace(tmp, self.path)
-            self.path.with_suffix(".since").write_text(str(self.first_seen))
-            self._file = open(self.path, "a", encoding="utf-8")
+            return {"hours": [], "coins": [], "exchanges": [], "largest": [], "since": self.recorded_since}
+        self.flush()
+        since = time.time() - days * 86400
+        h0 = int(since // 3600) * 3600
+        d0 = -(-h0 // 86400) * 86400          # erster ganzer (UTC-)Tag im Zeitraum
+        flt, fargs = "", []
+        if coin:
+            flt += " AND coin = ?"; fargs.append(coin)
+        if exchange:
+            flt += " AND exchange = ?"; fargs.append(exchange)
+        sums = "SUM(long_usd), SUM(short_usd), SUM(long_n + short_n)"
+        # Eigene Verbindung nur zum Lesen: läuft parallel zum Schreiben (WAL)
+        db = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=30)
+        try:
+            series_table = "hourly" if coin else "hourly_ex"
+            hours = db.execute(f"SELECT hour, {sums} FROM {series_table} WHERE hour >= ?{flt} GROUP BY hour ORDER BY hour",
+                               [h0, *fargs]).fetchall()
+
+            def grouped(col: str) -> List[tuple]:
+                # ganze Tage aus daily, Rest des ersten Tages aus hourly
+                return db.execute(f"""
+                    SELECT {col}, SUM(l), SUM(s), SUM(n) FROM (
+                      SELECT {col}, SUM(long_usd) l, SUM(short_usd) s, SUM(long_n + short_n) n
+                        FROM daily WHERE day >= ?{flt} GROUP BY {col}
+                      UNION ALL
+                      SELECT {col}, SUM(long_usd), SUM(short_usd), SUM(long_n + short_n)
+                        FROM hourly WHERE hour >= ? AND hour < ?{flt} GROUP BY {col})
+                    GROUP BY {col} ORDER BY SUM(l) + SUM(s) DESC""", [d0, *fargs, h0, d0, *fargs]).fetchall()
+
+            coins = grouped("coin")
+            exchanges = grouped("exchange")
+            largest = db.execute(f"SELECT * FROM events WHERE t >= ?{flt} ORDER BY usd DESC LIMIT 10",
+                                 [since, *fargs]).fetchall()
+        finally:
+            db.close()
+        return {
+            "hours": [{"t": h, "long": l, "short": s, "count": n} for h, l, s, n in hours],
+            "coins": [{"coin": c, "long": l, "short": s, "count": n, "total": l + s} for c, l, s, n in coins[:15]],
+            "coin_count": len(coins),
+            "exchanges": [{"name": x, "long": l, "short": s, "count": n, "total": l + s} for x, l, s, n in exchanges],
+            "largest": [_event_json(e) for e in largest],
+            "since": self.recorded_since,
+        }
+
+    # --- Arbeitsspeicher
 
     def _remember(self, e: Event) -> bool:
         """False, wenn das Ereignis schon gespeichert ist."""
@@ -255,12 +412,8 @@ class Store:
                 while i > 0 and self.events[i - 1][0] > e[0]:
                     i -= 1
                 self.events.insert(i, e)
-            if self._file:
-                self._file.write(json.dumps(e, separators=(",", ":")) + "\n")
-                self._unflushed += 1
-                if self._unflushed >= 50:
-                    self._file.flush()
-                    self._unflushed = 0
+            if self.path:
+                self._pending.append(e)
 
     def prune(self) -> None:
         cutoff = time.time() - KEEP_SECONDS
@@ -268,9 +421,6 @@ class Store:
             while self.events and self.events[0][0] < cutoff:
                 self.events.popleft()
             self.first_seen = max(self.first_seen, cutoff)
-            if self._file:
-                self._file.flush()
-                self._unflushed = 0
 
     def snapshot(self, since: float) -> List[Event]:
         with self.lock:
@@ -437,7 +587,7 @@ class OKX(Source):
 
 class Collector:
     def __init__(self, data_dir: Optional[Path]) -> None:
-        self.store = Store(data_dir / "liquidations.jsonl" if data_dir else None)
+        self.store = Store(data_dir / "liquidations.db" if data_dir else None)
         self.sources = [Binance(self.store), Bybit(self.store), OKX(self.store)]
 
     def start(self) -> "Collector":
@@ -447,13 +597,16 @@ class Collector:
         return self
 
     def _maintain(self) -> None:
-        last_compact = time.time()
+        last_prune = time.time()
         while True:
-            time.sleep(30)
-            self.store.prune()
-            if time.time() - last_compact > 3600:
-                self.store._compact()
-                last_compact = time.time()
+            time.sleep(5)
+            self.store.flush()
+            if time.time() - last_prune > 30:
+                self.store.prune()
+                last_prune = time.time()
+
+    def history(self, days: int, coin: Optional[str] = None, exchange: Optional[str] = None) -> Dict[str, Any]:
+        return {"updated": time.time(), "days": days, **self.store.history(days, coin, exchange)}
 
     def status(self) -> Dict[str, Any]:
         now = time.time()

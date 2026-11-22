@@ -67,6 +67,17 @@
   .hours svg { width: 100%; height: 240px; display: block; }
   .hours text { fill: var(--muted); font-size: 11px; }
 
+  /* Verlauf (SQLite, Wochen bis 1 Jahr) */
+  .hist svg { width: 100%; height: 260px; display: block; }
+  .hist text { fill: var(--muted); font-size: 11px; }
+  .hist-sum { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+  .hist-sum b { display: block; font-size: 18px; color: var(--text); }
+  .hist-sum .l b { color: var(--long); } .hist-sum .s b { color: var(--short); }
+  .hist-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 14px; }
+  .hist-grid h3 { margin: 0 0 6px; font-size: 14px; }
+  .hist-grid tr.click { cursor: pointer; } .hist-grid tr.click:hover td { background: var(--track); }
+  .hist-note { margin-top: 10px; font-size: 12px; color: var(--muted); }
+
   /* Live-Feed */
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .filters input, .filters select { font: inherit; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--border);
@@ -89,7 +100,7 @@
   @media (max-width: 900px) {
     .top { grid-template-columns: 1fr; }
     .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .grid3 { grid-template-columns: 1fr; }
+    .grid3, .hist-grid { grid-template-columns: 1fr; }
     .tree { aspect-ratio: 4 / 5; }
   }
 </style>
@@ -136,6 +147,21 @@
     <div class="card-head"><h2>Liquidationen je Stunde (24 h) und BTC-Kurs</h2>
       <div class="legend" style="margin:0"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span><i style="background:var(--cold)"></i>BTC</span></div></div>
     <div id="hours"></div>
+  </section>
+
+  <section class="card hist">
+    <div class="card-head"><h2>Verlauf <span id="histScope" style="font-weight:400;color:var(--muted)"></span></h2>
+      <div class="seg" id="hwin"><button data-d="7">7 T</button><button data-d="30" class="on">30 T</button><button data-d="90">90 T</button><button data-d="365">1 J</button></div></div>
+    <div class="hist-sum" id="histSum"></div>
+    <div id="hist"><div class="status">Lade Verlauf …</div></div>
+    <div class="legend"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span id="histBucket"></span></div>
+    <div class="hist-grid">
+      <div><h3>Am stärksten betroffen</h3><div class="table-wrap"><table>
+        <thead><tr><th class="left">Coin</th><th>Long</th><th>Short</th><th>Summe</th></tr></thead><tbody id="histCoins"></tbody></table></div></div>
+      <div><h3>Größte Liquidationen</h3><div class="table-wrap"><table>
+        <thead><tr><th class="left">Datum</th><th class="left">Börse</th><th class="left">Coin</th><th class="left">Seite</th><th>Betrag</th></tr></thead><tbody id="histLargest"></tbody></table></div></div>
+    </div>
+    <div class="hist-note" id="histNote"></div>
   </section>
 
   <section class="card">
@@ -363,10 +389,93 @@ function renderFeed(d) {
     $("feed").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6" class="status">Keine Liquidationen für diesen Filter.</td></tr>`;
 }
 
+// --- Verlauf aus der Datenbank (Wochen bis 1 Jahr); folgt dem Coin-Filter
+let histDays = 30;
+const dayLabel = (d) => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+function bucketStart(t, hours) {
+  const d = new Date(t * 1000);
+  if (hours === 24) d.setHours(0, 0, 0, 0);
+  else d.setHours(Math.floor(d.getHours() / hours) * hours, 0, 0, 0);
+  return d.getTime() / 1000;
+}
+
+function renderHistory(h) {
+  const size = histDays <= 7 ? 4 : 24;   // 7 T in 4-Stunden-Balken, sonst je Tag
+  const now = Date.now() / 1000, from = Math.max(now - histDays * 86400, h.since);
+  const buckets = new Map();
+  for (let t = bucketStart(from, size); t <= now; ) {
+    buckets.set(t, { t, long: 0, short: 0, count: 0 });
+    const d = new Date(t * 1000);
+    if (size === 24) d.setDate(d.getDate() + 1); else d.setHours(d.getHours() + size);   // Sommerzeit-fest
+    t = d.getTime() / 1000;
+  }
+  for (const x of h.hours) {
+    const b = buckets.get(bucketStart(x.t, size));
+    if (b) { b.long += x.long; b.short += x.short; b.count += x.count; }
+  }
+  const bs = [...buckets.values()];
+  const long = bs.reduce((a, b) => a + b.long, 0), short = bs.reduce((a, b) => a + b.short, 0), count = bs.reduce((a, b) => a + b.count, 0);
+  const days = Math.max(1 / 24, (now - from) / 86400);
+  $("histScope").textContent = coinFilter ? "· " + coinFilter : "· alle Coins";
+  $("histBucket").textContent = size === 24 ? "je Tag" : "je 4 Stunden";
+  $("histSum").innerHTML = `<div>Summe<b>${money(long + short)}</b></div><div class="l">Longs<b>${money(long)}</b></div>
+    <div class="s">Shorts<b>${money(short)}</b></div><div>Positionen<b>${count.toLocaleString("de-DE")}</b></div>
+    <div>Ø pro Tag<b>${money((long + short) / days)}</b></div>`;
+
+  const W = 1000, H = 260, pad = { l: 64, r: 10, t: 14, b: 26 }, half = (H - pad.t - pad.b) / 2, mid = pad.t + half;
+  const max = Math.max(1, ...bs.map((b) => Math.max(b.long, b.short)));
+  const bw = (W - pad.l - pad.r) / Math.max(1, bs.length), gap = bw > 6 ? 2 : bw > 3 ? 1 : 0;
+  const every = Math.ceil(bs.length / 12);
+  let svg = `<line x1="${pad.l}" x2="${W - pad.r}" y1="${mid}" y2="${mid}" stroke="var(--border)"/>`;
+  bs.forEach((b, i) => {
+    const x = pad.l + i * bw + gap / 2, sh = b.short / max * half, lh = b.long / max * half, d = new Date(b.t * 1000);
+    const when = size === 24 ? d.toLocaleDateString("de-DE") : `${d.toLocaleDateString("de-DE")} ${String(d.getHours()).padStart(2, "0")}–${String((d.getHours() + size) % 24).padStart(2, "0")} Uhr`;
+    const tip = `<title>${when}\nShorts ${money(b.short)} · Longs ${money(b.long)}</title>`;
+    svg += `<rect x="${x}" y="${mid - sh}" width="${Math.max(0.5, bw - gap)}" height="${sh}" fill="var(--short)">${tip}</rect>`;
+    svg += `<rect x="${x}" y="${mid}" width="${Math.max(0.5, bw - gap)}" height="${lh}" fill="var(--long)">${tip}</rect>`;
+    if (i % every === 0) svg += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${dayLabel(d)}</text>`;
+  });
+  svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
+  $("hist").innerHTML = count ? `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${svg}</svg>`
+    : `<div class="status">Für diesen Zeitraum sind noch keine Liquidationen gespeichert.</div>`;
+
+  $("histCoins").innerHTML = h.coins.map((c) => `<tr class="click" data-coin="${esc(c.coin)}"><td class="left"><b>${esc(c.coin)}</b></td>
+    <td>${money(c.long)}</td><td>${money(c.short)}</td><td><b>${money(c.total)}</b></td></tr>`).join("")
+    || `<tr><td colspan="4" class="status">–</td></tr>`;
+  $("histLargest").innerHTML = h.largest.map((o) => `<tr><td class="left">${new Date(o.time * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+    <td class="left">${esc(o.exchange)}</td><td class="left"><b>${esc(o.coin)}</b></td><td class="left">${sideTag(o.side)}</td>
+    <td class="${o.usd >= 1e6 ? "whale" : ""}">${money(o.usd)}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="status">–</td></tr>`;
+  const sinceDate = new Date(h.since * 1000);
+  $("histNote").textContent = `Gespeichert wird seit ${sinceDate.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })} Uhr`
+    + (now - h.since < histDays * 86400 ? " – der Zeitraum ist deshalb noch nicht vollständig." : ".")
+    + " Lücken entstehen, wenn der Server nicht lief.";
+}
+
+async function loadHistory() {
+  const days = histDays, coin = coinFilter;
+  try {
+    const r = await fetch(`api/liq-history?days=${days}&coin=${encodeURIComponent(coin)}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    if (days === histDays && coin === coinFilter) renderHistory(d);
+  } catch (e) {
+    $("hist").innerHTML = `<div class="status">Verlauf nicht verfügbar: ${esc(e.message)}</div>`;
+  }
+}
+
+$("hwin").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  histDays = +b.dataset.d; [...$("hwin").children].forEach((x) => x.classList.toggle("on", x === b)); loadHistory();
+});
+$("histCoins").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-coin]"); if (tr) setCoin(coinFilter === tr.dataset.coin ? "" : tr.dataset.coin);
+});
+
 function setCoin(c) {
   coinFilter = c; $("fCoin").value = c; firstFeed = true; seenIds.clear();
   if (ov) renderTree();
-  loadFeed();
+  loadFeed(); loadHistory();
 }
 
 $("win").addEventListener("click", (e) => {
@@ -394,8 +503,9 @@ if (cachedOv && cachedOv.window === win) { ov = cachedOv; renderOverview(); }
 const cachedFeed = restore(feedKey(new URLSearchParams({ coin: coinFilter, exchange: $("fEx").value, min: $("fMin").value, limit: 60 })));
 if (cachedFeed) renderFeed(cachedFeed);
 loadBtc().then(() => { if (ov) renderHours(); });
-loadOverview(); loadFeed();
+loadOverview(); loadFeed(); loadHistory();
 setInterval(loadOverview, 15000);
+setInterval(loadHistory, 60000);
 setInterval(loadFeed, 5000);
 setInterval(loadBtc, 600000);
 </script>
