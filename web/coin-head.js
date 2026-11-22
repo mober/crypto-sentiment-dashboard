@@ -377,7 +377,7 @@ function setupCollapse(sec) {
 document.addEventListener("click", (e) => {
   const head = e.target.closest(".collapsible > .card-head");
   if (!head) return;
-  if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, select, label, [data-tip]")) return;
+  if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, select, label, details, [data-tip]")) return;
   const sec = head.parentElement;
   if (START_COLLAPSED.has(sec.id)) {
     if (expandedNow.has(sec.id)) expandedNow.delete(sec.id); else expandedNow.add(sec.id);
