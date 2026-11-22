@@ -8,6 +8,7 @@
 .hero .mcap b { color: var(--text); font-weight: 600; }
 .hero .about-link { display: inline-block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--cold); text-decoration: none; }
 .hero .about-link:hover { text-decoration: underline; }
+#title-star .star { font-size: 22px; margin-left: 6px; vertical-align: 2px; }
 /* Lagebild: Einordnung aus Stimmung und Trend */
 .lage { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }
 .lage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

@@ -81,3 +81,9 @@ footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: cen
   opacity: 0; transition: opacity .12s;
 }
 #tip.show { opacity: 1; }
+
+/* Watchlist-Stern (watchlist.js) */
+button.star { border: 0; background: none; padding: 0 4px; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
+button.star:hover:not(:disabled) { color: #e8a317; }
+button.star.on { color: #e8a317; }
+button.star:disabled { opacity: 1; cursor: default; }

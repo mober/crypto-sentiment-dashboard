@@ -39,7 +39,11 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   von Binance Futures, Cache 5 Min.), `/api/score-history?symbol=…` (Score je Tag, rückwirkend
   aus Tageswerten mit `score()` berechnet, 1 Jahr), `/api/news?symbol=…&name=…` (deutschsprachige Schlagzeilen aus den RSS-Feeds `NEWS_FEEDS`, nach Symbol/Name
   gefiltert in `match_news`, Feeds gemeinsam 15 Min. gecacht; Anzeige im Kopf der Detailseite),
-  `/api/search?q=…` (CoinGecko-Suche plus
+  `/api/watchlist?ids=…` (Marktdaten der Watchlist-Coins, eine CoinGecko-Abfrage `coins/markets?ids=` für alle,
+  höchstens `WATCHLIST_MAX` IDs, Cache 5 Min. je ID-Satz), `/api/watch-coins?coins=BTC:bitcoin,…` (Karten des
+  Dashboards: je Coin wie `/api/coin` und im selben `_coin_cache`, aber CoinGecko nur einmal für alle abgelaufenen Coins
+  über `get_coingecko_coins`, an `collect_symbol(market=…)` durchgereicht; Binance je Coin parallel, `WATCH_WORKERS`;
+  erster Abruf vieler neuer Coins dauert ~20 s), `/api/search?q=…` (CoinGecko-Suche plus
   Marktdaten der Treffer, 2 Abfragen je Suchbegriff, Cache 5 Min.), `/api/coin-info?symbol=…&id=…`
   (Profil für `about.html`: eine CoinGecko-Abfrage `coins/{id}`, Cache 1 Tag; Kategorien deutsch über
   `CATEGORY_DE`, Art über `coin_type`, regelbasierte Risikostufe in `coin_assessment`); liefert `web/` statisch aus
@@ -61,7 +65,12 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):
   Art und Kategorien mit Erklärung, Risikostufe mit Stärken/Risiken, aktuelle Marktlage, Beschreibung
   (CoinGecko meist nur englisch, Link zum Google Übersetzer), Fakten und Links, `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
-  `web/tips.js` – gemeinsame Tooltip-Texte und -Logik, `web/format.js` – gemeinsame Hilfsfunktionen
+  `web/tips.js` – gemeinsame Tooltip-Texte und -Logik, `web/watchlist.js` – Watchlist nur im Browser
+  (`localStorage.watchlist`, Einträge `{id, symbol, name}`, CoinGecko-ID Pflicht; `watchStar(coin)` liefert den
+  Stern-Button, Klick in der Capture-Phase, Ereignis `watchlist` auf `document` bei jeder Änderung, auch aus anderen
+  Tabs). BTC, ETH, SOL fest (`WATCH_FIXED`, nicht entfernbar, nicht gespeichert). Das Dashboard zeigt je
+  Watchlist-Coin eine Karte (letzter Stand in `localStorage.lastWatchCoins`); Trending/Top 20 sind nur noch eine
+  Leiste zum Hinzufügen/Entfernen. Stern auch in der Rangliste und auf der Detailseite; Tabelle `markets.html?watch=1`. Die Coin-ID kommt dafür als `data.coin_id` aus der ohnehin laufenden CoinGecko-Abfrage mit; `web/format.js` – gemeinsame Hilfsfunktionen
   (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle Seiten; Formate dort ändern,
   nicht in den Seiten
 - Live-Kurs im Chart der Detailseite: `coin-chart.js` verbindet sich direkt per WebSocket mit Binance

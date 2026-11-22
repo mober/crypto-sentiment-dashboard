@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import liquidations
@@ -45,6 +45,7 @@ COIN_ID_RE = re.compile(r"^[a-z0-9-]{1,100}$")  # CoinGecko-ID, z. B. "bitcoin"
 DEFI_CACHE_SECONDS = 600  # DefiLlama aktualisiert TVL ohnehin nur grob stündlich; die Antwort ist ~10 MB
 LLAMA_INDEX_SECONDS = 24 * 3600   # Zuordnung Coin → Protokoll ändert sich selten
 FEES_CACHE_SECONDS = 1800         # DefiLlama aktualisiert Gebühren täglich
+WATCH_WORKERS = 8                 # Watchlist-Karten: so viele Coins gleichzeitig laden
 RETRY_SECONDS = 30                # unvollständige Ergebnisse (Abfrage fehlgeschlagen) nur so lange cachen
 CATEGORY_PER_PAGE = 100   # Coins einer Sparte: eine Seite, die größten 100
 CATEGORY_RE = re.compile(r"^[a-z0-9-]{1,100}$")
@@ -87,6 +88,12 @@ class TTLCache:
         with self._guard:
             entry = self._entries.get(key)
         return entry[1] if entry else None
+
+    def fresh(self, key: Any) -> bool:
+        """Liegt ein noch gültiger Wert vor?"""
+        with self._guard:
+            entry = self._entries.get(key)
+        return bool(entry) and time.time() < entry[0]
 
     def set(self, key: Any, value: Any, seconds: Optional[float] = None) -> None:
         with self._guard:
@@ -164,6 +171,7 @@ _payload_cache = TTLCache("sentiment", CACHE_SECONDS, max_entries=1, stale=True)
 _coin_cache = TTLCache("coin", CACHE_SECONDS)   # nicht stale: Score soll aktuell sein; Teilergebnis nach RETRY_SECONDS neu
 _markets_cache = TTLCache("markets", CACHE_SECONDS, max_entries=100, stale=True)   # Seite oder "<sparte>:1"
 _categories_cache = TTLCache("categories", CACHE_SECONDS, max_entries=1, stale=True)
+_watchlist_cache = TTLCache("watchlist", CACHE_SECONDS, stale=True)   # Schlüssel: sortierte Coin-IDs
 _search_cache = TTLCache("search", CACHE_SECONDS, max_entries=100)   # nicht stale: Suchbegriffe sind kurzlebig
 _klines_cache = TTLCache("klines", KLINE_CACHE_SECONDS, max_entries=300)   # nicht stale: letzte Kerze soll aktuell sein
 _derivs_cache = TTLCache("derivatives", CACHE_SECONDS, stale=True)   # Funding/OI: Stunden- bis Tageswerte
@@ -205,7 +213,8 @@ def build_payload(previous: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         mcaps = mcap_future.result() or {}
         symbol_data = {s: {**f.result(), "market_cap": (mcaps.get(s) or {}).get("market_cap"),
                            "market_stats": (mcaps.get(s) or {}).get("market_stats"),
-                           "name": (mcaps.get(s) or {}).get("name")}
+                           "name": (mcaps.get(s) or {}).get("name"),
+                           "coin_id": (mcaps.get(s) or {}).get("coin_id")}
                        for s, f in symbol_futures.items()}
 
     # Fehlgeschlagene Abfragen (z. B. Rate-Limit) durch den letzten erfolgreichen Wert ersetzen
@@ -244,12 +253,15 @@ def get_payload(force: bool = False) -> Dict[str, Any]:
     return _payload_cache.get("payload", build_payload, force=force)
 
 
-def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
-    """Einzelner Coin (aus Trending oder Marktübersicht), eigener Cache je Coin."""
+def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False,
+             market: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Einzelner Coin (Detailseite, Watchlist), eigener Cache je Coin.
+
+    market: CoinGecko-Daten aus der gebündelten Abfrage der Watchlist (leer = fehlgeschlagen), sonst eigene Abfrage."""
     global_data = get_payload()["global"]
 
     def load(previous: Optional[Dict[str, Any]]) -> Any:
-        symbol_data = sentiment.collect_symbol(symbol, coin_id, with_market=True)
+        symbol_data = sentiment.collect_symbol(symbol, coin_id, with_market=True, market=market)
         # CoinGecko-Abfrage fehlgeschlagen (z. B. Limit-Pause): Lücken aus dem letzten Stand
         # füllen und bald erneut versuchen, statt das unvollständige Ergebnis 5 Min. zu behalten
         incomplete = symbol_data.get("market_stats") is None
@@ -261,6 +273,17 @@ def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) ->
         return Expires(coin, RETRY_SECONDS) if incomplete else coin
 
     return _coin_cache.get(f"{symbol}:{coin_id or ''}", load, force=force)
+
+
+def get_watch_coins(entries: List[Tuple[str, str]], force: bool = False) -> Dict[str, Any]:
+    """Karten aller Watchlist-Coins fürs Dashboard: Score und Kennzahlen je Coin (Cache wie /api/coin).
+
+    CoinGecko nur einmal für alle Coins, deren Cache abgelaufen ist; Binance und Coin Metrics je Coin parallel."""
+    due = [cid for sym, cid in entries if force or not _coin_cache.fresh(f"{sym}:{cid}")]
+    markets = (sentiment.safe(sentiment.get_coingecko_coins, due) or {}) if due else {}
+    with ThreadPoolExecutor(max_workers=min(WATCH_WORKERS, len(entries))) as pool:
+        coins = list(pool.map(lambda e: get_coin(e[0], e[1], force=force, market=markets.get(e[1], {})), entries))
+    return {"updated": datetime.now().astimezone().isoformat(timespec="seconds"), "coins": coins}
 
 
 def get_markets(page: int, category: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -292,6 +315,17 @@ def get_categories() -> Optional[Dict[str, Any]]:
         return {"updated": datetime.now().isoformat(timespec="seconds"), "categories": cats} if cats else None
 
     return _categories_cache.get("all", load)
+
+
+def get_watchlist(ids: List[str]) -> Optional[Dict[str, Any]]:
+    """Marktdaten der Watchlist-Coins (im Browser gespeichert); eine CoinGecko-Abfrage je ID-Satz, 5 Min. gecacht."""
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        coins = sentiment.safe(sentiment.get_markets_by_ids, ids)
+        if coins is None:
+            return None
+        return {"updated": datetime.now().isoformat(timespec="seconds"), "coins": coins}
+
+    return _watchlist_cache.get(",".join(ids), load)
 
 
 def search_markets(query: str) -> Optional[Dict[str, Any]]:
@@ -515,6 +549,26 @@ def api_search(q: Query) -> Dict[str, Any]:
     return from_coingecko(search_markets(term))
 
 
+def api_watchlist(q: Query) -> Dict[str, Any]:
+    ids = sorted({i for i in q("ids").split(",") if i})
+    require(ids and len(ids) <= sentiment.WATCHLIST_MAX and all(COIN_ID_RE.match(i) for i in ids),
+            "ungültige oder zu viele Coin-IDs")
+    return from_coingecko(get_watchlist(ids))
+
+
+def api_watch_coins(q: Query) -> Dict[str, Any]:
+    """?coins=BTC:bitcoin,LINK:chainlink – Reihenfolge bleibt erhalten."""
+    entries: List[Tuple[str, str]] = []
+    for part in q("coins").split(","):
+        sym, _, cid = part.partition(":")
+        sym = sym.upper()
+        require(SYMBOL_RE.match(sym) and COIN_ID_RE.match(cid), "ungültiger Coin: " + part[:40])
+        if (sym, cid) not in entries:
+            entries.append((sym, cid))
+    require(len(entries) <= sentiment.WATCHLIST_MAX, "zu viele Coins")
+    return get_watch_coins(entries, force=q.force)
+
+
 def api_coin(q: Query) -> Dict[str, Any]:
     symbol = valid_symbol(q)
     coin_id = q.coin_id()
@@ -618,6 +672,8 @@ ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
     "/api/markets": api_markets,
     "/api/categories": api_categories,
     "/api/search": api_search,
+    "/api/watchlist": api_watchlist,
+    "/api/watch-coins": api_watch_coins,
     "/api/coin": api_coin,
     "/api/coin-info": api_coin_info,
     "/api/klines": api_klines,

@@ -375,6 +375,7 @@ def get_market_caps(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
         "market_cap": {"usd": float(c["market_cap"]), "rank": c.get("market_cap_rank")},
         "market_stats": market_stats(c),
         "name": c.get("name"),
+        "coin_id": c.get("id"),
     } for c in coins}
 
 
@@ -383,10 +384,22 @@ def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, 
 
     Mit coin_id eindeutig, sonst per Symbol (bei Mehrdeutigkeit der größte Coin)."""
     query = f"ids={coin_id}" if coin_id else f"symbols={symbol.lower()}&include_tokens=top"
-    c = fetch_json(
+    return _coingecko_coin(fetch_json(
         "https://api.coingecko.com/api/v3/coins/markets"
         f"?vs_currency=usd&{query}&sparkline=true" + STATS_CHANGES
-    )[0]
+    )[0])
+
+
+def get_coingecko_coins(ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Wie get_coingecko_coin, aber für viele Coins in einer Abfrage (Watchlist im Dashboard); Schlüssel: Coin-ID."""
+    coins = fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&ids={urllib.parse.quote(','.join(ids))}&per_page={len(ids)}&sparkline=true" + STATS_CHANGES
+    )
+    return {c["id"]: _coingecko_coin(c) for c in coins}
+
+
+def _coingecko_coin(c: Dict[str, Any]) -> Dict[str, Any]:
     mcap, volume = c.get("market_cap"), c.get("total_volume")
     change_7d = c.get("price_change_percentage_7d_in_currency")
     change_30d = c.get("price_change_percentage_30d_in_currency")
@@ -396,6 +409,7 @@ def get_coingecko_coin(symbol: str, coin_id: Optional[str] = None) -> Dict[str, 
         "market_cap": {"usd": float(mcap), "rank": c.get("market_cap_rank")} if mcap else None,
         "market_stats": market_stats(c),
         "name": c.get("name"),
+        "coin_id": c.get("id"),
         "momentum": {
             "change_7d": change_7d / 100 if change_7d is not None else None,
             "change_30d": change_30d / 100 if change_30d is not None else None,
@@ -432,6 +446,19 @@ def get_markets(page: int, per_page: int = 50, category: Optional[str] = None) -
     coins = fetch_json(
         "https://api.coingecko.com/api/v3/coins/markets"
         f"?vs_currency=usd&order=market_cap_desc&per_page={per_page}&page={page}{cat}" + MARKETS_FIELDS
+    )
+    return [_market_row(c) for c in coins]
+
+
+WATCHLIST_MAX = 100
+
+
+def get_markets_by_ids(ids: List[str]) -> List[Dict[str, Any]]:
+    """Marktdaten bestimmter Coins (Watchlist) in einer Abfrage, nach Marktkapitalisierung sortiert."""
+    coins = fetch_json(
+        "https://api.coingecko.com/api/v3/coins/markets"
+        f"?vs_currency=usd&ids={urllib.parse.quote(','.join(ids))}&order=market_cap_desc"
+        f"&per_page={len(ids)}" + MARKETS_FIELDS
     )
     return [_market_row(c) for c in coins]
 
@@ -1744,11 +1771,12 @@ def collect_global() -> Dict[str, Any]:
 
 
 def collect_symbol(symbol: str, coin_id: Optional[str] = None,
-                   with_market: bool = False) -> Dict[str, Any]:
+                   with_market: bool = False, market: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Coin-spezifische Derivate- und Kursdaten.
 
     with_market: Marktkapitalisierung mit abfragen (eine CoinGecko-Abfrage).
-    Fehlen Binance-Futures oder -Kursdaten, kommen Ersatz-Signale aus derselben Abfrage."""
+    Fehlen Binance-Futures oder -Kursdaten, kommen Ersatz-Signale aus derselben Abfrage.
+    market: schon geladenes Ergebnis von get_coingecko_coins (auch leer = fehlgeschlagen); dann keine eigene Abfrage."""
     closes = safe(get_daily_closes, symbol)
     data = {
         "funding": safe(get_funding, symbol),
@@ -1762,11 +1790,12 @@ def collect_symbol(symbol: str, coin_id: Optional[str] = None,
     }
     no_futures = not (data["funding"] or data["open_interest"] or data["long_short"])
     if with_market or no_futures or not closes:
-        cg = safe(get_coingecko_coin, symbol, coin_id) or {}
+        cg = market if market is not None else safe(get_coingecko_coin, symbol, coin_id) or {}
         if with_market:
             data["market_cap"] = cg.get("market_cap")
             data["market_stats"] = cg.get("market_stats")
             data["name"] = cg.get("name")
+            data["coin_id"] = cg.get("coin_id")
         if no_futures or not closes:
             data["momentum"] = cg.get("momentum")
     return data

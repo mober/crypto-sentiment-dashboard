@@ -47,33 +47,26 @@
   .chip.static { cursor: default; border-color: transparent; opacity: .55; }
   .chip.active { background: var(--text); color: var(--card); }
   .chip.active .rank, .chip.active .chg { color: inherit; opacity: .75; }
+  .chip.fixed { cursor: default; }
 
   /* Coins */
   .coins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .coins.extra { grid-template-columns: repeat(4, 1fr); }
   .coin-note { color: var(--muted); font-size: 13px; }
+  .coins-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 2px 10px; }
+  .coins-head a { color: inherit; }
   .coin-loading { padding: 20px; color: var(--muted); }
   .coin { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
   .coin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .coin-head h2 { margin: 0; font-size: 20px; }
   .coin-title { display: flex; align-items: center; gap: 10px; }
   .detail-link { font-size: 12px; padding: 3px 10px; }
+  .coin-title .star { margin-left: -6px; }
   .mcap { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .mcap .val { color: var(--text); font-weight: 600; }
   .price { font-size: 20px; font-weight: 600; }
   .head-r { text-align: right; }
   .trend { font-size: 13px; font-weight: 600; white-space: nowrap; }
   .mcap .val { white-space: nowrap; }
-  /* Vier schmale Kacheln nebeneinander: Kopf in drei Zeilen (Titel | Preis, Marktkap., Trend) */
-  @media (min-width: 1181px) {
-    .coins.extra .coin-head { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
-      grid-template-areas: "title price" "mcap mcap" "trend trend"; }
-    .coins.extra .head-l, .coins.extra .head-r { display: contents; }
-    .coins.extra .coin-title { grid-area: title; }
-    .coins.extra .price { grid-area: price; text-align: right; }
-    .coins.extra .mcap { grid-area: mcap; }
-    .coins.extra .trend { grid-area: trend; }
-  }
   .trend.up { color: var(--up); }
   .trend.down { color: var(--down); }
 
@@ -102,11 +95,11 @@
 
   .error { padding: 16px 20px; color: var(--down); margin-bottom: 20px; }
 
-  @media (max-width: 1180px) {
-    .coins.extra { grid-template-columns: 1fr 1fr; }
-  }
   @media (max-width: 960px) {
-    .coins, .coins.extra { grid-template-columns: 1fr; }
+    .coins { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 640px) {
+    .coins { grid-template-columns: 1fr; }
   }
   @media (max-width: 640px) {
     .market { grid-template-columns: 1fr; }
@@ -133,6 +126,8 @@
   <div id="error" class="card error" hidden></div>
   <section class="card market" id="market"></section>
   <section class="card trending" id="trending"></section>
+  <div class="coins-head"><span class="label"><span data-tip="watchlist" tabindex="0">★ Watchlist</span></span>
+    <span class="coin-note">BTC, ETH und SOL fest · weitere per Stern ☆ oder Klick in Trending/Top 20 · <a href="markets.html?watch=1">als Tabelle</a></span></div>
   <section class="coins" id="coins"></section>
 
   <footer>
@@ -145,6 +140,7 @@
 
 <script src="format.js"></script>
 <script src="tips.js"></script>
+<script src="watchlist.js"></script>
 <script>
 const REFRESH_MS = 5 * 60 * 1000;
 // $, esc, pct, usd, usd6, signed und tone kommen aus format.js
@@ -152,11 +148,7 @@ const num = (v, d) => v.toFixed(d).replace(".", ",");
 const na = '<span class="note">n/a</span>';
 
 
-let payload = null;     // letzte Antwort von /api/sentiment
-let extra = null;       // Symbol des zusätzlich gewählten Coins (Trending oder Marktübersicht)
-let extraId = null;     // dessen CoinGecko-ID, falls bekannt (Symbole sind nicht eindeutig)
-let extraCoin = null;   // dessen Daten (null = lädt)
-const EXTRA_KEY = "extraCoin";
+let payload = null;     // letzte Antwort von /api/sentiment (Markt-Leiste, Trending; die Karten kommen aus /api/watch-coins)
 
 // FNG_ZONES und fngZone kommen aus format.js
 const FNG_LABELS = { "Extreme Fear": "Extreme Angst", "Fear": "Angst", "Neutral": "Neutral", "Greed": "Gier", "Extreme Greed": "Extreme Gier" };
@@ -218,7 +210,7 @@ function renderMarket(g) {
   renderChips();
 }
 
-// --- Chip-Leiste: Trending oder Top 20 nach Marktkapitalisierung ---
+// --- Chip-Leiste: Trending oder Top 20 nach Marktkapitalisierung; Klick merkt den Coin in der Watchlist ---
 const LIST_KEY = "chipList";
 const TOP_COUNT = 20;
 let listMode = "trending";  // "trending" | "top"
@@ -273,7 +265,6 @@ function setListMode(mode) {
 function renderChips() {
   const isTop = listMode === "top";
   const list = isTop ? top20 || [] : (payload && payload.global.trending) || [];
-  const shown = payload ? payload.coins.map((c) => c.symbol) : [];
   const chip = (t) => {
     // Trending: Rang 1 kräftig (40 %), letzter Rang blass (6 %); Top 20 ohne Färbung (Rang = Größe, nicht Aufmerksamkeit)
     const heat = isTop ? 0 : list.length > 1 ? 6 + ((list.length - t.rank) / (list.length - 1)) * 34 : 40;
@@ -282,11 +273,13 @@ function renderChips() {
     const title = isTop ? `Marktkap.-Rang ${t.rank}: ${t.name}`
       : `Rang ${t.rank}: ${t.name}` + (t.market_cap_rank ? ` · Marktkap.-Rang ${t.market_cap_rank}` : "");
     const inner = `<span class="rank">${t.rank}</span>${esc(t.symbol)}${chg}`;
-    if (shown.includes(t.symbol))
-      return `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · wird bereits angezeigt">${inner}</span>`;
-    if (!/^[A-Z0-9]{1,15}$/.test(t.symbol))  // z. B. FIGR_HELOC: kein gültiges Symbol für die Kartenabfrage
-      return `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · kann nicht als Karte angezeigt werden">${inner}</span>`;
-    return `<button class="chip${t.symbol === extra ? " active" : ""}" style="--heat:${heat}%" data-symbol="${esc(t.symbol)}" data-id="${esc(t.id || "")}" title="${esc(title)} · im Dashboard anzeigen">${inner}</button>`;
+    if (!WATCH_SYMBOL_RE.test(t.symbol) || !WATCH_ID_RE.test(t.id || ""))  // z. B. FIGR_HELOC: kein gültiges Symbol
+      return `<span class="chip static" style="--heat:${heat}%" title="${esc(title)} · kann nicht gemerkt werden">${inner}</span>`;
+    if (isFixed(t.id))
+      return `<span class="chip active fixed" style="--heat:${heat}%" title="${esc(title)} · fest in der Watchlist">${inner}</span>`;
+    const on = isWatched(t.id);
+    return `<button class="chip${on ? " active" : ""}" style="--heat:${heat}%" data-symbol="${esc(t.symbol)}" data-id="${esc(t.id)}"`
+      + ` data-name="${esc(t.name || t.symbol)}" aria-pressed="${on}" title="${esc(title)} · ${on ? "aus der Watchlist entfernen" : "zur Watchlist hinzufügen"}">${inner}</button>`;
   };
   const empty = isTop && !top20
     ? (top20Error ? `nicht verfügbar (${esc(top20Error)})` : "Lade Top 20 …")
@@ -300,13 +293,14 @@ function renderChips() {
         </div>
         <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? "Nach Marktkap. (CoinGecko)" : "Meistgesucht (CoinGecko)"}</span></div>
       </div>
-      <div class="note">${isTop ? "ohne Stablecoins · Zahl = Marktkap.-Rang" : "Rang 1 = meistgesucht"} · rechts: Kurs 24 h · Klick = als Karte anzeigen</div>
+      <div class="note">${isTop ? "ohne Stablecoins · Zahl = Marktkap.-Rang" : "Rang 1 = meistgesucht"} · rechts: Kurs 24 h · Klick = zur Watchlist (dunkel = schon dabei)</div>
     </div>
     <div class="chips">${list.length ? list.map(chip).join("") : `<span class="note">${empty}</span>`}</div>`;
 }
 
 function renderCoin(c, id = null) {
   const d = c.data;
+  id = id || d.coin_id || null;
   const detailHref = "coin.html?symbol=" + encodeURIComponent(c.symbol) + (id ? "&id=" + encodeURIComponent(id) : "");
   const ma = d.price_ma200;
   const fr = d.funding;
@@ -335,6 +329,7 @@ function renderCoin(c, id = null) {
         <div class="head-l">
           <div class="coin-title">
             <h2>${esc(c.symbol)}</h2>
+            ${watchStar({ id, symbol: c.symbol, name: d.name })}
             <a class="navlink detail-link" href="${esc(detailHref)}" title="Detailansicht für ${esc(c.symbol)} öffnen">Details</a>
           </div>
           <div class="mcap"><span${tipAttr("mcap")}>Marktkap.</span>
@@ -374,84 +369,71 @@ function renderCoin(c, id = null) {
     </article>`;
 }
 
+// --- Karten: eine je Watchlist-Coin (watchlist.js; BTC, ETH, SOL fest) aus /api/watch-coins ---
+// Der Server fragt CoinGecko dafür einmal für alle Coins ab, Binance je Coin; Cache je Coin 5 Min.
+const WATCH_COINS_KEY = "lastWatchCoins";
+const watchCoins = new Map();   // Coin-ID → Antwort wie /api/coin
+let watchErrors = new Map();    // Coin-ID → Fehlertext (nur Anzeige auf dem Platzhalter)
+let watchToken = 0;
+let watchUpdated = null;
+
 function renderCoins() {
-  if (!payload) return;
   hideTip();
-  let html = payload.coins.map((c) => renderCoin(c)).join("");
-  if (extra) {
-    html += extraCoin
-      ? renderCoin(extraCoin, extraId)
-      : `<article class="card coin-loading">${esc(extra)} wird geladen …</article>`;
-  }
-  $("coins").innerHTML = html;
-  $("coins").classList.toggle("extra", !!extra);
+  $("coins").innerHTML = watchList().map((w) => {
+    const c = watchCoins.get(w.id);
+    if (c) return renderCoin(c, w.id);
+    const err = watchErrors.get(w.id);
+    return `<article class="card coin-loading">${esc(w.symbol)} ${err ? `konnte nicht geladen werden (${esc(err)}) – neuer Versuch beim nächsten Aktualisieren.` : "wird geladen …"}</article>`;
+  }).join("");
 }
 
-// Auswahl im Browser merken; ist der Speicher blockiert (z. B. privates Fenster), wird sie einfach nicht gemerkt
-function saveExtra() {
+function saveWatchCoins() {
   try {
-    if (extra) localStorage.setItem(EXTRA_KEY, JSON.stringify({ symbol: extra, id: extraId }));
-    else localStorage.removeItem(EXTRA_KEY);
+    localStorage.setItem(WATCH_COINS_KEY, JSON.stringify({ updated: watchUpdated, coins: [...watchCoins.entries()] }));
+  } catch (e) { /* Speicher voll oder blockiert: beim nächsten Öffnen eben ohne */ }
+}
+
+function restoreWatchCoins() {
+  try {
+    const p = JSON.parse(localStorage.getItem(WATCH_COINS_KEY));
+    if (!p || !Array.isArray(p.coins) || Date.now() - new Date(p.updated) > 24 * 3600 * 1000) return;
+    const ids = new Set(watchList().map((w) => w.id));
+    p.coins.forEach(([id, c]) => { if (ids.has(id) && c && c.data) watchCoins.set(id, c); });
+    watchUpdated = p.updated;
   } catch (e) { /* ignorieren */ }
 }
 
-function restoreExtra() {
-  // Vorrang: Link aus der Marktübersicht (?coin=…&id=…), sonst gespeicherte Auswahl
-  const params = new URLSearchParams(location.search);
-  let saved = null;
-  if (params.get("coin")) {
-    saved = { symbol: params.get("coin").toUpperCase(), id: params.get("id") || null };
-    history.replaceState(null, "", location.pathname);
-  } else {
-    try { saved = JSON.parse(localStorage.getItem(EXTRA_KEY)); } catch (e) { saved = null; }
-  }
-  if (saved && /^[A-Z0-9]{1,15}$/.test(saved.symbol)) {
-    extra = saved.symbol;
-    extraId = saved.id || null;
-    saveExtra();
-  }
-}
-
-async function loadExtra(force = false) {
-  const symbol = extra;
-  if (!symbol) return;
-  if (payload && payload.coins.some((c) => c.symbol === symbol)) {
-    // wird ohnehin angezeigt (z. B. BTC aus der Marktübersicht)
-    extra = extraId = extraCoin = null;
-    saveExtra();
-    renderMarket(payload.global);
-    renderCoins();
-    return;
-  }
+// only: nur diese Einträge laden (neu hinzugefügte Coins), sonst die ganze Watchlist
+async function loadWatchCoins(force = false, only = null) {
+  const entries = only || watchList();
+  if (!entries.length) return;
+  const token = only ? watchToken : ++watchToken;
   try {
-    const res = await fetch("api/coin?symbol=" + encodeURIComponent(symbol)
-      + (extraId ? "&id=" + encodeURIComponent(extraId) : "") + (force ? "&refresh=1" : ""));
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const coin = await res.json();
-    if (extra !== symbol) return;  // inzwischen anderer Coin gewählt
-    extraCoin = coin;
-    renderCoins();
+    const res = await fetch("api/watch-coins?coins=" + encodeURIComponent(entries.map((w) => `${w.symbol}:${w.id}`).join(","))
+      + (force ? "&refresh=1" : ""));
+    const p = await res.json();
+    if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    if (token !== watchToken) return;   // inzwischen neu geladen
+    entries.forEach((w, i) => { if (p.coins[i]) { watchCoins.set(w.id, p.coins[i]); watchErrors.delete(w.id); } });
+    // entfernte Coins nicht weiter mitschleppen
+    const ids = new Set(watchList().map((w) => w.id));
+    [...watchCoins.keys()].forEach((id) => { if (!ids.has(id)) watchCoins.delete(id); });
+    watchUpdated = p.updated;
+    saveWatchCoins();
   } catch (e) {
-    if (extra !== symbol) return;
-    $("error").textContent = symbol + " konnte nicht geladen werden (" + e.message + ").";
-    $("error").hidden = false;
-    extra = extraId = extraCoin = null;
-    saveExtra();
-    renderMarket(payload.global);
-    renderCoins();
+    if (token !== watchToken) return;
+    entries.forEach((w) => { if (!watchCoins.has(w.id)) watchErrors.set(w.id, e.message); });
   }
+  renderCoins();
 }
 
-function selectExtra(symbol, id) {
-  const deselect = extra === symbol;  // erneuter Klick entfernt den Coin wieder
-  extra = deselect ? null : symbol;
-  extraId = deselect ? null : id || null;
-  extraCoin = null;
-  saveExtra();
-  renderMarket(payload.global);
+// Watchlist geändert (Stern, Chip oder anderer Tab): Karten sofort anpassen, neue Coins nachladen
+document.addEventListener("watchlist", () => {
+  renderChips();
   renderCoins();
-  loadExtra();
-}
+  const missing = watchList().filter((w) => !watchCoins.has(w.id));
+  if (missing.length) loadWatchCoins(false, missing);
+});
 
 // Letzter Stand im Browser: beim Öffnen sofort anzeigen, die frischen Daten ersetzen ihn kurz darauf
 const PAYLOAD_KEY = "lastPayload";
@@ -461,7 +443,6 @@ const STALE_RETRY_MAX = 6;             // höchstens 1 Minute lang nachfragen
 let staleTimer = null, staleRetries = 0;
 function showPayload() {
   renderMarket(payload.global);
-  renderCoins();
   $("updated").textContent = "Stand: " + new Date(payload.updated).toLocaleString("de-DE");
 }
 function restorePayload() {
@@ -478,6 +459,7 @@ async function load(force = false) {
   const btn = $("refresh");
   btn.disabled = true;
   btn.textContent = "Lädt …";
+  const cards = loadWatchCoins(force);   // parallel zu den Marktdaten
   try {
     const res = await fetch("api/sentiment" + (force ? "?refresh=1" : ""));
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -491,12 +473,12 @@ async function load(force = false) {
       staleRetries++;
       staleTimer = setTimeout(load, STALE_RETRY_MS);
     } else staleRetries = 0;
-    loadExtra(force);
     if (listMode === "top") loadTop20();  // Rangliste mit aktualisieren
   } catch (e) {
     $("error").textContent = "Daten konnten nicht geladen werden (" + e.message + "). Läuft server.py?";
     $("error").hidden = false;
   } finally {
+    await cards;
     btn.disabled = false;
     btn.textContent = "Aktualisieren";
   }
@@ -508,10 +490,11 @@ $("trending").addEventListener("click", (e) => {
   const mode = e.target.closest("button[data-list]");
   if (mode) { setListMode(mode.dataset.list); return; }
   const chip = e.target.closest("button.chip");
-  if (chip) selectExtra(chip.dataset.symbol, chip.dataset.id);
+  if (chip) toggleWatch({ id: chip.dataset.id, symbol: chip.dataset.symbol, name: chip.dataset.name });
 });
 if (listMode === "top") loadTop20();
-restoreExtra();
+restoreWatchCoins();
+renderCoins();
 restorePayload();
 load();
 setInterval(load, REFRESH_MS);
