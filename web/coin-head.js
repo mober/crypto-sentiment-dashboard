@@ -96,6 +96,7 @@ function renderHero(c) {
       <div class="label">Überhitzungs-Score</div>
       <div class="score">${signed(c.score)}</div>
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
+      <div class="track" id="score-track"></div>
     </div>
     ${lageBlock(c)}
     <div class="news" id="hero-news" hidden></div>`;
@@ -104,16 +105,17 @@ function renderHero(c) {
   fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
   renderStats(c);
   renderBreakdown(c);
+  renderTrack();   // Trefferquote, falls der Score-Verlauf schon geladen ist
 }
 
-function bdRow(name, reason, points, share, total = false, n = 1) {
+function bdRow(name, reason, points, share, total = false, n = 1, weight = 1) {
   const w = Math.min(100, Math.abs(points)) / 2;  // halbe Spurbreite = 100 Punkte
   const bar = points === 0 ? "" : `<div class="bd-bar ${points > 0 ? "pos" : "neg"}" style="width:${w}%"></div>`;
   // Tooltip: allgemeine Erklärung (tips.js) plus Einordnung des aktuellen Werts
   const key = total ? "score" : SIGNAL_TIPS[name];
   const now = total
-    ? `Aktuell: ${signed(points)} = Durchschnitt aus ${n} Signalen.`
-    : `Aktuell: ${reason} → ${signed(points)} Punkte. Bei ${n} gleich gewichteten Signalen macht das ${num1(share)} im Score aus.`;
+    ? `Aktuell: ${signed(points)} = gewichteter Durchschnitt aus ${n} Signalen.`
+    : `Aktuell: ${reason} → ${signed(points)} Punkte, Gewicht ${weight.toLocaleString("de-DE")}. Das macht ${num1(share)} im Score aus.`;
   const tip = key && TIPS[key] ? ` data-tip="${key}" data-tip-now="${esc(now)}" tabindex="0"` : "";
   return `
     <div class="bd-row${total ? " total" : ""}">
@@ -123,9 +125,10 @@ function bdRow(name, reason, points, share, total = false, n = 1) {
     </div>`;
 }
 
-// Jedes Signal zählt gleich: Score = Durchschnitt, Anteil eines Signals = Punkte / Anzahl
+// Score = gewichteter Durchschnitt (Gewichte SIGNAL_WEIGHTS in sentiment.py), Anteil = Punkte × Gewicht / Summe der Gewichte
 function renderBreakdown(c) {
   const n = c.signals.length;
+  const w = (s) => s.weight ?? 1, sumW = c.signals.reduce((a, s) => a + w(s), 0);
   if (!n) {
     $("breakdown").innerHTML = '<div class="status">Keine Signale für diesen Coin.</div>';
     return;
@@ -133,9 +136,9 @@ function renderBreakdown(c) {
   $("breakdown").innerHTML = `
     <div class="breakdown-head">
       <div class="label">Zusammensetzung des Überhitzungs-Scores</div>
-      <div class="note">${n} Signale, jedes zählt gleich (1/${n}) · Score = Durchschnitt</div>
+      <div class="note">${n} Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)</div>
     </div>
-    ${c.signals.map((s) => bdRow(s.name, s.reason, s.points, s.points / n, false, n)).join("")}
+    ${c.signals.map((s) => bdRow(s.name + (w(s) !== 1 ? ` ×${w(s).toLocaleString("de-DE")}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s))).join("")}
     ${bdRow("Überhitzungs-Score", c.verdict, c.score, null, true, n)}
     <div class="bd-axis"><span></span><div class="ticks"><span>−100 Angst</span><span>0</span><span>Gier +100</span></div><span></span></div>`;
   setupCollapse($("breakdown"));  // Kopfzeile wurde neu geschrieben

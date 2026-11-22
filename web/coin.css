@@ -42,6 +42,11 @@
 .news .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .hero .score-box { text-align: right; }
 .hero .score { font-size: 28px; font-weight: 700; }
+.score-box .track { max-width: 420px; margin: 8px 0 0 auto; font-size: 12px; line-height: 1.5; color: var(--muted); text-align: right; }
+.score-box .track:empty { display: none; }
+.score-box .track b { color: var(--text); }
+.score-box .track b.up { color: var(--up); } .score-box .track b.down { color: var(--down); }
+.score-box .track .muted { display: block; }
 .verdict { border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 500; display: inline-block; margin-top: 4px; }
 .tone-hot { background: var(--hot-bg); color: var(--hot); }
 .tone-cold { background: var(--cold-bg); color: var(--cold); }

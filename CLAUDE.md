@@ -81,8 +81,15 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 ## Score-Logik
 
 - Jedes Signal rechnet seinen Messwert über Ankerpunkte (`*_SCALE` oben in `sentiment.py`)
-  linear in −100 … +100 um; der Score ist der **Durchschnitt** aller vorhandenen Signale,
-  damit Coins mit unterschiedlich vielen Signalen vergleichbar bleiben.
+  linear in −100 … +100 um; der Score ist der **gewichtete Durchschnitt** aller vorhandenen Signale
+  (`SIGNAL_WEIGHTS`: MA200 und DVOL 1,5, Fear & Greed und RSI 0,5, Rest 1), damit Coins mit unterschiedlich
+  vielen Signalen vergleichbar bleiben. Die Gewichte stammen aus einem Backtest (BTC/ETH/SOL, 04/2024–11/2026,
+  Score gegen Kursänderung 30/90 Tage danach); Ergebnis: ab +40 deutlich schlechtere Folgerenditen, extreme
+  Angst allein kein verlässliches Kaufsignal – daran sind `verdict`, `ACTIONS` und `ACTIONS_EXTREME` ausgerichtet.
+- Trefferquote: `/api/score-history` rechnet `SCORE_STATS_DAYS` (960) Tage nach, liefert im Chart nur das
+  letzte Jahr und dazu `track_record` (`score_track_record`: je Zone Anteil höher und Median nach 30/90 Tagen,
+  Vergleich alle Tage). Anzeige unter dem Score im Kopf der Detailseite (`renderTrack` in `coin-score.js`,
+  Zonen wie `score_zone`). Gewichte oder Zonen ändern → beide Stellen und Tooltips `score`/`trackRecord` anpassen.
 - DVOL gibt es nur für BTC und ETH.
 - Funding wird auf 8 h umgerechnet (`normalize_funding`), da manche Coins alle 4 h oder 1 h zahlen;
   `FUNDING_SCALE` gilt pro 8 h.

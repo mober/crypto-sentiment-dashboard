@@ -386,8 +386,13 @@ def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
 def get_score_history(symbol: str) -> Optional[Dict[str, Any]]:
     """Rückwirkend berechneter Score je Tag; None ohne Binance-Kerzen und -Futures."""
     def load(_: Any) -> Optional[Dict[str, Any]]:
-        result = sentiment.safe(sentiment.get_score_history, symbol)
-        return {"symbol": symbol, **result} if result and result["days"] else None
+        # lange Historie für die Trefferquote je Score-Zone, im Chart nur das letzte Jahr
+        result = sentiment.safe(sentiment.get_score_history, symbol, sentiment.SCORE_STATS_DAYS)
+        if not result or not result["days"]:
+            return None
+        days = result["days"]
+        return {"symbol": symbol, **result, "days": days[-sentiment.SCORE_HISTORY_DAYS:],
+                "track_record": sentiment.score_track_record(days)}
 
     return _history_cache.get(symbol, load)
 

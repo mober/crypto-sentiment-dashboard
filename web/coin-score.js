@@ -84,6 +84,25 @@ function histMarkers() {
   return markers;
 }
 
+// Trefferquote: Wie entwickelte sich der Kurs bisher nach Tagen in der aktuellen Score-Zone?
+let trackRecord = null;
+const ZONE_OF = (v) => v <= -40 ? "cold2" : v <= -15 ? "cold1" : v < 15 ? "neutral" : v < 40 ? "hot1" : "hot2";  // wie score_zone in sentiment.py
+function renderTrack() {
+  const el = $("score-track");
+  if (!el || !trackRecord || !statsCoin || !statsCoin.signals.length) return;
+  const z = trackRecord.zones[ZONE_OF(statsCoin.score)], all = trackRecord.all;
+  const q = z && z["90d"], q30 = z && z["30d"];
+  if (!q || q.n < 20 || !all["90d"]) { el.innerHTML = ""; return; }
+  const pc = (v) => Math.round(v * 100) + " %";
+  const cls = (v, base) => v > base + 0.1 ? "up" : v < base - 0.1 ? "down" : "";
+  const since = new Date(trackRecord.since * 1000).toLocaleDateString("de-DE", { month: "2-digit", year: "numeric" });
+  el.innerHTML = `<span data-tip="trackRecord" tabindex="0">Bisher bei ${esc(symbol)}</span> nach „${esc(z.name)}“:
+    90 Tage später in <b class="${cls(q.up, all["90d"].up)}">${pc(q.up)}</b> der Fälle höher (Median ${pctSignedDe(q.median)}),
+    im Schnitt aller Tage ${pc(all["90d"].up)}.${q30 ? ` Nach 30 Tagen: ${pc(q30.up)} (alle ${pc(all["30d"].up)}).` : ""}
+    <span class="muted">${q.n} Tage seit ${since}, rückblickend – keine Prognose.</span>`;
+}
+const pctSignedDe = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " %";
+
 async function loadHistory() {
   try {
     const res = await fetch("api/score-history?symbol=" + encodeURIComponent(symbol));
@@ -94,6 +113,8 @@ async function loadHistory() {
     }
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     histData = p.days;
+    trackRecord = p.track_record || null;
+    renderTrack();
     histSeries.setData(histData.map((d) => ({ time: d.time, value: d.score })));
     histSeries.setMarkers(histMarkers());
     histPrice.setData(histData.filter((d) => d.price != null).map((d) => ({ time: d.time, value: d.price })));

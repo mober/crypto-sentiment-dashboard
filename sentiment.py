@@ -71,6 +71,12 @@ MOMENTUM_30D_SCALE = [(-0.50, -100), (0.0, 0), (0.50, 100)]
 TURNOVER_SCALE = [(0.05, 0), (0.50, 100)]           # Tagesvolumen / Marktkap.; Vorzeichen folgt dem 7T-Trend
 
 SIGNAL_STRONG = 50        # ab hier gilt ein Einzelsignal als ausgeprägt
+# Gewicht je Signal im Score (Standard 1). Aus einem Backtest BTC/ETH/SOL 04/2024–11/2026 (Score gegen
+# Kursänderung 30/90 Tage danach): Trend (MA200) und Optionsvola sagten am meisten, Fear & Greed und
+# RSI kaum etwas voraus. Bewusst grobe Stufen, um nicht an einen einzelnen Marktzyklus anzupassen.
+SIGNAL_WEIGHTS = {"Fear & Greed": 0.5, "RSI (14)": 0.5, "RSI (14 Std.)": 0.5,
+                  "Preis vs. MA200": 1.5, "Optionsvola (DVOL)": 1.5}
+SCORE_STATS_DAYS = 960    # Score-Historie für die Trefferquote (Binance liefert bis 1000 Tageskerzen)
 VERDICT_HOT = 40          # Gesamtscore ab +40 = überhitzt, ab -40 = extreme Angst
 VERDICT_WARM = 15         # ab ±15 = leicht gierig / ängstlich
 
@@ -1110,7 +1116,8 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     def add(name: str, points: int, reason: str, hot: str, cold: str, neutral: str) -> None:
         word = hot if points >= SIGNAL_STRONG else cold if points <= -SIGNAL_STRONG else neutral
-        signals.append({"name": name, "points": points, "reason": f"{reason}, {word}"})
+        signals.append({"name": name, "points": points, "reason": f"{reason}, {word}",
+                        "weight": SIGNAL_WEIGHTS.get(name, 1.0)})
 
     fng = d.get("fear_greed")
     if fng:
@@ -1175,10 +1182,11 @@ def score(d: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def total_score(signals: List[Dict[str, Any]]) -> int:
-    """Gesamtscore = Durchschnitt der Einzelsignale (-100 … +100)."""
+    """Gesamtscore = gewichteter Durchschnitt der Einzelsignale (-100 … +100), Gewichte SIGNAL_WEIGHTS."""
     if not signals:
         return 0
-    return round(sum(s["points"] for s in signals) / len(signals))
+    w = [SIGNAL_WEIGHTS.get(s["name"], 1.0) for s in signals]
+    return round(sum(s["points"] * x for s, x in zip(signals, w)) / sum(w))
 
 
 def verdict(total: int, count: int) -> str:
@@ -1189,9 +1197,9 @@ def verdict(total: int, count: int) -> str:
     if total >= VERDICT_WARM:
         return "Leicht gierig: Markt läuft heiß, nicht der FOMO folgen."
     if total <= -VERDICT_HOT:
-        return "EXTREME ANGST: Historisch oft gute Kaufzonen (DCA fortsetzen)."
+        return "EXTREME ANGST: allein kein verlässliches Kaufsignal – Trendwende abwarten."
     if total <= -VERDICT_WARM:
-        return "Leicht ängstlich: eher Kaufgelegenheit als Verkaufssignal."
+        return "Leicht ängstlich: kein Verkaufssignal, Einstieg am besten mit Trendbestätigung."
     return "Neutral: Keine Extreme erkennbar."
 
 
@@ -1244,17 +1252,17 @@ ACTIONS = {
     ("neutral", "down"): ("Nicht kaufen", "sell",
                           "Abwärtstrend ohne Übertreibung: kein Einstieg, "
                           "bestehende Positionen eher verkleinern."),
-    ("fear", None): ("Kleine Tranchen", "buy",
-                     "Angst spricht für einen Einstieg, ohne Trend aber nur in kleinen Schritten."),
+    ("fear", None): ("Beobachten", "wait",
+                     "Angst allein war bisher kein verlässliches Kaufsignal; ohne Trend fehlt die Bestätigung."),
     ("greed", None): ("Nicht nachkaufen", "hold",
                       "Gier spricht gegen neue Käufe; ohne Trend fehlt die Bestätigung für mehr."),
     ("neutral", None): ("Abwarten", "wait",
                         "Weder Stimmung noch Trend geben ein klares Signal."),
 }
 ACTIONS_EXTREME = {
-    ("fear", "down"): ("Vorsichtig zukaufen", "buy",
-                       "Extreme Angst markiert oft die Nähe von Tiefs: kleine, gestaffelte Käufe, "
-                       "der Großteil erst nach einer Trendwende."),
+    ("fear", "down"): ("Abwarten", "wait",
+                       "Extreme Angst war bisher kein verlässlicher Boden – der Kurs fiel oft weiter. "
+                       "Einstieg erst, wenn der Trend dreht (Kurs zurück über dem MA200)."),
     ("greed", "up"): ("Gewinne sichern", "sell",
                       "Überhitzt: einen Teil der Gewinne mitnehmen, der Rest läuft mit enger Absicherung."),
     ("greed", "down"): ("Verkaufen", "sell",
@@ -1312,8 +1320,8 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int) -> O
     ls, dv, mo = d.get("long_short"), d.get("dvol"), d.get("momentum") or {}
     if fng:
         strong("Fear & Greed",
-               (f"Fear & Greed {fng['value']}: Angst am Markt, historisch oft nahe an Tiefs", ""),
-               (f"Fear & Greed {fng['value']}: Gier am Markt, historisch oft nahe an Hochs", ""))
+               (f"Fear & Greed {fng['value']}: Angst am Markt (allein bisher ein schwaches Signal)", ""),
+               (f"Fear & Greed {fng['value']}: Gier am Markt (allein bisher ein schwaches Signal)", ""))
     if ma:
         strong("Preis vs. MA200", ("", ""),
                ("Kurs weit über dem MA200: stark gestreckt, anfällig für Rücksetzer", "stark gestreckt"))
@@ -1550,6 +1558,44 @@ def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[D
             "signals": [{"name": x["name"], "points": x["points"]} for x in signals],
         })
     return {"days": out, "price_source": got["klines"][1] if got["klines"] else None}
+
+
+SCORE_ZONES = [  # (Schlüssel, Name, von, bis) – Grenzen wie VERDICT_HOT / VERDICT_WARM
+    ("cold2", "extreme Angst (bis −40)", -101, -VERDICT_HOT),
+    ("cold1", "Angst (−40 bis −15)", -VERDICT_HOT, -VERDICT_WARM),
+    ("neutral", "neutral (−15 bis +15)", -VERDICT_WARM, VERDICT_WARM),
+    ("hot1", "Gier (+15 bis +40)", VERDICT_WARM, VERDICT_HOT),
+    ("hot2", "überhitzt (ab +40)", VERDICT_HOT, 101),
+]
+
+
+def score_zone(total: int) -> str:
+    for key, _, lo, hi in SCORE_ZONES:
+        if lo < total <= hi if key.startswith("cold") else lo <= total < hi:
+            return key
+    return "neutral"
+
+
+def score_track_record(days: List[Dict[str, Any]], horizons: Tuple[int, ...] = (30, 90)) -> Dict[str, Any]:
+    """Wie entwickelte sich der Kurs nach Tagen in jeder Score-Zone? Je Zone und Zeitraum: Anzahl Tage,
+    Anteil mit höherem Kurs danach, Median der Änderung; dazu dieselben Werte über alle Tage zum Vergleich.
+    Rückblickend und mit Überlappung der Zeiträume – ein Indiz, keine Prognose."""
+    price = {d["time"]: d["price"] for d in days if d.get("price")}
+
+    def stats(rows: List[Dict[str, Any]], n: int) -> Optional[Dict[str, Any]]:
+        fw = [price[d["time"] + n * 86400] / d["price"] - 1 for d in rows
+              if d.get("price") and d["time"] + n * 86400 in price]
+        if not fw:
+            return None
+        return {"n": len(fw), "up": sum(x > 0 for x in fw) / len(fw), "median": statistics.median(fw)}
+
+    zones = {}
+    for key, name, _, _ in SCORE_ZONES:
+        rows = [d for d in days if score_zone(d["score"]) == key]
+        zones[key] = {"name": name, **{f"{n}d": stats(rows, n) for n in horizons}}
+    with_price = [d["time"] for d in days if d.get("price")]
+    return {"zones": zones, "all": {f"{n}d": stats(days, n) for n in horizons},
+            "since": min(with_price) if with_price else None}
 
 
 def collect_global() -> Dict[str, Any]:
