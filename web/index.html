@@ -50,7 +50,21 @@
   .chip.fixed { cursor: default; }
 
   /* Coins */
-  .coins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .coins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: start; }
+  .coin.flash { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px #e8a317; } to { box-shadow: 0 0 0 3px transparent; } }
+  /* Übersicht: alle Watchlist-Coins kompakt, Klick springt zur Karte */
+  .overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 20px; }
+  .ov { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 8px 10px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--card); box-shadow: var(--shadow); }
+  .ov-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .ov-sym { font-weight: 700; }
+  .ov-score { font-weight: 700; font-size: 13px; border-radius: 6px; padding: 0 6px; }
+  .ov-price { font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+  .ov-price .chg { font-size: 12px; }
+  .ov .gauge { height: 4px; margin-top: 3px; }
+  .ov .gauge .marker { width: 8px; height: 8px; border-width: 2px; }
+  .ov.loading { color: var(--muted); font-size: 13px; }
   .coin-note { color: var(--muted); font-size: 13px; }
   .coins-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 2px 10px; }
   .coins-head a { color: inherit; }
@@ -67,6 +81,16 @@
   .head-r { text-align: right; }
   .trend { font-size: 13px; font-weight: 600; white-space: nowrap; }
   .mcap .val { white-space: nowrap; }
+  /* Vier schmale Karten nebeneinander: Kopf in drei Zeilen (Titel | Preis, Marktkap., Trend) */
+  @media (min-width: 1181px) {
+    .coins .coin-head { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
+      grid-template-areas: "title price" "mcap mcap" "trend trend"; }
+    .coins .head-l, .coins .head-r { display: contents; }
+    .coins .coin-title { grid-area: title; }
+    .coins .price { grid-area: price; text-align: right; }
+    .coins .mcap { grid-area: mcap; }
+    .coins .trend { grid-area: trend; }
+  }
   .trend.up { color: var(--up); }
   .trend.down { color: var(--down); }
 
@@ -85,6 +109,14 @@
 
   .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
   .metrics .val { font-weight: 600; }
+  /* Ab Funding eingeklappt; offener Zustand je Karte gemerkt (openCards) */
+  .more { border-top: 1px solid var(--border); padding-top: 10px; }
+  .more summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; user-select: none; }
+  .more summary::-webkit-details-marker { display: none; }
+  .more summary::before { content: "▸"; display: inline-block; width: 14px; transition: transform .15s; }
+  .more[open] summary::before { transform: rotate(90deg); }
+  .more summary:hover { color: var(--text); }
+  .more > :not(summary) { margin-top: 14px; }
 
   .signals { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
   .signals li { display: grid; grid-template-columns: 40px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -95,6 +127,9 @@
 
   .error { padding: 16px 20px; color: var(--down); margin-bottom: 20px; }
 
+  @media (max-width: 1180px) {
+    .coins { grid-template-columns: repeat(3, 1fr); }
+  }
   @media (max-width: 960px) {
     .coins { grid-template-columns: 1fr 1fr; }
   }
@@ -126,6 +161,7 @@
   <div id="error" class="card error" hidden></div>
   <section class="card market" id="market"></section>
   <section class="card trending" id="trending"></section>
+  <section class="overview" id="overview" aria-label="Übersicht der Watchlist"></section>
   <div class="coins-head"><span class="label"><span data-tip="watchlist" tabindex="0">★ Watchlist</span></span>
     <span class="coin-note">BTC, ETH und SOL fest · weitere per Stern ☆ oder Klick in Trending/Top 20 · <a href="markets.html?watch=1">als Tabelle</a></span></div>
   <section class="coins" id="coins"></section>
@@ -324,7 +360,7 @@ function renderCoin(c, id = null) {
   }).join("");
 
   return `
-    <article class="card coin">
+    <article class="card coin" id="card-${esc(id || c.symbol)}">
       <div class="coin-head">
         <div class="head-l">
           <div class="coin-title">
@@ -355,6 +391,11 @@ function renderCoin(c, id = null) {
       <div class="metrics">
         <div><div class="label"><span${tipAttr("ma200")}>MA200</span></div><div class="val">${ma ? usd(ma.ma200) : na}</div></div>
         <div><div class="label"><span${tipAttr("distance")}>Abstand</span></div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
+      </div>
+
+      <details class="more" data-more="${esc(id || c.symbol)}"${openCards.has(id || c.symbol) ? " open" : ""}>
+      <summary>Funding, Open Interest, RSI und Signale</summary>
+      <div class="metrics">
         <div><div class="label"><span${tipAttr("funding")}>Funding Ø 7T</span></div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
         <div><div class="label"><span${tipAttr("longShort")}>Long/Short</span></div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", ",") : na}</div></div>
         <div><div class="label"><span${tipAttr("oi")}>Open Interest</span></div><div class="val">${oi ? usd(oi.usd) : na}</div></div>
@@ -366,6 +407,7 @@ function renderCoin(c, id = null) {
       ${d.momentum ? '<div class="coin-note">Binance-Daten unvollständig – Score ergänzt um Kursdaten von CoinGecko (Momentum, Umschlag).</div>'
         : noData ? '<div class="coin-note">Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.</div>' : ""}
       <ul class="signals">${signals}</ul>
+      </details>
     </article>`;
 }
 
@@ -377,15 +419,56 @@ let watchErrors = new Map();    // Coin-ID → Fehlertext (nur Anzeige auf dem P
 let watchToken = 0;
 let watchUpdated = null;
 
+// Aufgeklappte Karten merken, damit sie beim Aktualisieren (alle 5 Min. neu gezeichnet) offen bleiben
+const OPEN_KEY = "openCards";
+let openCards = new Set();
+try { openCards = new Set(JSON.parse(localStorage.getItem(OPEN_KEY)) || []); } catch (e) { /* ignorieren */ }
+$("coins").addEventListener("toggle", (e) => {
+  const key = e.target.dataset && e.target.dataset.more;
+  if (!key) return;
+  if (e.target.open) openCards.add(key); else openCards.delete(key);
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify([...openCards])); } catch (err) { /* ignorieren */ }
+}, true);   // "toggle" steigt nicht auf, daher Capture-Phase
+
 function renderCoins() {
   hideTip();
   $("coins").innerHTML = watchList().map((w) => {
     const c = watchCoins.get(w.id);
     if (c) return renderCoin(c, w.id);
     const err = watchErrors.get(w.id);
-    return `<article class="card coin-loading">${esc(w.symbol)} ${err ? `konnte nicht geladen werden (${esc(err)}) – neuer Versuch beim nächsten Aktualisieren.` : "wird geladen …"}</article>`;
+    return `<article class="card coin coin-loading" id="card-${esc(w.id)}">${esc(w.symbol)} ${err ? `konnte nicht geladen werden (${esc(err)}) – neuer Versuch beim nächsten Aktualisieren.` : "wird geladen …"}</article>`;
+  }).join("");
+  renderOverview();
+}
+
+// Kompakte Übersicht: alle Coins auf einen Blick (Kurs, 24 h, Score); Klick springt zur Karte
+function renderOverview() {
+  $("overview").innerHTML = watchList().map((w) => {
+    const c = watchCoins.get(w.id);
+    if (!c) return `<button class="ov loading" data-card="${esc(w.id)}"><span class="ov-sym">${esc(w.symbol)}</span>lädt …</button>`;
+    const d = c.data;
+    const price = d.price_ma200 ? d.price_ma200.price : d.price;
+    const ch = ((d.market_stats || {}).change || {})["24h"];
+    return `<button class="ov" data-card="${esc(w.id)}" title="${esc(d.name || c.symbol)}: ${esc(c.verdict)} · zur Karte springen">
+      <span class="ov-top"><span class="ov-sym">${esc(c.symbol)}</span><span class="ov-score ${tone(c.score)}">${signed(c.score)}</span></span>
+      <span class="ov-price"><span>${price != null ? usd(price) : "–"}</span>${ch != null ? `<span class="chg">${change(ch)}</span>` : ""}</span>
+      <span class="gauge"><span class="marker" style="left:${(c.score + 100) / 2}%"></span></span>
+    </button>`;
   }).join("");
 }
+
+function showCard(id) {
+  const el = document.getElementById("card-" + id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("flash");
+  void el.offsetWidth;   // Animation neu starten
+  el.classList.add("flash");
+}
+$("overview").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-card]");
+  if (b) showCard(b.dataset.card);
+});
 
 function saveWatchCoins() {
   try {
@@ -428,9 +511,11 @@ async function loadWatchCoins(force = false, only = null) {
 }
 
 // Watchlist geändert (Stern, Chip oder anderer Tab): Karten sofort anpassen, neue Coins nachladen
+let showAdded = null;   // Coin-ID, die gerade per Chip hinzugefügt wurde: Karte in den Blick holen
 document.addEventListener("watchlist", () => {
   renderChips();
   renderCoins();
+  if (showAdded) { showCard(showAdded); showAdded = null; }
   const missing = watchList().filter((w) => !watchCoins.has(w.id));
   if (missing.length) loadWatchCoins(false, missing);
 });
@@ -490,7 +575,9 @@ $("trending").addEventListener("click", (e) => {
   const mode = e.target.closest("button[data-list]");
   if (mode) { setListMode(mode.dataset.list); return; }
   const chip = e.target.closest("button.chip");
-  if (chip) toggleWatch({ id: chip.dataset.id, symbol: chip.dataset.symbol, name: chip.dataset.name });
+  if (!chip) return;
+  if (!isWatched(chip.dataset.id)) showAdded = chip.dataset.id;
+  toggleWatch({ id: chip.dataset.id, symbol: chip.dataset.symbol, name: chip.dataset.name });
 });
 if (listMode === "top") loadTop20();
 restoreWatchCoins();
