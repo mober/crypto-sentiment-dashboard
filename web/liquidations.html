@@ -6,6 +6,7 @@
 <title>Liquidationen</title>
 <link rel="stylesheet" href="base.css">
 <script src="i18n.js"></script>
+<script src="nav.js"></script>
 <style>
   /* Long = Longs zwangsgeschlossen (Kurs fiel) → rot; Short = Shorts zwangsgeschlossen (Kurs stieg) → grün */
   :root { --long: var(--down); --short: var(--up); }
@@ -113,10 +114,6 @@
       <h1>Liquidationen</h1>
       <div class="sub">Echte Zwangsschließungen auf Binance, Bybit und OKX, live mitgeschnitten · <span class="live" id="live"><i></i>LIVE</span></div>
     </div>
-    <nav class="actions">
-      <a class="navlink" href="markets.html">Marktübersicht</a>
-      <a class="navlink" href="./">← Sentiment-Dashboard</a>
-    </nav>
   </header>
 
   <div class="notice" id="notice" hidden></div>

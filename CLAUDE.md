@@ -49,6 +49,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `CATEGORY_DE`, Art über `coin_type`, regelbasierte Risikostufe in `coin_assessment`); liefert `web/` statisch aus
 - `web/liquidations.html` – Liquidations-Übersicht im Stil von CoinGlass (Heatmap je Coin/Börse als
   Treemap, Summen 1h–24h, Long/Short, Anteil je Börse, größte Order, Stunden mit BTC-Kurs, Live-Feed)
+- `web/nav.js` (direkt nach `i18n.js` laden) – gemeinsame Navigationsleiste oben in `<main>` für alle Seiten
+  (Liste `NAV_PAGES`, aktive Seite hervorgehoben, Sprachumschalter); bis 640 px klappen die Seiten in ein Menü „☰“.
+  Seitenlinks gehören dorthin, nicht in den `<header>` der Seiten (dort nur seitenspezifische Knöpfe).
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
   Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten
@@ -95,7 +98,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 ## Sprachen (deutsch/englisch)
 
 - `web/i18n.js` als erstes Skript jeder Seite (im `<head>`): `LANG` aus `?lang=`, `localStorage.lang` oder
-  Browsersprache; setzt das Cookie `lang` für den Server und den Umschalter DE/EN in der Kopfzeile.
+  Browsersprache; setzt das Cookie `lang` für den Server. Der Umschalter DE/EN sitzt in der Navigationsleiste (`nav.js`).
 - Texte im Code: `L("deutsch", "english")`; Zahlen über `LOCALE`, `DEC`, `PCT` (`format.js`), nie fest `"de-DE"`,
   `","` oder `" %"`. Statisches HTML übersetzt `translateStatic` beim Laden über `addStatic({ "deutscher Text": "…" })`
   im Skript der jeweiligen Seite (Schlüssel = Text mit zusammengefassten Leerzeichen, auch `title`, `placeholder`,

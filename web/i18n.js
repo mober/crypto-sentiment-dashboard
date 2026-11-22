@@ -4,7 +4,7 @@
 // - L(deutsch, englisch) für Texte im Code; LOCALE und DEC für Zahlen und Datumsangaben
 // - Statisches HTML (Text, title, placeholder, aria-label, <title>) wird beim Laden über STATIC_EN übersetzt;
 //   Schlüssel ist der deutsche Text mit zusammengefassten Leerzeichen. Fehlt ein Eintrag, bleibt es deutsch.
-// - Umschalter DE/EN wird automatisch in die Navigation im Seitenkopf gesetzt.
+// - Umschalter DE/EN sitzt in der gemeinsamen Navigationsleiste (nav.js).
 
 const LANGS = ["de", "en"];
 const LANG = (() => {
@@ -61,17 +61,6 @@ function translateStatic(root = document.body) {
   if (STATIC_EN[title] != null) document.title = STATIC_EN[title];
 }
 
-function addLangSwitch() {
-  const nav = document.querySelector("header nav") || document.querySelector("header");
-  if (!nav || nav.querySelector(".lang-switch")) return;
-  const other = EN ? "de" : "en";
-  nav.insertAdjacentHTML("beforeend",
-    `<button type="button" class="lang-switch" title="${EN ? "Auf Deutsch umschalten" : "Switch to English"}"`
-    + ` aria-label="${EN ? "Deutsch" : "English"}">${other.toUpperCase()}</button>`);
-  nav.querySelector(".lang-switch").addEventListener("click", () => setLang(other));
-}
-
 document.addEventListener("DOMContentLoaded", () => {
   translateStatic();
-  addLangSwitch();
 });

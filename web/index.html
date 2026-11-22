@@ -6,6 +6,7 @@
 <title>Crypto Sentiment</title>
 <link rel="stylesheet" href="base.css">
 <script src="i18n.js"></script>
+<script src="nav.js"></script>
 <style>
   .actions { display: flex; gap: 8px; align-items: center; }
   #refresh:disabled { cursor: wait; }
@@ -148,13 +149,10 @@
 <main>
   <header>
     <div>
-      <h1>Crypto Sentiment</h1>
+      <h1>Sentiment-Dashboard</h1>
       <div class="sub" id="updated">Lade Daten …</div>
     </div>
     <nav class="actions">
-      <a class="navlink" href="sectors.html">Sparten →</a>
-      <a class="navlink" href="markets.html">Marktübersicht →</a>
-      <a class="navlink" href="liquidations.html">Liquidationen →</a>
       <button id="refresh">Aktualisieren</button>
     </nav>
   </header>
@@ -180,8 +178,8 @@
 <script src="watchlist.js"></script>
 <script>
 addStatic({
-  "Lade Daten …": "Loading data …", "Sparten →": "Sectors →", "Marktübersicht →": "Markets →",
-  "Liquidationen →": "Liquidations →", "Aktualisieren": "Refresh", "Übersicht der Watchlist": "Watchlist overview",
+  "Lade Daten …": "Loading data …", "Sentiment-Dashboard": "Sentiment dashboard",
+  "Aktualisieren": "Refresh", "Übersicht der Watchlist": "Watchlist overview",
   "BTC, ETH und SOL fest · weitere per Stern ☆ oder Klick in Trending/Top 20 ·": "BTC, ETH and SOL fixed · add more with the star ☆ or a click in Trending/Top 20 ·",
   "als Tabelle": "as table",
   "Score je Coin: Fear & Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio, Optionsvola DVOL (nur BTC/ETH), MVRV (Coin Metrics, nicht für alle Coins) (je −100 … +100, Score = gewichteter Durchschnitt: MA200 und DVOL 1,5-fach, Fear & Greed und RSI halb).":
