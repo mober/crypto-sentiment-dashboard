@@ -43,6 +43,7 @@ COIN_ID_RE = re.compile(r"^[a-z0-9-]{1,100}$")  # CoinGecko-ID, z. B. "bitcoin"
 
 _cache: Dict[str, Any] = {"time": 0.0, "payload": None}
 _lock = threading.Lock()
+_refresh_flag_lock = threading.Lock()   # nur für _cache["refreshing"], blockiert nicht während des Neuaufbaus
 _coin_cache: Dict[str, Dict[str, Any]] = {}
 _coin_lock = threading.Lock()
 _markets_cache: Dict[str, Dict[str, Any]] = {}   # Schlüssel: Seite oder "<sparte>:1"
@@ -130,12 +131,37 @@ def build_payload() -> Dict[str, Any]:
     }
 
 
-def get_payload(force: bool = False) -> Dict[str, Any]:
+def _refresh_payload(force: bool = True) -> Dict[str, Any]:
     with _lock:
-        if force or _cache["payload"] is None or time.time() - _cache["time"] > CACHE_SECONDS:
-            _cache["payload"] = build_payload()
-            _cache["time"] = time.time()
+        # Lief gerade schon ein Neuaufbau (z. B. beim Start), dessen Ergebnis nehmen
+        if not force and _cache["payload"] is not None and time.time() - _cache["time"] <= CACHE_SECONDS:
+            return _cache["payload"]
+        _cache["payload"] = build_payload()
+        _cache["time"] = time.time()
         return _cache["payload"]
+
+
+def _refresh_in_background() -> None:
+    try:
+        _refresh_payload(force=False)
+    except Exception as e:  # nächster Aufruf versucht es erneut
+        print(f"Aktualisierung im Hintergrund fehlgeschlagen: {e}")
+    finally:
+        _cache["refreshing"] = False
+
+
+def get_payload(force: bool = False) -> Dict[str, Any]:
+    """Abgelaufener Stand wird sofort geliefert und im Hintergrund erneuert,
+    damit niemand beim Öffnen der Seite auf alle Abfragen warten muss."""
+    if force or _cache["payload"] is None:
+        return _refresh_payload(force)
+    if time.time() - _cache["time"] > CACHE_SECONDS:
+        with _refresh_flag_lock:
+            start = not _cache.get("refreshing")
+            _cache["refreshing"] = True
+        if start:
+            threading.Thread(target=_refresh_in_background, daemon=True, name="sentiment-refresh").start()
+    return _cache["payload"]
 
 
 def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
@@ -561,6 +587,9 @@ def main() -> None:
     # Echte Liquidationen von Binance, Bybit und OKX im Hintergrund mitschneiden
     global _collector
     _collector = liquidations.Collector(DATA_DIR).start()
+
+    # Dashboard-Daten schon beim Start laden, damit der erste Seitenaufruf nicht warten muss
+    threading.Thread(target=_refresh_in_background, daemon=True, name="sentiment-warmup").start()
 
     # Nur lokal erreichbar
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

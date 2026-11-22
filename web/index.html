@@ -453,6 +453,23 @@ function selectExtra(symbol, id) {
   loadExtra();
 }
 
+// Letzter Stand im Browser: beim Öffnen sofort anzeigen, die frischen Daten ersetzen ihn kurz darauf
+const PAYLOAD_KEY = "lastPayload";
+function showPayload() {
+  renderMarket(payload.global);
+  renderCoins();
+  $("updated").textContent = "Stand: " + new Date(payload.updated).toLocaleString("de-DE");
+}
+function restorePayload() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PAYLOAD_KEY));
+    if (p && p.global && Array.isArray(p.coins) && Date.now() - new Date(p.updated) < 24 * 3600 * 1000) {
+      payload = p;
+      showPayload();
+    }
+  } catch (e) { /* ignorieren, dann eben ohne */ }
+}
+
 async function load(force = false) {
   const btn = $("refresh");
   btn.disabled = true;
@@ -461,9 +478,8 @@ async function load(force = false) {
     const res = await fetch("api/sentiment" + (force ? "?refresh=1" : ""));
     if (!res.ok) throw new Error("HTTP " + res.status);
     payload = await res.json();
-    renderMarket(payload.global);
-    renderCoins();
-    $("updated").textContent = "Stand: " + new Date(payload.updated).toLocaleString("de-DE");
+    try { localStorage.setItem(PAYLOAD_KEY, JSON.stringify(payload)); } catch (e) { /* ignorieren */ }
+    showPayload();
     $("error").hidden = true;
     loadExtra(force);
     if (listMode === "top") loadTop20();  // Rangliste mit aktualisieren
@@ -486,6 +502,7 @@ $("trending").addEventListener("click", (e) => {
 });
 if (listMode === "top") loadTop20();
 restoreExtra();
+restorePayload();
 load();
 setInterval(load, REFRESH_MS);
 </script>

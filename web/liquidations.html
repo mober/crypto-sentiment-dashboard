@@ -308,14 +308,30 @@ function renderStatus(st) {
   $("sources").innerHTML = "Quellen: " + st.sources.map((s) => `${s.name} <b class="${s.connected ? "ok" : "err"}">${s.connected ? "●" : "○"}</b> ${s.events.toLocaleString("de-DE")} seit Start`).join(" · ") + "<br>";
 }
 
+// Letzter Stand im Browser: beim Öffnen der Seite sofort anzeigen, danach frisch laden
+const CACHE_MAX_AGE = 30 * 60;
+function save(key, d) { try { localStorage.setItem(key, JSON.stringify({ at: Date.now() / 1000, d })); } catch (e) {} }
+function restore(key) {
+  try {
+    const c = JSON.parse(localStorage.getItem(key));
+    return c && Date.now() / 1000 - c.at < CACHE_MAX_AGE ? c.d : null;
+  } catch (e) { return null; }
+}
+const feedKey = (params) => "liq-feed?" + params;
+
+function renderOverview() {
+  renderTree(); renderTotals(); renderBreakdown(); renderSummary(); renderHours(); renderStatus(ov.status);
+}
+
 async function loadOverview() {
   try {
     const r = await fetch("api/liq-overview?window=" + win);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
-    ov = d;
-    renderTree(); renderTotals(); renderBreakdown(); renderSummary(); renderHours(); renderStatus(d.status);
+    ov = d; save("liq-ov", d);
+    renderOverview();
   } catch (e) {
+    if (ov && ov.window === win) return;   // letzten Stand stehen lassen
     $("tree").innerHTML = `<div class="status">Fehler: ${esc(e.message)}</div>`;
   }
 }
@@ -326,6 +342,15 @@ async function loadFeed() {
     const r = await fetch("api/liq-feed?" + params);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    save(feedKey(params), d);
+    renderFeed(d);
+  } catch (e) {
+    if (!firstFeed) return;   // letzten Stand stehen lassen
+    $("feed").innerHTML = `<tr><td colspan="6" class="status">Fehler: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function renderFeed(d) {
     const rows = d.orders.map((o) => {
       const id = `${o.time}|${o.exchange}|${o.symbol}|${o.usd}`, isNew = !firstFeed && !seenIds.has(id);
       seenIds.add(id);
@@ -336,9 +361,6 @@ async function loadFeed() {
     firstFeed = false;
     if (seenIds.size > 5000) seenIds = new Set([...seenIds].slice(-1000));
     $("feed").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6" class="status">Keine Liquidationen für diesen Filter.</td></tr>`;
-  } catch (e) {
-    $("feed").innerHTML = `<tr><td colspan="6" class="status">Fehler: ${esc(e.message)}</td></tr>`;
-  }
 }
 
 function setCoin(c) {
@@ -367,6 +389,10 @@ $("fEx").addEventListener("change", () => { firstFeed = true; seenIds.clear(); l
 $("fMin").addEventListener("change", () => { firstFeed = true; seenIds.clear(); loadFeed(); });
 window.addEventListener("resize", () => { if (ov) renderTree(); });
 
+const cachedOv = restore("liq-ov");
+if (cachedOv && cachedOv.window === win) { ov = cachedOv; renderOverview(); }
+const cachedFeed = restore(feedKey(new URLSearchParams({ coin: coinFilter, exchange: $("fEx").value, min: $("fMin").value, limit: 60 })));
+if (cachedFeed) renderFeed(cachedFeed);
 loadBtc().then(() => { if (ov) renderHours(); });
 loadOverview(); loadFeed();
 setInterval(loadOverview, 15000);
