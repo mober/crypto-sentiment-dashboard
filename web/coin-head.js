@@ -365,7 +365,7 @@ function setupCollapse(sec) {
 document.addEventListener("click", (e) => {
   const head = e.target.closest(".collapsible > .card-head");
   if (!head) return;
-  if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, [data-tip]")) return;
+  if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, select, label, [data-tip]")) return;
   const sec = head.parentElement;
   if (collapsedCards.has(sec.id)) collapsedCards.delete(sec.id); else collapsedCards.add(sec.id);
   try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedCards])); } catch (e) { /* ignorieren */ }
@@ -373,7 +373,7 @@ document.addEventListener("click", (e) => {
   setupCollapse(sec);
 });
 
-["chart-card", "fees", "derivs", "liq", "history"].forEach((id) => setupCollapse($(id)));
+["chart-card", "book", "fees", "derivs", "liq", "history"].forEach((id) => setupCollapse($(id)));
 
 async function loadDailyStats() {
   try {

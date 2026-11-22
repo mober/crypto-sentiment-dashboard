@@ -70,6 +70,36 @@
     </div>
   </section>
 
+  <section class="card book" id="book">
+    <div class="breakdown-head">
+      <div class="label"><span data-tip="orderbook" tabindex="0">Orderbuch</span> <span class="book-src" id="book-src">Binance</span>
+        <span class="book-live" id="book-live" title="Live über WebSocket von Binance"><i></i>live</span></div>
+      <div class="book-tools">
+        <div class="seg" id="book-market" role="group" aria-label="Markt">
+          <button data-market="spot" aria-pressed="true" title="Binance Spot (USDT-Paar): bis 5.000 Stufen je Seite">Spot</button>
+          <button data-market="futures" aria-pressed="false" title="Binance Futures (USDT-Perpetual): bis 1.000 Stufen je Seite, meist mehr Volumen nahe am Kurs">Futures</button>
+        </div>
+        <div class="seg" id="book-range" role="group" aria-label="Bereich um den Kurs">
+          <button data-range="0.005" aria-pressed="false">±0,5 %</button>
+          <button data-range="0.01" aria-pressed="true">±1 %</button>
+          <button data-range="0.02" aria-pressed="false">±2 %</button>
+        </div>
+      </div>
+    </div>
+    <div class="stats book-stats" id="book-stats"></div>
+    <div class="book-grid">
+      <div class="book-depth"><canvas id="book-depth"></canvas><div class="book-hover" id="book-hover" hidden></div>
+        <div class="mini-msg" id="book-msg">Lade Orderbuch …</div></div>
+      <div class="book-side">
+        <div class="book-side-head"><span>Aufträge je Preisstufe</span>
+          <label>Stufe <select id="book-group" aria-label="Preisstufen zusammenfassen"></select></label></div>
+        <table class="book-table"><thead><tr><th>Preis (USDT)</th><th>Menge</th><th>Summe</th></tr></thead>
+          <tbody id="book-asks"></tbody><tbody id="book-mid"></tbody><tbody id="book-bids"></tbody></table>
+      </div>
+    </div>
+    <div class="book-note" id="book-note"></div>
+  </section>
+
   <section class="card fees" id="fees" hidden>
     <div class="breakdown-head">
       <div class="label"><span data-tip="fees" tabindex="0">Gebühren &amp; Einnahmen</span></div>
@@ -101,8 +131,12 @@
     <div class="breakdown-head">
       <div class="label"><span data-tip="liqMap" tabindex="0">Liquidations-Heatmap</span> (Modell, Binance Futures, 1 h, ~21 Tage)</div>
       <div class="mini-legend" id="liq-legend"></div>
+      <div class="seg" id="liq-view" role="group" aria-label="Darstellung der Heatmap">
+        <button data-view="standard" aria-pressed="true" title="Halbtransparente Einfärbung über dem Kurs">Standard</button>
+        <button data-view="dark" aria-pressed="false" title="Dunkle Karte mit Farbverlauf und feineren Preisstufen">Farbverlauf</button>
+      </div>
     </div>
-    <div class="liq-wrap"><canvas id="liq-canvas"></canvas><div id="liq-chart"></div><div class="mini-msg" id="liq-msg">Lade …</div></div>
+    <div class="liq-wrap"><canvas id="liq-canvas"></canvas><div id="liq-chart"></div><div class="liq-tip" id="liq-tip" hidden></div><div class="mini-msg" id="liq-msg">Lade …</div></div>
     <div class="liq-foot">
       <span>Schätzung aus Open Interest und angenommenen Hebeln – keine echten Aufträge</span>
       <span class="liq-scale">wenig <span class="grad"></span> viele geschätzte Liquidationen</span>
@@ -123,7 +157,8 @@
     <div class="status">Lade Score …</div>
   </section>
 
-  <footer>Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
+  <footer>Orderbuch: Binance Spot bzw. Futures, Momentaufnahme plus Änderungen per WebSocket direkt im Browser.<br>
+    Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
     Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · News: RSS-Feeds deutschsprachiger Krypto-Medien.</footer>
 </main>
 
@@ -136,6 +171,7 @@
 <script src="coin-score.js"></script>
 <script src="coin-liqmap.js"></script>
 <script src="coin-fees.js"></script>
+<script src="coin-book.js"></script>
 <script>
 // --- Start ---------------------------------------------------------------
 
@@ -148,6 +184,7 @@ if (!validSymbol) {
   $("derivs").hidden = true;
   $("history").hidden = true;
   $("liq").hidden = true;
+  $("book").hidden = true;
   $("breakdown").hidden = true;
 } else {
   document.title = symbol + " – Details";
@@ -172,6 +209,7 @@ if (!validSymbol) {
     loadLiquidations();
     setInterval(refreshChart, CHART_REFRESH_MS);
   }
+  startBook();   // Orderbuch braucht keine Chart-Bibliothek (eigenes Canvas)
 }
 </script>
 </body>

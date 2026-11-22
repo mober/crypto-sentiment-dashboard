@@ -56,7 +56,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln). `coin.html` enthält nur HTML und
   den Start; Styles in `coin.css`, Code je Abschnitt in `coin-base.js` (gemeinsame Konstanten, `themeOptions`,
   `miniChart`, Kacheln), `coin-head.js` (Kopf, Lagebild, News, Kennzahlen, Score-Balken), `coin-chart.js`
-  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js` –
+  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js`, `coin-book.js` –
   normale Skripte ohne Module/Build, alle im selben globalen Bereich,
   `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):
   Art und Kategorien mit Erklärung, Risikostufe mit Stärken/Risiken, aktuelle Marktlage, Beschreibung
@@ -67,6 +67,14 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - Live-Kurs im Chart der Detailseite: `coin-chart.js` verbindet sich direkt per WebSocket mit Binance
   (`connectLive`, Spot oder Futures je nach Quelle der Kerzen) und zieht die laufende Kerze samt
   MA/RSI und Kurs im Kopf nach; der Server ist nicht beteiligt. Rückfall ist `refreshChart` (60 s).
+- Orderbuch auf der Detailseite (`coin-book.js`, Karte `#book`): ebenfalls direkt im Browser von Binance
+  (CORS erlaubt, Gewicht zählt für die IP des Nutzers). Lokales Buch nach Binance-Vorgabe: Diff-Stream
+  (`@depth@1000ms` Spot, `@depth@500ms` Futures über `fstream…/public/ws/`) puffern, REST-Momentaufnahme
+  (Spot 5.000, Futures 1.000 Stufen je Seite), Update-IDs prüfen (Spot `U == lastU+1`, Futures `pu == lastU`),
+  bei Lücke neu synchronisieren; Momentaufnahme alle 5 Min. erneuert. Außerhalb der Momentaufnahme
+  (`book.floor`/`book.ceil`) wird nichts gezählt. Spot zuerst; fehlt das Paar oder ist es leer (delistet),
+  Futures. Tiefenchart als eigenes Canvas (keine Chart-Bibliothek), Kennzahlen über `statTile`, Tooltips
+  `orderbook`, `bookSpread`, `bookImbalance`, `bookWall`.
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
   API von v4 (`addCandlestickSeries`); v5 hat eine andere API.
 
@@ -114,6 +122,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - Die Liquidations-Heatmap ist ein **Modell** (OI-Zuwachs × angenommene Hebel), keine echten
   Aufträge; sie liegt als Canvas unter einem transparenten Lightweight-Chart und wird bei
   Bereichsänderungen neu gezeichnet. Die Preisachse ist dort nicht von Hand skalierbar.
+  Zwei Ansichten (Umschalter, gemerkt in `localStorage.liqView`): „Standard“ (halbtransparent in `--hot`,
+  140 Stufen) und „Farbverlauf“ (immer dunkel, Farbskala `LIQ_LUT` wie „magma“, 320 Stufen, `LIQ_DARK_GAMMA`,
+  Infofeld an der Maus). Beide aus `buildLiqModel`, nur andere Auflösung; die Cluster-Liste nutzt immer „Standard“.
 - **Liquidationen (`liquidations.py`):** Binance liefert `!forceOrder@arr` nur noch über
   `wss://fstream.binance.com/market/ws/` (die alte Adresse `/ws/` verbindet, schickt aber nichts) und mischt
   dort COIN-M-Kontrakte (`BTCUSD_PERP`) bei: deren Menge sind Kontrakte zu 100 $ (BTC) bzw. 10 $ (Rest).
