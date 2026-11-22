@@ -344,6 +344,10 @@ $("stats-toggle").addEventListener("click", () => {
 const COLLAPSED_KEY = "collapsedCards";
 let collapsedCards = new Set();
 try { collapsedCards = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]")); } catch (e) { /* ignorieren */ }
+// Lage und News sind bei jedem Öffnen der Seite erst einmal zu; Aufklappen gilt nur bis zum Neuladen (nicht gemerkt)
+const START_COLLAPSED = new Set(["hero-lage", "hero-news"]);
+const expandedNow = new Set();
+const isCollapsed = (id) => (START_COLLAPSED.has(id) ? !expandedNow.has(id) : collapsedCards.has(id));
 // Kopfzeilen: Karten, dazu Lage und News im Kopf (dort bleiben Kurs und Score immer sichtbar)
 const CARD_HEAD = ":scope > .breakdown-head, :scope > .chart-head, :scope > .lage-head, :scope > .news-head";
 
@@ -360,7 +364,7 @@ function setupCollapse(sec) {
       '<button class="collapse-btn" type="button" title="Karte ein- oder ausklappen"><span class="chev" aria-hidden="true">▼</span></button>');
     btn = head.querySelector(".collapse-btn");
   }
-  const open = !collapsedCards.has(sec.id);
+  const open = !isCollapsed(sec.id);
   sec.classList.toggle("collapsed", !open);
   btn.setAttribute("aria-expanded", String(open));
 }
@@ -371,8 +375,12 @@ document.addEventListener("click", (e) => {
   if (!head) return;
   if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, select, label, [data-tip]")) return;
   const sec = head.parentElement;
-  if (collapsedCards.has(sec.id)) collapsedCards.delete(sec.id); else collapsedCards.add(sec.id);
-  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedCards])); } catch (e) { /* ignorieren */ }
+  if (START_COLLAPSED.has(sec.id)) {
+    if (expandedNow.has(sec.id)) expandedNow.delete(sec.id); else expandedNow.add(sec.id);
+  } else {
+    if (collapsedCards.has(sec.id)) collapsedCards.delete(sec.id); else collapsedCards.add(sec.id);
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedCards])); } catch (e) { /* ignorieren */ }
+  }
   hideTip();
   setupCollapse(sec);
 });
