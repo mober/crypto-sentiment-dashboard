@@ -58,13 +58,17 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   (TVL-Spalte über `CG_TO_DEFI`),
   `web/coin.html?symbol=…&id=…` – Detailseite je Coin (Button „Details“ auf jeder Kachel)
   mit Kennzahlen (Allzeithoch, Menge, FDV …; Felder `market_stats` aus der ohnehin laufenden
-  CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),
+  CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (Menü „Indikatoren“, gemerkt in `localStorage.chartShow`: MA50/MA200, Bollinger 20/2,
+  Bull Market Support Band 20W-SMA/21W-EMA – Perioden je Intervall umgerechnet, nur 1T/4h –, Kursmarken ATH/52W/Monats- und
+  Wochen-Open als Price-Lines aus `dailyCandles`/`statsCoin` von `coin-head.js`; unteres Fenster RSI oder MACD 12/26/9 als zweites,
+  synchronisiertes Chart; alles im Browser aus den Kerzen in `calcIndicators`, keine eigene Abfrage),
   Funding-/OI-Charts und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
   bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln). `coin.html` enthält nur HTML und
   den Start; Styles in `coin.css`, Code je Abschnitt in `coin-base.js` (gemeinsame Konstanten, `themeOptions`,
   `miniChart`, Kacheln), `coin-head.js` (Kopf, Lagebild, News, Kennzahlen, Score-Balken), `coin-chart.js`
   (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js`, `coin-book.js`, `coin-onchain.js` –
-  normale Skripte ohne Module/Build, alle im selben globalen Bereich,
+  normale Skripte ohne Module/Build, alle im selben globalen Bereich (gleiche Namen auf oberster Ebene
+  in zwei Dateien → SyntaxError, das ganze zweite Skript fällt aus),
   `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):
   Art und Kategorien mit Erklärung, Risikostufe mit Stärken/Risiken, aktuelle Marktlage, Beschreibung
   (CoinGecko meist nur englisch, Link zum Google Übersetzer), Fakten und Links, `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),

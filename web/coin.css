@@ -53,6 +53,10 @@
 .tone-cold { background: var(--cold-bg); color: var(--cold); }
 .tone-neutral { background: var(--neutral-bg); color: var(--text); }
 
+/* Farben der Chart-Indikatoren */
+:root { --ind-bb: #7048e8; --ind-band: #b08800; }
+@media (prefers-color-scheme: dark) { :root { --ind-bb: #b197fc; --ind-band: #fcc419; } }
+
 /* Chart */
 .chart-card { padding: 14px 16px 10px; margin-bottom: 20px; }
 .chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -66,12 +70,28 @@
 .seg button[aria-pressed="true"] { background: var(--text); color: var(--card); }
 .chart-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .seg button:disabled { opacity: 1; color: var(--border); }
-.toggle { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; font-size: 13px; }
-.toggle .swatch { width: 14px; height: 2px; border-radius: 1px; background: var(--cold); }
-.toggle .swatch.ma50 { background: var(--hot); }
-.toggle .swatch.rsi { background: var(--text); }
-.toggle[aria-pressed="false"] { color: var(--muted); }
-.toggle[aria-pressed="false"] .swatch { background: var(--border); }
+/* Menü „Indikatoren“ (coin-chart.js) */
+.ind-menu { position: relative; }
+.ind-menu > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  font-size: 13px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.ind-menu > summary::-webkit-details-marker { display: none; }
+.ind-menu > summary::after { content: "▾"; color: var(--muted); font-size: 11px; }
+.ind-menu > summary:hover, .ind-menu[open] > summary { border-color: var(--muted); }
+.ind-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--track); font-size: 11px; font-weight: 600; text-align: center; }
+.ind-count:empty { display: none; }
+.ind-pop { position: absolute; z-index: 6; top: calc(100% + 6px); left: 0; min-width: 260px; padding: 6px;
+  display: flex; flex-direction: column; gap: 1px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow), 0 8px 24px rgba(0, 0, 0, .15); }
+.ind-pop .label { padding: 8px 8px 3px; }
+.ind-pop label { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.ind-pop label:hover { background: var(--row-hover); }
+.ind-pop input { margin: 0; accent-color: var(--text); }
+.ind-pop .swatch { width: 14px; height: 2px; border-radius: 1px; flex: none; }
+.ind-pop .swatch.ma50 { background: var(--hot); }
+.ind-pop .swatch.ma200 { background: var(--cold); }
+.ind-pop .swatch.bb { background: var(--ind-bb); }
+.ind-pop .swatch.band { background: var(--ind-band); }
+.ind-pop .swatch.levels { height: 0; border-top: 2px dashed var(--muted); }
 .chart-wrap { position: relative; height: 460px; }
 .chart-card.with-rsi .chart-wrap { height: 400px; }
 #chart, #rsi-chart { position: absolute; inset: 0; }
@@ -87,6 +107,9 @@
 .ohlc .up { color: var(--up); }
 .ohlc .down { color: var(--down); }
 .ohlc .ma { color: var(--cold); }
+.ohlc .bb { color: var(--ind-bb); }
+.ohlc .band { color: var(--ind-band); }
+.ohlc .sig { color: var(--hot); }
 .ohlc .ma b { color: var(--text); }
 .chart-msg { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
   text-align: center; padding: 24px; color: var(--muted); background: var(--card); }
@@ -231,6 +254,8 @@
 .status.error { color: var(--down); }
 
 @media (max-width: 640px) {
+  /* Werte der Indikatoren nur an der Preisachse, sonst verdeckt die Zeile das Chart */
+  .ohlc .ma50, .ohlc .ma, .ohlc .bb, .ohlc .band { display: none; }
   .hero { grid-template-columns: 1fr; }
   .lage-cols { grid-template-columns: 1fr; }
   .hero .score-box { text-align: left; }

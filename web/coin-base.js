@@ -60,6 +60,11 @@ function themeOptions() {
     ma: { 50: { color: css("--hot") }, 200: { color: css("--cold") } },
     rsi: { color: css("--text") },
     rsiLevel: { 70: css("--hot"), 30: css("--cold") },
+    bb: css("--ind-bb"),          // Bollinger-Bänder
+    band: css("--ind-band"),      // Bull Market Support Band
+    level: css("--muted"),        // Kursmarken, MACD-Nulllinie
+    macd: css("--cold"),
+    macdSignal: css("--hot"),
   };
 }
 

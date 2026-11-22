@@ -1,4 +1,6 @@
-// Detailseite: Candlestick-Chart mit MA50/MA200 und RSI-Fenster, Live-Kurs per WebSocket von Binance.
+// Detailseite: Candlestick-Chart mit Indikatoren (MA50/MA200, Bollinger-Bänder, Bull Market Support Band,
+// Kursmarken) und unterem Fenster (RSI oder MACD), Live-Kurs per WebSocket von Binance.
+// Alle Indikatoren entstehen im Browser aus den geladenen Kerzen, keine zusätzlichen Abfragen.
 // Gemeinsame Helfer in coin-base.js.
 
 // --- Chart ---------------------------------------------------------------
@@ -18,62 +20,215 @@ let interval = "1d";
 try { if (INTERVAL_LABEL[localStorage.getItem(INTERVAL_KEY)]) interval = localStorage.getItem(INTERVAL_KEY); } catch (e) { /* ignorieren */ }
 if (INTERVAL_LABEL[params.get("interval")]) interval = params.get("interval");  // Link mit ?interval=… hat Vorrang
 
-// Ein-/Ausblenden von MA50, MA200 und RSI-Fenster, gemerkt im Browser
+// Parameter der Indikatoren
+const BB_PERIOD = 20, BB_MULT = 2;                // Bollinger: Mittelwert über 20 Kerzen ± 2 Standardabweichungen
+const BAND_SMA_DAYS = 140, BAND_EMA_DAYS = 147;   // Bull Market Support Band: 20-Wochen-SMA und 21-Wochen-EMA
+const MACD_FAST = 12, MACD_SLOW = 26, MACD_SIGNAL = 9;
+const LEVEL_DAYS = 365;                           // 52-Wochen-Hoch/-Tief aus den Tageskerzen
+const INTERVAL_SECS = { "1d": 86400, "4h": 14400, "1h": 3600, "15m": 900, "5m": 300, "3m": 180, "1m": 60 };
+
+// Was angezeigt wird, gemerkt im Browser. lower = unteres Fenster: "rsi" | "macd" | "none"
 const SHOW_KEY = "chartShow";
-const show = { ma50: true, ma200: true, rsi: true };
+const show = { ma50: true, ma200: true, bb: false, band: false, levels: true, lower: "rsi" };
 try {
-  Object.assign(show, JSON.parse(localStorage.getItem(SHOW_KEY) || "{}"));
+  const saved = JSON.parse(localStorage.getItem(SHOW_KEY) || "{}");
+  if (saved.rsi === false && !saved.lower) saved.lower = "none";  // frühere Einstellung „RSI aus“ übernehmen
+  delete saved.rsi;
+  Object.assign(show, saved);
   if (localStorage.getItem("chartShowMa") === "0") show.ma200 = false;  // alte Einstellung übernehmen
 } catch (e) { /* ignorieren */ }
+if (!["rsi", "macd", "none"].includes(show.lower)) show.lower = "rsi";
 
 let chart = null, candleSeries = null, volumeSeries = null;
-let rsiChart = null, rsiSeries = null;
-const maSeries = {};     // Periode → Linienserie
+let rsiChart = null, rsiSeries = null, rsiLines = [];   // unteres Fenster (RSI oder MACD)
+let macdSeries = null, macdSignalSeries = null, macdHistSeries = null, macdZero = null;
+const mainSeries = {};   // Kennung → Linienserie im Kurs-Chart
+let levelLines = [];     // waagerechte Kursmarken
 let candles = [];        // aktuelle Kerzen (Zeit in UTC-Sekunden)
-const maByTime = {};     // Periode → Map(Kerzenzeit → MA-Wert), für die OHLC-Zeile
-let rsiByTime = new Map();
+let ind = {};            // Kennung → Wert je Kerze (null = noch kein Wert)
+let idxByTime = new Map();
 let precision = 2;
 let loadToken = 0;       // verwirft Antworten, wenn inzwischen ein anderes Intervall gewählt wurde
 let pointerOn = null;    // "main" | "rsi": welches Chart Maus/Finger gerade bedient (für den Gleichlauf)
 let hoverTime = null;    // Kerze unter dem Fadenkreuz (null = keine): die OHLC-Zeile zeigt sie statt der letzten
 
 const fmtPrice = (v) => v.toLocaleString(LOCALE, { minimumFractionDigits: precision, maximumFractionDigits: precision });
+// MACD-Werte reichen je nach Coin von Tausendern bis weit unter 1: vier gültige Stellen
+const fmtMacd = (v) => v.toLocaleString(LOCALE, { maximumSignificantDigits: 4 });
 
-// Einfacher gleitender Durchschnitt der Schlusskurse; die ersten period − 1 Kerzen haben keinen Wert
-function maData(period) {
-  const out = [];
+// Linien im Kurs-Chart: Kennung → Schalter in show, Aussehen
+const MAIN_LINES = {
+  ma50:    { show: "ma50", opts: (t) => ({ color: t.ma[50].color, lineWidth: 1.5, title: "MA50" }) },
+  ma200:   { show: "ma200", opts: (t) => ({ color: t.ma[200].color, lineWidth: 2, title: "MA200" }) },
+  bbUp:    { show: "bb", opts: (t) => ({ color: t.bb, lineWidth: 1, lastValueVisible: false }) },
+  bbMid:   { show: "bb", opts: (t) => ({ color: alpha(t.bb, 0.6), lineWidth: 1, lineStyle: 2, lastValueVisible: false }) },
+  bbLow:   { show: "bb", opts: (t) => ({ color: t.bb, lineWidth: 1, lastValueVisible: false }) },
+  bandSma: { show: "band", opts: (t) => ({ color: t.band, lineWidth: 2, title: "20W SMA" }) },
+  bandEma: { show: "band", opts: (t) => ({ color: t.band, lineWidth: 2, lineStyle: 2, title: "21W EMA" }) },
+};
+
+// --- Rechnungen (je Kerze ein Wert oder null) ---
+
+function smaArr(vals, n) {
+  const out = new Array(vals.length).fill(null);
+  if (n > vals.length) return out;
   let sum = 0;
-  candles.forEach((c, i) => {
-    sum += c.close;
-    if (i >= period) sum -= candles[i - period].close;
-    if (i >= period - 1) out.push({ time: c.time, value: sum / period });
+  vals.forEach((v, i) => {
+    sum += v;
+    if (i >= n) sum -= vals[i - n];
+    if (i >= n - 1) out[i] = sum / n;
   });
-  maByTime[period] = new Map(out.map((p) => [p.time, p.value]));
   return out;
 }
 
-// RSI nach Wilder wie rsi() in sentiment.py, aber für jede Kerze. Die ersten Kerzen bekommen
-// Leerpunkte (nur time), damit beide Charts gleich viele Punkte haben und synchron scrollen.
-function rsiData() {
-  const out = [];
+// Exponentieller Durchschnitt, Start mit dem einfachen Durchschnitt der ersten n Werte; null-Werte am Anfang werden übersprungen
+function emaArr(vals, n) {
+  const out = new Array(vals.length).fill(null);
+  const k = 2 / (n + 1);
+  let prev = null, seed = 0, count = 0;
+  vals.forEach((v, i) => {
+    if (v == null) return;
+    if (prev == null) {
+      seed += v;
+      if (++count === n) out[i] = prev = seed / n;
+      return;
+    }
+    out[i] = prev = v * k + prev * (1 - k);
+  });
+  return out;
+}
+
+// RSI nach Wilder wie rsi() in sentiment.py, aber für jede Kerze
+function rsiArr(closes) {
+  const out = new Array(closes.length).fill(null);
   let avgGain = 0, avgLoss = 0;
-  candles.forEach((c, i) => {
-    if (i === 0) { out.push({ time: c.time }); return; }
-    const d = c.close - candles[i - 1].close;
+  for (let i = 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
     const g = Math.max(d, 0), l = Math.max(-d, 0);
     if (i <= RSI_PERIOD) {
       avgGain += g / RSI_PERIOD;
       avgLoss += l / RSI_PERIOD;
-      if (i < RSI_PERIOD) { out.push({ time: c.time }); return; }
+      if (i < RSI_PERIOD) continue;
     } else {
       avgGain = (avgGain * (RSI_PERIOD - 1) + g) / RSI_PERIOD;
       avgLoss = (avgLoss * (RSI_PERIOD - 1) + l) / RSI_PERIOD;
     }
-    out.push({ time: c.time, value: avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss) });
-  });
-  rsiByTime = new Map(out.filter((p) => p.value != null).map((p) => [p.time, p.value]));
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
   return out;
 }
+
+// Perioden des Bull Market Support Band in Kerzen des gewählten Intervalls (1T: 140/147, 4h: 840/882)
+const bandPeriods = () => [BAND_SMA_DAYS, BAND_EMA_DAYS].map((d) => Math.round(d * 86400 / INTERVAL_SECS[interval]));
+
+function calcIndicators() {
+  const closes = candles.map((c) => c.close);
+  ind = {};
+  for (const p of MA_PERIODS) ind["ma" + p] = smaArr(closes, p);
+  const mid = smaArr(closes, BB_PERIOD);
+  const dev = mid.map((m, i) => {
+    if (m == null) return null;
+    let s = 0;
+    for (let j = i - BB_PERIOD + 1; j <= i; j++) s += (closes[j] - m) ** 2;
+    return Math.sqrt(s / BB_PERIOD);
+  });
+  ind.bbMid = mid;
+  ind.bbUp = mid.map((m, i) => (m == null ? null : m + BB_MULT * dev[i]));
+  ind.bbLow = mid.map((m, i) => (m == null ? null : m - BB_MULT * dev[i]));
+  const [ps, pe] = bandPeriods();
+  ind.bandSma = smaArr(closes, ps);
+  ind.bandEma = emaArr(closes, pe);
+  ind.rsi = rsiArr(closes);
+  const fast = emaArr(closes, MACD_FAST), slow = emaArr(closes, MACD_SLOW);
+  ind.macd = fast.map((f, i) => (f != null && slow[i] != null ? f - slow[i] : null));
+  ind.macdSignal = emaArr(ind.macd, MACD_SIGNAL);
+  ind.macdHist = ind.macd.map((m, i) => (m != null && ind.macdSignal[i] != null ? m - ind.macdSignal[i] : null));
+  idxByTime = new Map(candles.map((c, i) => [c.time, i]));
+}
+
+const indAt = (key, time) => {
+  const i = idxByTime.get(time);
+  return i == null || !ind[key] ? null : ind[key][i];
+};
+
+// Kurs-Chart: nur Punkte mit Wert. Unteres Fenster: Leerpunkte (nur time) für Kerzen ohne Wert,
+// damit beide Charts gleich viele Punkte haben und synchron scrollen.
+const lineData = (key) => candles.flatMap((c, i) => (ind[key][i] == null ? [] : [{ time: c.time, value: ind[key][i] }]));
+const paneData = (key) => candles.map((c, i) => (ind[key][i] == null ? { time: c.time } : { time: c.time, value: ind[key][i] }));
+const macdHistData = (t = themeOptions()) => candles.map((c, i) => {
+  const v = ind.macdHist[i];
+  return v == null ? { time: c.time } : { time: c.time, value: v, color: v >= 0 ? t.volUp : t.volDown };
+});
+const volumeData = (t = themeOptions()) =>
+  candles.map((c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown }));
+
+// Alle Indikator-Serien neu füllen
+function setIndicatorData() {
+  for (const k in MAIN_LINES) mainSeries[k].setData(lineData(k));
+  rsiSeries.setData(paneData("rsi"));
+  macdSeries.setData(paneData("macd"));
+  macdSignalSeries.setData(paneData("macdSignal"));
+  macdHistSeries.setData(macdHistData());
+}
+
+// Nach einer neuen oder geänderten letzten Kerze nur die Punkte ab from nachziehen (Zoom bleibt erhalten)
+function updateIndicators(from) {
+  const t = themeOptions();
+  candles.forEach((c, i) => {
+    if (c.time < from) return;
+    for (const k in MAIN_LINES) if (ind[k][i] != null) mainSeries[k].update({ time: c.time, value: ind[k][i] });
+    rsiSeries.update(ind.rsi[i] == null ? { time: c.time } : { time: c.time, value: ind.rsi[i] });
+    macdSeries.update(ind.macd[i] == null ? { time: c.time } : { time: c.time, value: ind.macd[i] });
+    macdSignalSeries.update(ind.macdSignal[i] == null ? { time: c.time } : { time: c.time, value: ind.macdSignal[i] });
+    const h = ind.macdHist[i];
+    macdHistSeries.update(h == null ? { time: c.time } : { time: c.time, value: h, color: h >= 0 ? t.volUp : t.volDown });
+  });
+}
+
+function clearIndicators() {
+  ind = {};
+  idxByTime = new Map();
+  for (const k in MAIN_LINES) mainSeries[k].setData([]);
+  for (const s of [rsiSeries, macdSeries, macdSignalSeries, macdHistSeries]) s.setData([]);
+}
+
+// --- Kursmarken ---
+// Allzeithoch (CoinGecko, aus coin-head.js), 52-Wochen-Hoch/-Tief und Eröffnung der Woche (Montag) und
+// des Monats (UTC) aus den Tageskerzen, die coin-head.js für die Kennzahlen ohnehin lädt (dailyCandles)
+function levelData() {
+  const out = [];
+  const st = statsCoin && statsCoin.data.market_stats;
+  if (st && st.ath != null) out.push({ price: st.ath, title: L("Allzeithoch", "ATH"), style: 2 });
+  const d = dailyCandles;
+  if (d && d.length) {
+    const win = d.slice(-LEVEL_DAYS);
+    const full = win.length >= LEVEL_DAYS;
+    out.push({ price: Math.max(...win.map((c) => c.high)), title: full ? L("52W-Hoch", "52W high") : L("Hoch", "High"), style: 2 });
+    out.push({ price: Math.min(...win.map((c) => c.low)), title: full ? L("52W-Tief", "52W low") : L("Tief", "Low"), style: 2 });
+    const last = d[d.length - 1];
+    const now = new Date(last.time * 1000);
+    const weekStart = last.time - ((now.getUTCDay() + 6) % 7) * 86400;
+    const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000;
+    const w = d.find((c) => c.time === weekStart), m = d.find((c) => c.time === monthStart);
+    if (m) out.push({ price: m.open, title: L("Monat-Open", "Month open"), style: 1 });
+    if (w && w !== m) out.push({ price: w.open, title: L("Woche-Open", "Week open"), style: 1 });
+  }
+  return out;
+}
+
+// Wird auch von coin-head.js aufgerufen, sobald Tageskerzen oder Allzeithoch da sind
+function updateLevels() {
+  if (!candleSeries) return;
+  levelLines.forEach((l) => candleSeries.removePriceLine(l));
+  levelLines = [];
+  if (!show.levels || !candles.length) return;
+  const t = themeOptions();
+  levelLines = levelData().map((x) => candleSeries.createPriceLine({
+    price: x.price, color: t.level, lineWidth: 1, lineStyle: x.style, axisLabelVisible: true, title: x.title,
+  }));
+}
+
+// --- Aufbau ---
 
 function initChart() {
   const LC = LightweightCharts;
@@ -95,14 +250,13 @@ function initChart() {
     priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false,
   });
   chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
-  for (const p of MA_PERIODS) {
-    maSeries[p] = chart.addLineSeries({
-      ...t.ma[p], lineWidth: p === 200 ? 2 : 1.5, priceLineVisible: false, lastValueVisible: true,
-      crosshairMarkerVisible: false, title: "MA" + p, visible: show["ma" + p],
+  for (const [k, def] of Object.entries(MAIN_LINES)) {
+    mainSeries[k] = chart.addLineSeries({
+      priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, ...def.opts(t), visible: !!show[def.show],
     });
   }
 
-  // RSI in eigenem Chart darunter (Lightweight Charts 4 kennt keine Unterfenster)
+  // Unteres Fenster in eigenem Chart (Lightweight Charts 4 kennt keine Unterfenster): RSI oder MACD
   rsiChart = LC.createChart($("rsi-chart"), {
     ...common,
     localization: { ...common.localization, priceFormatter: (v) => v.toFixed(0) },
@@ -113,9 +267,18 @@ function initChart() {
     priceFormat: { type: "custom", formatter: (v) => v.toFixed(1).replace(".", DEC), minMove: 0.1 },
   });
   rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
-  const rsiLines = RSI_LEVELS.map((level) => rsiSeries.createPriceLine({
+  rsiLines = RSI_LEVELS.map((level) => rsiSeries.createPriceLine({
     price: level, color: t.rsiLevel[level], lineWidth: 1, lineStyle: LC.LineStyle.Dashed, axisLabelVisible: true, title: "",
   }));
+  const macdFormat = { type: "custom", formatter: fmtMacd, minMove: 1e-12 };
+  macdHistSeries = rsiChart.addHistogramSeries({ priceFormat: macdFormat, priceLineVisible: false, lastValueVisible: false });
+  macdSeries = rsiChart.addLineSeries({
+    color: t.macd, lineWidth: 1.5, priceFormat: macdFormat, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+  });
+  macdSignalSeries = rsiChart.addLineSeries({
+    color: t.macdSignal, lineWidth: 1.5, priceFormat: macdFormat, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+  });
+  macdZero = macdSeries.createPriceLine({ price: 0, color: t.level, lineWidth: 1, lineStyle: LC.LineStyle.Dashed, axisLabelVisible: false, title: "" });
 
   // Gleichlauf: Scrollen/Zoomen und Fadenkreuz gehen von dem Chart aus, das gerade bedient wird
   for (const [id, name] of [["chart", "main"], ["rsi-chart", "rsi"]]) {
@@ -137,10 +300,11 @@ function initChart() {
     const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
     hoverTime = bar ? bar.time : null;
     renderOhlc(bar || candles[candles.length - 1]);
-    renderRsiLegend(hoverTime);
-    if (pointerOn === "main" && show.rsi) {
-      const v = bar ? rsiByTime.get(bar.time) : null;
-      if (v != null) rsiChart.setCrosshairPosition(v, bar.time, rsiSeries); else rsiChart.clearCrosshairPosition();
+    renderLowerLegend(hoverTime);
+    if (pointerOn === "main" && show.lower !== "none") {
+      const [series, key] = show.lower === "macd" ? [macdSeries, "macd"] : [rsiSeries, "rsi"];
+      const v = bar ? indAt(key, bar.time) : null;
+      if (v != null) rsiChart.setCrosshairPosition(v, bar.time, series); else rsiChart.clearCrosshairPosition();
     }
   });
   rsiChart.subscribeCrosshairMove((p) => {
@@ -148,10 +312,11 @@ function initChart() {
     const bar = p && p.time != null ? candles.find((c) => c.time === p.time) : null;
     hoverTime = bar ? bar.time : null;
     renderOhlc(bar || candles[candles.length - 1]);
-    renderRsiLegend(hoverTime);
+    renderLowerLegend(hoverTime);
     if (bar) chart.setCrosshairPosition(bar.close, bar.time, candleSeries); else chart.clearCrosshairPosition();
   });
 
+  buildIndMenu();
   applyShow();
 
   // Hell/Dunkel folgt dem System
@@ -159,41 +324,106 @@ function initChart() {
     const n = themeOptions();
     for (const c of [chart, rsiChart]) c.applyOptions(n.chart);
     candleSeries.applyOptions(n.candles);
-    for (const p of MA_PERIODS) maSeries[p].applyOptions(n.ma[p]);
+    for (const [k, def] of Object.entries(MAIN_LINES)) mainSeries[k].applyOptions(def.opts(n));
     rsiSeries.applyOptions(n.rsi);
     rsiLines.forEach((line, i) => line.applyOptions({ color: n.rsiLevel[RSI_LEVELS[i]] }));
+    macdSeries.applyOptions({ color: n.macd });
+    macdSignalSeries.applyOptions({ color: n.macdSignal });
+    macdZero.applyOptions({ color: n.level });
     volumeSeries.setData(volumeData(n));
+    if (candles.length) macdHistSeries.setData(macdHistData(n));
+    updateLevels();
   });
 }
 
-// Schalter-Zustand auf Charts, Buttons und Layout übertragen
+// --- Menü „Indikatoren“ ---
+
+const IND_ITEMS = [
+  { key: "ma50", sw: "ma50", label: "MA50",
+    tip: L("Gleitender Durchschnitt über die letzten 50 Kerzen.", "Moving average over the last 50 candles.") },
+  { key: "ma200", sw: "ma200", label: "MA200",
+    tip: L("Gleitender Durchschnitt über die letzten 200 Kerzen – bei Tageskerzen die übliche Trennlinie zwischen Auf- und Abwärtstrend.",
+      "Moving average over the last 200 candles – on daily candles the usual dividing line between uptrend and downtrend.") },
+  { key: "bb", sw: "bb", label: L("Bollinger-Bänder (20, 2)", "Bollinger Bands (20, 2)"),
+    tip: L("Durchschnitt der letzten 20 Kerzen ± 2 Standardabweichungen. Kurs am oberen Band = kurzfristig überdehnt, am unteren = überverkauft. Sehr enge Bänder („Squeeze“) gehen oft einer großen Bewegung voraus.",
+      "Average of the last 20 candles ± 2 standard deviations. Price at the upper band = stretched short term, at the lower band = oversold. Very narrow bands (“squeeze”) often precede a big move.") },
+  { key: "band", sw: "band", label: "Bull Market Support Band",
+    tip: L("20-Wochen-Durchschnitt (durchgezogen) und 21-Wochen-EMA (gestrichelt). In Bullenmärkten hält der Kurs meist darüber; ein Bruch nach unten war oft ein Wendepunkt. Braucht 20 Wochen Daten, daher nur bei Tages- und 4-h-Kerzen.",
+      "20-week average (solid) and 21-week EMA (dashed). In bull markets the price usually holds above it; a break below has often been a turning point. Needs 20 weeks of data, so only on daily and 4 h candles.") },
+  { key: "levels", sw: "levels", label: L("Kursmarken", "Price levels"),
+    tip: L("Allzeithoch (CoinGecko), Hoch und Tief der letzten 52 Wochen (gestrichelt) sowie Eröffnungskurs des laufenden Monats und der Woche (gepunktet, UTC).",
+      "All-time high (CoinGecko), high and low of the last 52 weeks (dashed) and the opening price of the current month and week (dotted, UTC).") },
+];
+const LOWER_ITEMS = [
+  { value: "rsi", label: `RSI (${RSI_PERIOD})`,
+    tip: L("Relative Stärke der letzten 14 Kerzen: über 70 überkauft, unter 30 überverkauft.", "Relative strength of the last 14 candles: above 70 overbought, below 30 oversold.") },
+  { value: "macd", label: `MACD (${MACD_FAST}, ${MACD_SLOW}, ${MACD_SIGNAL})`,
+    tip: L("Differenz zwischen 12- und 26-Kerzen-EMA (Linie) und deren 9-Kerzen-EMA (Signal, orange). Das Histogramm zeigt den Abstand beider: wechselt es das Vorzeichen, dreht das Momentum.",
+      "Difference between the 12- and 26-candle EMA (line) and its 9-candle EMA (signal, orange). The histogram shows the gap between them: when it changes sign, momentum turns.") },
+  { value: "none", label: L("Keins", "None"), tip: L("Kein unteres Fenster, mehr Platz für den Kurs.", "No lower pane, more room for the price.") },
+];
+
+function buildIndMenu() {
+  const menu = $("ind-menu");
+  menu.innerHTML =
+    `<summary title="${L("Indikatoren ein- oder ausblenden", "Show or hide indicators")}">${L("Indikatoren", "Indicators")}<span class="ind-count" id="ind-count"></span></summary>`
+    + `<div class="ind-pop">`
+    + `<div class="label">${L("Im Kurs-Chart", "On the price chart")}</div>`
+    + IND_ITEMS.map((x) => `<label title="${esc(x.tip)}"><input type="checkbox" data-show="${x.key}"><span class="swatch ${x.sw}"></span>${esc(x.label)}</label>`).join("")
+    + `<div class="label">${L("Unteres Fenster", "Lower pane")}</div>`
+    + LOWER_ITEMS.map((x) => `<label title="${esc(x.tip)}"><input type="radio" name="lower" value="${x.value}">${esc(x.label)}</label>`).join("")
+    + `</div>`;
+  menu.addEventListener("change", (e) => {
+    const el = e.target;
+    if (el.name === "lower") show.lower = el.value;
+    else if (el.dataset.show) show[el.dataset.show] = el.checked;
+    try { localStorage.setItem(SHOW_KEY, JSON.stringify(show)); } catch (err) { /* ignorieren */ }
+    applyShow();
+  });
+  // Schließen bei Klick daneben oder Escape
+  document.addEventListener("click", (e) => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.open = false; });
+}
+
+// Schalter-Zustand auf Menü, Charts und Layout übertragen
 function applyShow() {
-  document.querySelectorAll(".toggle[data-show]").forEach((b) => b.setAttribute("aria-pressed", String(show[b.dataset.show])));
-  for (const p of MA_PERIODS) maSeries[p].applyOptions({ visible: show["ma" + p] });
-  $("rsi-wrap").hidden = !show.rsi;
-  document.querySelector(".chart-card").classList.toggle("with-rsi", show.rsi);
+  const menu = $("ind-menu");
+  menu.querySelectorAll("input[data-show]").forEach((el) => { el.checked = !!show[el.dataset.show]; });
+  menu.querySelectorAll("input[name=lower]").forEach((el) => { el.checked = el.value === show.lower; });
+  const active = IND_ITEMS.filter((x) => show[x.key]).length + (show.lower !== "none" ? 1 : 0);
+  $("ind-count").textContent = active || "";
+
+  for (const [k, def] of Object.entries(MAIN_LINES)) mainSeries[k].applyOptions({ visible: !!show[def.show] });
+  const lower = show.lower !== "none";
+  rsiSeries.applyOptions({ visible: show.lower === "rsi" });
+  for (const s of [macdSeries, macdSignalSeries, macdHistSeries]) s.applyOptions({ visible: show.lower === "macd" });
+  rsiChart.applyOptions({ localization: { priceFormatter: show.lower === "macd" ? fmtMacd : (v) => v.toFixed(0) } });
+  $("rsi-wrap").hidden = !lower;
+  document.querySelector(".chart-card").classList.toggle("with-rsi", lower);
   // Zeitachse nur einmal, ganz unten
-  chart.timeScale().applyOptions({ visible: !show.rsi });
-  if (show.rsi) {
+  chart.timeScale().applyOptions({ visible: !lower });
+  if (lower) {
     const r = chart.timeScale().getVisibleLogicalRange();
     if (r) rsiChart.timeScale().setVisibleLogicalRange(r);
   }
+  updateLevels();
   renderOhlc(candles[candles.length - 1]);
-  renderRsiLegend(null);
+  renderLowerLegend(null);
 }
-
-const volumeData = (t = themeOptions()) =>
-  candles.map((c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown }));
 
 function renderOhlc(c) {
   if (!c) { $("ohlc").innerHTML = ""; return; }
   const chg = (c.close - c.open) / c.open;
   const cls = chg >= 0 ? "up" : "down";
-  const ma = (p) => {
-    if (!show["ma" + p]) return "";
-    const v = maByTime[p] && maByTime[p].get(c.time);
-    return `<span class="${p === 50 ? "ma50" : "ma"}">MA${p} <b>${v != null ? fmtPrice(v) : "–"}</b></span>`;
-  };
+  const val = (key) => { const v = indAt(key, c.time); return v != null ? fmtPrice(v) : "–"; };
+  const parts = [];
+  for (const p of MA_PERIODS) if (show["ma" + p]) parts.push(`<span class="${p === 50 ? "ma50" : "ma"}">MA${p} <b>${val("ma" + p)}</b></span>`);
+  if (show.bb) parts.push(`<span class="bb">BB <b>${val("bbUp")}</b> / <b>${val("bbLow")}</b></span>`);
+  if (show.band) {
+    parts.push(bandPeriods()[1] > candles.length
+      ? `<span class="band">${L("Bull-Band: zu wenig Kerzen (braucht 20 Wochen)", "Bull band: not enough candles (needs 20 weeks)")}</span>`
+      : `<span class="band">20W <b>${val("bandSma")}</b> 21W <b>${val("bandEma")}</b></span>`);
+  }
   $("ohlc").innerHTML = `
     <span>O <b>${fmtPrice(c.open)}</b></span>
     <span>H <b>${fmtPrice(c.high)}</b></span>
@@ -201,18 +431,26 @@ function renderOhlc(c) {
     <span>C <b>${fmtPrice(c.close)}</b></span>
     <span class="${cls}">${chg >= 0 ? "+" : "−"}${Math.abs(chg * 100).toFixed(2).replace(".", DEC)}${PCT}</span>
     <span>Vol <b>$${compact(c.volume)}</b></span>
-    ${MA_PERIODS.map(ma).join("")}`;
+    ${parts.join("")}`;
 }
 
-function renderRsiLegend(time) {
-  const t = time ?? (candles.length ? candles[candles.length - 1].time : null);
-  const v = t != null ? rsiByTime.get(t) : null;
+function renderLowerLegend(time) {
+  const el = $("rsi-legend");
+  if (!candles.length || show.lower === "none") { el.innerHTML = ""; return; }
+  const t = time ?? candles[candles.length - 1].time;
+  if (show.lower === "macd") {
+    const m = indAt("macd", t), s = indAt("macdSignal", t), h = indAt("macdHist", t);
+    const f = (v) => (v != null ? fmtMacd(v) : "–");
+    el.innerHTML = `<span>MACD (${MACD_FAST}, ${MACD_SLOW}, ${MACD_SIGNAL}) <b>${f(m)}</b></span>`
+      + `<span class="sig">Signal <b>${f(s)}</b></span>`
+      + `<span class="${h == null ? "" : h >= 0 ? "up" : "down"}">${L("Histogramm", "Histogram")} <b>${f(h)}</b></span>`;
+    return;
+  }
+  const v = indAt("rsi", t);
   const cls = v == null ? "" : v >= RSI_LEVELS[0] ? "hot" : v <= RSI_LEVELS[1] ? "cold" : "";
   const note = v == null ? "" : v >= RSI_LEVELS[0] ? L(" überkauft", " overbought") : v <= RSI_LEVELS[1] ? L(" überverkauft", " oversold") : "";
-  $("rsi-legend").innerHTML = candles.length
-    ? `<span class="${cls}">RSI (${RSI_PERIOD}) <b>${v != null ? v.toFixed(1).replace(".", DEC) : "–"}</b>${note}</span>`
-      + `<span>${L("Linien bei", "Lines at")} ${RSI_LEVELS.join(" / ")}</span>`
-    : "";
+  el.innerHTML = `<span class="${cls}">RSI (${RSI_PERIOD}) <b>${v != null ? v.toFixed(1).replace(".", DEC) : "–"}</b>${note}</span>`
+    + `<span>${L("Linien bei", "Lines at")} ${RSI_LEVELS.join(" / ")}</span>`;
 }
 
 function setPrecision(price) {
@@ -276,12 +514,13 @@ async function loadChart() {
     setPrecision(candles[candles.length - 1].close);
     candleSeries.setData(candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
     volumeSeries.setData(volumeData());
-    for (const p of MA_PERIODS) maSeries[p].setData(maData(p));
-    rsiSeries.setData(rsiData());
+    calcIndicators();
+    setIndicatorData();
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - VISIBLE_BARS), to: candles.length + 5 });
     updateRangeButtons();
+    updateLevels();
     renderOhlc(candles[candles.length - 1]);
-    renderRsiLegend(null);
+    renderLowerLegend(null);
     fillHeroPrice();
     chartMessage("");
     connectLive(source);
@@ -290,12 +529,11 @@ async function loadChart() {
     candles = [];
     candleSeries.setData([]);
     volumeSeries.setData([]);
-    for (const p of MA_PERIODS) { maSeries[p].setData([]); maByTime[p] = new Map(); }
-    rsiSeries.setData([]);
-    rsiByTime = new Map();
+    clearIndicators();
     updateRangeButtons();
+    updateLevels();
     renderOhlc(null);
-    renderRsiLegend(null);
+    renderLowerLegend(null);
     chartMessage(e.status === 404
       ? L(`Für ${symbol} gibt es kein USDT-Paar auf Binance (weder Spot noch Futures) – daher vorerst kein Chart.`,
           `There is no USDT pair for ${symbol} on Binance (neither spot nor futures) – so no chart for now.`)
@@ -315,13 +553,12 @@ function applyCandles(list) {
     volumeSeries.update({ time: c.time, value: c.volume, color: c.close >= c.open ? t.volUp : t.volDown });
     if (c.time === candles[candles.length - 1].time) candles[candles.length - 1] = c; else candles.push(c);
   }
-  // Indikatoren neu berechnen und nur die betroffenen Punkte nachziehen
-  for (const p of MA_PERIODS) for (const pt of maData(p).filter((pt) => pt.time >= lastTime)) maSeries[p].update(pt);
-  for (const pt of rsiData().filter((pt) => pt.time >= lastTime)) rsiSeries.update(pt);
+  calcIndicators();
+  updateIndicators(lastTime);
   // Zeile über dem Chart: die Kerze unter dem Fadenkreuz stehen lassen, sonst die letzte
   const last = candles[candles.length - 1];
   renderOhlc((hoverTime != null && candles.find((c) => c.time === hoverTime)) || last);
-  renderRsiLegend(hoverTime);
+  renderLowerLegend(hoverTime);
   fillHeroPrice(true);
 }
 
@@ -424,12 +661,6 @@ document.addEventListener("visibilitychange", () => {
   else if (candles.length) resumeLive();
 });
 
-document.querySelectorAll(".toggle[data-show]").forEach((btn) => btn.addEventListener("click", () => {
-  const key = btn.dataset.show;
-  show[key] = !show[key];
-  try { localStorage.setItem(SHOW_KEY, JSON.stringify(show)); } catch (err) { /* ignorieren */ }
-  if (chart) applyShow();
-}));
 
 $("range-seg").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-range]");

@@ -322,6 +322,7 @@ function drawStats() {
   $("stats-grid").innerHTML = tiles.join("");
   $("stats").hidden = !tiles.length;
   applyStatsOpen();
+  if (typeof updateLevels === "function") updateLevels();  // Kursmarken im Chart (coin-chart.js)
 }
 
 // Kennzahlen ein- und ausklappen, gemerkt im Browser

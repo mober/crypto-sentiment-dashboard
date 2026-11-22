@@ -32,9 +32,7 @@
     <div class="chart-head">
       <div><span class="pair" id="pair">Kursverlauf</span></div>
       <div class="chart-tools">
-        <button class="toggle" data-show="ma50" aria-pressed="true" title="Gleitender Durchschnitt über 50 Kerzen ein- oder ausblenden"><span class="swatch ma50"></span>MA50</button>
-        <button class="toggle" data-show="ma200" aria-pressed="true" title="Gleitender Durchschnitt über 200 Kerzen ein- oder ausblenden"><span class="swatch"></span>MA200</button>
-        <button class="toggle" data-show="rsi" aria-pressed="true" title="RSI-Fenster unter dem Chart ein- oder ausblenden"><span class="swatch rsi"></span>RSI</button>
+        <details class="ind-menu" id="ind-menu"></details>
         <div class="seg" id="range-seg" role="group" aria-label="Zeitraum">
           <button data-range="0.25" title="Letzte 6 Stunden">6h</button>
           <button data-range="1" title="Letzte 24 Stunden">24h</button>
@@ -197,9 +195,6 @@
 addStatic({
   "Coin-Details": "Coin details", "Lade Daten …": "Loading data …", "Sparten": "Sectors", "Marktübersicht": "Markets",
   "Kennzahlen": "Key figures", "Kennzahlen ein- oder ausklappen": "Expand or collapse key figures", "Kursverlauf": "Price chart",
-  "Gleitender Durchschnitt über 50 Kerzen ein- oder ausblenden": "Show or hide the moving average over 50 candles",
-  "Gleitender Durchschnitt über 200 Kerzen ein- oder ausblenden": "Show or hide the moving average over 200 candles",
-  "RSI-Fenster unter dem Chart ein- oder ausblenden": "Show or hide the RSI pane below the chart",
   "Zeitraum": "Period", "Letzte 6 Stunden": "Last 6 hours", "Letzte 24 Stunden": "Last 24 hours", "Letzte Woche": "Last week",
   "Letzter Monat": "Last month", "Letzte 3 Monate": "Last 3 months", "Letzte 6 Monate": "Last 6 months",
   "Letztes Jahr": "Last year", "1J": "1Y", "Alle geladenen Kerzen (max. 1000)": "All loaded candles (max. 1000)", "Alle": "All",
