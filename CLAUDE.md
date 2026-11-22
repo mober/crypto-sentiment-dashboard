@@ -95,6 +95,10 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 
 - **Nach Änderungen an `.py`-Dateien den Server neu starten** – er hält die Module im
   Speicher. HTML/CSS wird ohne Neustart ausgeliefert (`Cache-Control: no-cache`).
+- **Caches in `server.py` laufen über `TTLCache`** (Lock je Schlüssel, Größenlimit, Lader liefert None →
+  letzter Wert bleibt, `Expires(wert, s)` für kurz gültige Teilergebnisse). `stale=True` liefert Abgelaufenes
+  sofort und lädt im Hintergrund nach; nicht für Kerzen, `/api/coin`, Suche und Liquidations-Verlauf.
+  Neue Endpunkte: einen `TTLCache` anlegen statt eigenem Dict und Lock.
 - **CoinGecko ohne API-Key ist stark limitiert (HTTP 429).** Abfragen bündeln statt pro Coin
   einzeln abzufragen; der Server behält bei Fehlern den letzten erfolgreichen Wert (bei 429
   wiederholt `fetch_json` nur für die anderen Quellen, für CoinGecko siehe unten). Neue Features nicht mit zusätzlichen CoinGecko-Abfragen pro

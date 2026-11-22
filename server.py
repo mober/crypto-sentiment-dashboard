@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import liquidations
@@ -42,46 +42,142 @@ _collector: Optional[liquidations.Collector] = None   # startet in main()
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
 COIN_ID_RE = re.compile(r"^[a-z0-9-]{1,100}$")  # CoinGecko-ID, z. B. "bitcoin"
 
-_cache: Dict[str, Any] = {"time": 0.0, "payload": None}
-_lock = threading.Lock()
-_refresh_flag_lock = threading.Lock()   # nur für _cache["refreshing"], blockiert nicht während des Neuaufbaus
-_coin_cache: Dict[str, Dict[str, Any]] = {}
-_coin_lock = threading.Lock()
-_markets_cache: Dict[str, Dict[str, Any]] = {}   # Schlüssel: Seite oder "<sparte>:1"
-_markets_lock = threading.Lock()
-_klines_cache: Dict[str, Dict[str, Any]] = {}
-_klines_lock = threading.Lock()
-_derivs_cache: Dict[str, Dict[str, Any]] = {}
-_derivs_lock = threading.Lock()
-_defi_cache: Dict[str, Any] = {"time": 0.0, "payload": None}
-_defi_lock = threading.Lock()
 DEFI_CACHE_SECONDS = 600  # DefiLlama aktualisiert TVL ohnehin nur grob stündlich; die Antwort ist ~10 MB
-_llama_index: Dict[str, Any] = {"time": 0.0, "payload": None}
-_llama_index_lock = threading.Lock()
 LLAMA_INDEX_SECONDS = 24 * 3600   # Zuordnung Coin → Protokoll ändert sich selten
-_fees_cache: Dict[str, Dict[str, Any]] = {}
-_fees_lock = threading.Lock()
 FEES_CACHE_SECONDS = 1800         # DefiLlama aktualisiert Gebühren täglich
 RETRY_SECONDS = 30                # unvollständige Ergebnisse (Abfrage fehlgeschlagen) nur so lange cachen
-_liq_cache: Dict[str, Dict[str, Any]] = {}
-_liq_lock = threading.Lock()
-_history_cache: Dict[str, Dict[str, Any]] = {}
-_history_lock = threading.Lock()
-_categories_cache: Dict[str, Any] = {"time": 0.0, "payload": None}
-_categories_lock = threading.Lock()
 CATEGORY_PER_PAGE = 100   # Coins einer Sparte: eine Seite, die größten 100
 CATEGORY_RE = re.compile(r"^[a-z0-9-]{1,100}$")
-_search_cache: Dict[str, Dict[str, Any]] = {}
-_search_lock = threading.Lock()
 SEARCH_MAX_LEN = 40
-_news_cache: Dict[str, Any] = {"time": 0.0, "items": None}
-_news_lock = threading.Lock()
 NEWS_CACHE_SECONDS = 900          # RSS-Feeds: alle 15 Min. reicht
 NAME_RE = re.compile(r"^[\w .&'+-]{1,40}$")   # Coin-Name für die News-Suche, z. B. "Bitcoin Cash"
-_profile_cache: Dict[str, Dict[str, Any]] = {}   # Schlüssel: CoinGecko-ID
-_profile_ids: Dict[str, str] = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana"}   # Symbol → ID (ohne ID-Parameter)
-_profile_lock = threading.Lock()
 PROFILE_CACHE_SECONDS = 24 * 3600   # Beschreibung, Kategorien und Angebot ändern sich selten
+LIQ_HISTORY_DAYS = (7, 30, 90, 365)
+LIQ_HISTORY_CACHE_SECONDS = 60
+
+
+class Expires:
+    """Rückgabe eines Laders, wenn der Wert kürzer als üblich gelten soll (z. B. Teilergebnis)."""
+
+    def __init__(self, value: Any, seconds: float) -> None:
+        self.value, self.seconds = value, seconds
+
+
+class TTLCache:
+    """Zwischenspeicher mit Ablaufzeit für alle API-Daten des Servers.
+
+    - Lock je Schlüssel: Anfragen für verschiedene Coins warten nicht aufeinander,
+      gleichzeitige Anfragen für denselben Schlüssel laden nur einmal.
+    - Liefert der Lader None, bleibt der letzte erfolgreiche Wert stehen (auch abgelaufen).
+      Ausnahmen des Laders werden durchgereicht (außer beim Laden im Hintergrund).
+    - stale=True: ein abgelaufener Wert wird sofort geliefert und im Hintergrund erneuert
+      (höchstens ein Thread je Schlüssel). force lädt immer sofort und wartet.
+    - Höchstens max_entries Einträge; der am längsten nicht neu geladene fällt heraus.
+    """
+
+    def __init__(self, name: str, ttl: float, max_entries: int = 200, stale: bool = False) -> None:
+        self.name, self.ttl, self.max_entries, self.stale = name, ttl, max_entries, stale
+        self._entries: Dict[Any, Tuple[float, Any]] = {}   # Schlüssel → (gültig bis, Wert), älteste zuerst
+        self._locks: Dict[Any, threading.Lock] = {}
+        self._refreshing: set = set()
+        self._guard = threading.Lock()   # nur kurz gehalten (für die Dicts oben), nie während des Ladens
+
+    def peek(self, key: Any) -> Any:
+        """Letzter Wert ohne Laden (auch abgelaufen), sonst None."""
+        with self._guard:
+            entry = self._entries.get(key)
+        return entry[1] if entry else None
+
+    def set(self, key: Any, value: Any, seconds: Optional[float] = None) -> None:
+        with self._guard:
+            self._entries.pop(key, None)
+            self._entries[key] = (time.time() + (self.ttl if seconds is None else seconds), value)
+            while len(self._entries) > self.max_entries:
+                old = next(iter(self._entries))
+                del self._entries[old]
+                lock = self._locks.get(old)
+                if lock is not None and not lock.locked():
+                    del self._locks[old]
+
+    def get(self, key: Any, loader: Callable[[Any], Any], force: bool = False) -> Any:
+        """Wert zum Schlüssel; loader(letzter Wert oder None) lädt neu, wenn nötig."""
+        start_refresh = False
+        with self._guard:
+            entry = self._entries.get(key)
+            if entry and not force:
+                if time.time() < entry[0]:
+                    return entry[1]
+                if self.stale:
+                    start_refresh = key not in self._refreshing
+                    self._refreshing.add(key)
+            lock = self._locks.setdefault(key, threading.Lock())
+        if entry and not force and self.stale:
+            if start_refresh:
+                threading.Thread(target=self._refresh, args=(key, loader), daemon=True,
+                                 name=f"cache-{self.name}").start()
+            return entry[1]
+        with lock:
+            if not force:
+                with self._guard:
+                    entry = self._entries.get(key)
+                if entry and time.time() < entry[0]:
+                    return entry[1]   # inzwischen von einer anderen Anfrage geladen
+            return self._load(key, loader)
+
+    def refresh(self, key: Any, loader: Callable[[Any], Any]) -> None:
+        """Laden, falls der Wert fehlt oder abgelaufen ist (z. B. beim Start im eigenen Thread)."""
+        with self._guard:
+            if key in self._refreshing:
+                return
+            self._refreshing.add(key)
+        self._refresh(key, loader)
+
+    def _load(self, key: Any, loader: Callable[[Any], Any]) -> Any:
+        previous = self.peek(key)
+        result = loader(previous)
+        seconds = None
+        if isinstance(result, Expires):
+            result, seconds = result.value, result.seconds
+        if result is None:
+            return previous
+        self.set(key, result, seconds)
+        return result
+
+    def _refresh(self, key: Any, loader: Callable[[Any], Any]) -> None:
+        try:
+            with self._guard:
+                lock = self._locks.setdefault(key, threading.Lock())
+            with lock:
+                with self._guard:
+                    entry = self._entries.get(key)
+                if not entry or time.time() >= entry[0]:
+                    self._load(key, loader)
+        except Exception as exc:   # nächster Aufruf versucht es erneut
+            print(f"  [warn] Aktualisierung im Hintergrund ({self.name}) fehlgeschlagen: {exc}")
+        finally:
+            with self._guard:
+                self._refreshing.discard(key)
+
+
+# stale=True: abgelaufene Werte sofort liefern und im Hintergrund erneuern (Grund jeweils dahinter)
+_payload_cache = TTLCache("sentiment", CACHE_SECONDS, max_entries=1, stale=True)   # Dashboard
+_coin_cache = TTLCache("coin", CACHE_SECONDS)   # nicht stale: Score soll aktuell sein; Teilergebnis nach RETRY_SECONDS neu
+_markets_cache = TTLCache("markets", CACHE_SECONDS, max_entries=100, stale=True)   # Seite oder "<sparte>:1"
+_categories_cache = TTLCache("categories", CACHE_SECONDS, max_entries=1, stale=True)
+_search_cache = TTLCache("search", CACHE_SECONDS, max_entries=100)   # nicht stale: Suchbegriffe sind kurzlebig
+_klines_cache = TTLCache("klines", KLINE_CACHE_SECONDS, max_entries=300)   # nicht stale: letzte Kerze soll aktuell sein
+_derivs_cache = TTLCache("derivatives", CACHE_SECONDS, stale=True)   # Funding/OI: Stunden- bis Tageswerte
+_defi_cache = TTLCache("defi", DEFI_CACHE_SECONDS, max_entries=1, stale=True)
+_llama_index_cache = TTLCache("llama-index", LLAMA_INDEX_SECONDS, max_entries=1, stale=True)
+_fees_cache = TTLCache("fees", FEES_CACHE_SECONDS, stale=True)   # Schlüssel: "<art>:<slug>"
+_news_cache = TTLCache("news", NEWS_CACHE_SECONDS, max_entries=1, stale=True)   # alle Feeds gemeinsam
+_liq_cache = TTLCache("liquidation-inputs", CACHE_SECONDS, stale=True)   # Stundenkerzen und OI
+_history_cache = TTLCache("score-history", CACHE_SECONDS, stale=True)   # Score je Tag
+_profile_cache = TTLCache("profile", PROFILE_CACHE_SECONDS, max_entries=300, stale=True)   # Schlüssel: CoinGecko-ID
+_profile_ids = TTLCache("profile-ids", 30 * 86400, max_entries=500)   # Symbol → CoinGecko-ID (ohne ID-Parameter)
+for _symbol, _coin_id in {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana"}.items():
+    _profile_ids.set(_symbol, _coin_id, 10 * 365 * 86400)
+_liq_history_cache = TTLCache("liq-history", LIQ_HISTORY_CACHE_SECONDS)   # lokale SQLite-Abfrage, schnell
 
 
 def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -99,7 +195,7 @@ def build_coin(symbol: str, global_data: Dict[str, Any], symbol_data: Dict[str, 
     }
 
 
-def build_payload() -> Dict[str, Any]:
+def build_payload(previous: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     with ThreadPoolExecutor(max_workers=len(SYMBOLS) + 2) as pool:
         global_future = pool.submit(sentiment.collect_global)
         mcap_future = pool.submit(sentiment.safe, sentiment.get_market_caps, SYMBOLS)
@@ -112,7 +208,6 @@ def build_payload() -> Dict[str, Any]:
                        for s, f in symbol_futures.items()}
 
     # Fehlgeschlagene Abfragen (z. B. Rate-Limit) durch den letzten erfolgreichen Wert ersetzen
-    previous = _cache["payload"]
     if previous:
         for key, value in global_data.items():
             if value is None:
@@ -132,271 +227,184 @@ def build_payload() -> Dict[str, Any]:
     }
 
 
-def _refresh_payload(force: bool = True) -> Dict[str, Any]:
-    with _lock:
-        # Lief gerade schon ein Neuaufbau (z. B. beim Start), dessen Ergebnis nehmen
-        if not force and _cache["payload"] is not None and time.time() - _cache["time"] <= CACHE_SECONDS:
-            return _cache["payload"]
-        _cache["payload"] = build_payload()
-        _cache["time"] = time.time()
-        return _cache["payload"]
-
-
 def _refresh_in_background() -> None:
-    try:
-        _refresh_payload(force=False)
-    except Exception as e:  # nächster Aufruf versucht es erneut
-        print(f"Aktualisierung im Hintergrund fehlgeschlagen: {e}")
-    finally:
-        _cache["refreshing"] = False
-
-
-LIQ_HISTORY_DAYS = (7, 30, 90, 365)
-LIQ_HISTORY_CACHE_SECONDS = 60
-_liq_history_cache: Dict[tuple, Dict[str, Any]] = {}
-_liq_history_lock = threading.Lock()
+    """Dashboard-Daten laden, falls sie fehlen oder abgelaufen sind (beim Start aus main())."""
+    _payload_cache.refresh("payload", build_payload)
 
 
 def get_liq_history(days: int, coin: Optional[str], exchange: Optional[str]) -> Dict[str, Any]:
     """Liquidationen über Wochen/Monate aus SQLite (Stundensummen), 60 s gecacht."""
-    key = (days, coin, exchange)
-    with _liq_history_lock:
-        entry = _liq_history_cache.get(key)
-        if entry and time.time() - entry["time"] < LIQ_HISTORY_CACHE_SECONDS:
-            return entry["payload"]
-    payload = _collector.history(days, coin, exchange)
-    with _liq_history_lock:
-        _liq_history_cache[key] = {"time": time.time(), "payload": payload}
-        for k in [k for k, v in _liq_history_cache.items() if time.time() - v["time"] > LIQ_HISTORY_CACHE_SECONDS]:
-            del _liq_history_cache[k]
-    return payload
+    return _liq_history_cache.get((days, coin, exchange), lambda _: _collector.history(days, coin, exchange))
 
 
 def get_payload(force: bool = False) -> Dict[str, Any]:
     """Abgelaufener Stand wird sofort geliefert und im Hintergrund erneuert,
     damit niemand beim Öffnen der Seite auf alle Abfragen warten muss."""
-    if force or _cache["payload"] is None:
-        return _refresh_payload(force)
-    if time.time() - _cache["time"] > CACHE_SECONDS:
-        with _refresh_flag_lock:
-            start = not _cache.get("refreshing")
-            _cache["refreshing"] = True
-        if start:
-            threading.Thread(target=_refresh_in_background, daemon=True, name="sentiment-refresh").start()
-    return _cache["payload"]
+    return _payload_cache.get("payload", build_payload, force=force)
 
 
 def get_coin(symbol: str, coin_id: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
     """Einzelner Coin (aus Trending oder Marktübersicht), eigener Cache je Coin."""
     global_data = get_payload()["global"]
-    key = f"{symbol}:{coin_id or ''}"
-    with _coin_lock:
-        entry = _coin_cache.get(key)
-        if force or entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            symbol_data = sentiment.collect_symbol(symbol, coin_id, with_market=True)
-            # CoinGecko-Abfrage fehlgeschlagen (z. B. Limit-Pause): Lücken aus dem letzten Stand
-            # füllen und bald erneut versuchen, statt das unvollständige Ergebnis 5 Min. zu behalten
-            incomplete = symbol_data.get("market_stats") is None
-            if entry:
-                for k, old in entry["coin"]["data"].items():
-                    if symbol_data.get(k) is None:
-                        symbol_data[k] = old
-            cached_at = time.time() - (CACHE_SECONDS - RETRY_SECONDS if incomplete else 0)
-            entry = {"time": cached_at, "coin": build_coin(symbol, global_data, symbol_data)}
-            _coin_cache[key] = entry
-        return entry["coin"]
+
+    def load(previous: Optional[Dict[str, Any]]) -> Any:
+        symbol_data = sentiment.collect_symbol(symbol, coin_id, with_market=True)
+        # CoinGecko-Abfrage fehlgeschlagen (z. B. Limit-Pause): Lücken aus dem letzten Stand
+        # füllen und bald erneut versuchen, statt das unvollständige Ergebnis 5 Min. zu behalten
+        incomplete = symbol_data.get("market_stats") is None
+        if previous:
+            for k, old in previous["data"].items():
+                if symbol_data.get(k) is None:
+                    symbol_data[k] = old
+        coin = build_coin(symbol, global_data, symbol_data)
+        return Expires(coin, RETRY_SECONDS) if incomplete else coin
+
+    return _coin_cache.get(f"{symbol}:{coin_id or ''}", load, force=force)
 
 
 def get_markets(page: int, category: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Eine Seite der Rangliste (oder die größten Coins einer Sparte);
     bei Fehlern die zuletzt erfolgreich geladene Fassung."""
-    key = f"{category}:1" if category else str(page)
-    with _markets_lock:
-        entry = _markets_cache.get(key)
-        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            if category:
-                coins = sentiment.safe(sentiment.get_markets, 1, CATEGORY_PER_PAGE, category)
-            else:
-                coins = sentiment.safe(sentiment.get_markets, page, MARKETS_PER_PAGE)
-            if coins is not None:
-                entry = {"time": time.time(), "payload": {
-                    "page": 1 if category else page,
-                    "per_page": CATEGORY_PER_PAGE if category else MARKETS_PER_PAGE,
-                    "max_page": 1 if category else MARKETS_MAX_PAGE,
-                    "category": category,
-                    "updated": datetime.now().isoformat(timespec="seconds"),
-                    "coins": coins,
-                }}
-                _markets_cache[key] = entry
-        return entry["payload"] if entry else None
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        if category:
+            coins = sentiment.safe(sentiment.get_markets, 1, CATEGORY_PER_PAGE, category)
+        else:
+            coins = sentiment.safe(sentiment.get_markets, page, MARKETS_PER_PAGE)
+        if coins is None:
+            return None
+        return {
+            "page": 1 if category else page,
+            "per_page": CATEGORY_PER_PAGE if category else MARKETS_PER_PAGE,
+            "max_page": 1 if category else MARKETS_MAX_PAGE,
+            "category": category,
+            "updated": datetime.now().isoformat(timespec="seconds"),
+            "coins": coins,
+        }
+
+    return _markets_cache.get(f"{category}:1" if category else str(page), load)
 
 
 def get_categories() -> Optional[Dict[str, Any]]:
     """Alle Sparten; eine CoinGecko-Abfrage, 5 Min. gecacht."""
-    with _categories_lock:
-        if _categories_cache["payload"] is None or time.time() - _categories_cache["time"] > CACHE_SECONDS:
-            cats = sentiment.safe(sentiment.get_categories)
-            if cats:
-                _categories_cache.update(time=time.time(), payload={
-                    "updated": datetime.now().isoformat(timespec="seconds"),
-                    "categories": cats,
-                })
-        return _categories_cache["payload"]
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        cats = sentiment.safe(sentiment.get_categories)
+        return {"updated": datetime.now().isoformat(timespec="seconds"), "categories": cats} if cats else None
+
+    return _categories_cache.get("all", load)
 
 
 def search_markets(query: str) -> Optional[Dict[str, Any]]:
     """Suchtreffer mit Marktdaten; je Suchbegriff 5 Min. gecacht (zwei CoinGecko-Abfragen)."""
-    key = query.lower()
-    with _search_lock:
-        entry = _search_cache.get(key)
-        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            coins = sentiment.safe(sentiment.search_markets, query)
-            if coins is not None:
-                entry = {"time": time.time(), "payload": {
-                    "query": query,
-                    "updated": datetime.now().isoformat(timespec="seconds"),
-                    "coins": coins,
-                }}
-                _search_cache[key] = entry
-                # Cache klein halten: abgelaufene Einträge entfernen
-                for k in [k for k, v in _search_cache.items() if time.time() - v["time"] > CACHE_SECONDS]:
-                    del _search_cache[k]
-        return entry["payload"] if entry else None
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        coins = sentiment.safe(sentiment.search_markets, query)
+        if coins is None:
+            return None
+        return {"query": query, "updated": datetime.now().isoformat(timespec="seconds"), "coins": coins}
+
+    return _search_cache.get(query.lower(), load)
 
 
 def get_klines(symbol: str, interval: str) -> Optional[Dict[str, Any]]:
     """Kerzen für das Chart (Spot, sonst Futures); None, wenn Binance kein USDT-Paar hat."""
-    key = f"{symbol}:{interval}"
-    with _klines_lock:
-        entry = _klines_cache.get(key)
-        if entry is None or time.time() - entry["time"] > KLINE_CACHE_SECONDS:
-            result = sentiment.safe(sentiment.get_klines, symbol, interval)
-            if result and result["candles"]:
-                entry = {"time": time.time(), "payload": {
-                    "symbol": symbol,
-                    "interval": interval,
-                    "source": result["source"],
-                    "candles": result["candles"],
-                }}
-                _klines_cache[key] = entry
-        return entry["payload"] if entry else None
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        result = sentiment.safe(sentiment.get_klines, symbol, interval)
+        if not (result and result["candles"]):
+            return None
+        return {"symbol": symbol, "interval": interval, "source": result["source"], "candles": result["candles"]}
+
+    return _klines_cache.get(f"{symbol}:{interval}", load)
 
 
 def get_derivatives(symbol: str) -> Optional[Dict[str, Any]]:
     """Funding- und Open-Interest-Verlauf (Binance Futures); None ohne USDT-Perpetual."""
-    with _derivs_lock:
-        entry = _derivs_cache.get(symbol)
-        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            funding = sentiment.safe(sentiment.get_funding_history, symbol)
-            oi = sentiment.safe(sentiment.get_open_interest_history, symbol)
-            if funding or oi:
-                entry = {"time": time.time(), "payload": {
-                    "symbol": symbol,
-                    "funding": funding or [],
-                    "open_interest": oi or [],
-                }}
-                _derivs_cache[symbol] = entry
-        return entry["payload"] if entry else None
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        funding = sentiment.safe(sentiment.get_funding_history, symbol)
+        oi = sentiment.safe(sentiment.get_open_interest_history, symbol)
+        if not (funding or oi):
+            return None
+        return {"symbol": symbol, "funding": funding or [], "open_interest": oi or []}
+
+    return _derivs_cache.get(symbol, load)
 
 
 def get_defi_tvl() -> Optional[Dict[str, Any]]:
     """TVL je Kategorie und Chain (DefiLlama); bei Fehlern der letzte erfolgreiche Stand."""
-    with _defi_lock:
-        if _defi_cache["payload"] is None or time.time() - _defi_cache["time"] > DEFI_CACHE_SECONDS:
-            result = sentiment.safe(sentiment.get_defi_tvl)
-            if result:
-                _defi_cache.update(time=time.time(), payload={
-                    "updated": datetime.now().isoformat(timespec="seconds"), **result})
-        return _defi_cache["payload"]
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        result = sentiment.safe(sentiment.get_defi_tvl)
+        return {"updated": datetime.now().isoformat(timespec="seconds"), **result} if result else None
+
+    return _defi_cache.get("all", load)
 
 
 def get_fees(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
     """Gebühren und Einnahmen (DefiLlama) eines Coins; zugeordnet über CoinGecko-ID, sonst Symbol."""
-    with _llama_index_lock:
-        if _llama_index["payload"] is None or time.time() - _llama_index["time"] > LLAMA_INDEX_SECONDS:
-            idx = sentiment.safe(sentiment.get_llama_index)
-            if idx:
-                _llama_index.update(time=time.time(), payload=idx)
-        idx = _llama_index["payload"]
+    idx = _llama_index_cache.get("all", lambda _: sentiment.safe(sentiment.get_llama_index) or None)
     if not idx:
         return None
     entry = (idx["gecko"].get(coin_id) if coin_id else None) or idx["symbol"].get(symbol)
     if not entry:
         return None
-    key = entry["kind"] + ":" + entry["slug"]
-    with _fees_lock:
-        cached = _fees_cache.get(key)
-        if cached is None or time.time() - cached["time"] > FEES_CACHE_SECONDS:
-            try:
-                result = sentiment.get_fees(entry)
-            except ValueError as exc:   # DefiLlama nicht erreichbar: letzten Stand behalten, nichts cachen
-                print(f"  [warn] get_fees: {exc}")
-                return cached["payload"] if cached else None
-            # Teilergebnis (eine Datenart fehlgeschlagen) nur kurz cachen
-            incomplete = bool(result and result.pop("incomplete", False))
-            cached = {"time": time.time() - (FEES_CACHE_SECONDS - RETRY_SECONDS if incomplete else 0), "payload": result}
-            _fees_cache[key] = cached
-        return cached["payload"]
+
+    def load(_: Any) -> Any:
+        try:
+            result = sentiment.get_fees(entry)
+        except ValueError as exc:   # DefiLlama nicht erreichbar: letzten Stand behalten, nichts cachen
+            print(f"  [warn] get_fees: {exc}")
+            return None
+        # Teilergebnis (eine Datenart fehlgeschlagen) nur kurz cachen
+        incomplete = bool(result and result.pop("incomplete", False))
+        return Expires(result, RETRY_SECONDS) if incomplete else result
+
+    return _fees_cache.get(entry["kind"] + ":" + entry["slug"], load)
 
 
 def get_news(symbol: str, name: Optional[str]) -> Optional[Dict[str, Any]]:
     """Deutschsprachige Meldungen zum Coin (RSS); die Feeds werden gemeinsam 15 Min. gecacht,
     gefiltert wird je Abruf. Bei Fehlern der letzte erfolgreiche Stand."""
-    with _news_lock:
-        if _news_cache["items"] is None or time.time() - _news_cache["time"] > NEWS_CACHE_SECONDS:
-            items = sentiment.safe(sentiment.get_news)
-            if items:
-                _news_cache.update(time=time.time(), items=items, updated=datetime.now().isoformat(timespec="seconds"))
-        items = _news_cache["items"]
-    if not items:
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        items = sentiment.safe(sentiment.get_news)
+        return {"items": items, "updated": datetime.now().isoformat(timespec="seconds")} if items else None
+
+    feeds = _news_cache.get("all", load)
+    if not feeds:
         return None
-    return {"symbol": symbol, "name": name, "updated": _news_cache["updated"],
-            "sources": [s for s, _ in sentiment.NEWS_FEEDS], **sentiment.match_news(items, symbol, name)}
+    return {"symbol": symbol, "name": name, "updated": feeds["updated"],
+            "sources": [s for s, _ in sentiment.NEWS_FEEDS], **sentiment.match_news(feeds["items"], symbol, name)}
 
 
 def get_liquidation_inputs(symbol: str) -> Optional[Dict[str, Any]]:
     """Kerzen und OI je Stunde (Binance Futures) für die Liquidations-Heatmap; 5 Min. gecacht."""
-    with _liq_lock:
-        entry = _liq_cache.get(symbol)
-        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            result = sentiment.safe(sentiment.get_liquidation_inputs, symbol)
-            if result and result["candles"] and result["open_interest"]:
-                entry = {"time": time.time(), "payload": {"symbol": symbol, **result}}
-                _liq_cache[symbol] = entry
-        return entry["payload"] if entry else None
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        result = sentiment.safe(sentiment.get_liquidation_inputs, symbol)
+        if not (result and result["candles"] and result["open_interest"]):
+            return None
+        return {"symbol": symbol, **result}
+
+    return _liq_cache.get(symbol, load)
 
 
 def get_score_history(symbol: str) -> Optional[Dict[str, Any]]:
     """Rückwirkend berechneter Score je Tag; None ohne Binance-Kerzen und -Futures."""
-    with _history_lock:
-        entry = _history_cache.get(symbol)
-        if entry is None or time.time() - entry["time"] > CACHE_SECONDS:
-            result = sentiment.safe(sentiment.get_score_history, symbol)
-            if result and result["days"]:
-                entry = {"time": time.time(), "payload": {"symbol": symbol, **result}}
-                _history_cache[symbol] = entry
-        return entry["payload"] if entry else None
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        result = sentiment.safe(sentiment.get_score_history, symbol)
+        return {"symbol": symbol, **result} if result and result["days"] else None
+
+    return _history_cache.get(symbol, load)
 
 
 def get_coin_profile(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, Any]]:
     """Profil eines Coins (Seite „Über den Coin“): eine CoinGecko-Abfrage, einen Tag gecacht.
     Ohne ID wird sie einmal über das Symbol ermittelt (eine Abfrage mehr). Bei Fehlern der letzte Stand."""
-    with _profile_lock:
+    if not coin_id:
+        coin_id = _profile_ids.get(symbol, lambda _: sentiment.safe(sentiment.resolve_coin_id, symbol) or None)
         if not coin_id:
-            coin_id = _profile_ids.get(symbol)
-            if not coin_id:
-                coin_id = sentiment.safe(sentiment.resolve_coin_id, symbol)
-                if not coin_id:
-                    return None
-                _profile_ids[symbol] = coin_id
-        entry = _profile_cache.get(coin_id)
-        if entry is None or time.time() - entry["time"] > PROFILE_CACHE_SECONDS:
-            profile = sentiment.safe(sentiment.get_coin_profile, coin_id)
-            if profile:
-                entry = {"time": time.time(), "payload": {
-                    "updated": datetime.now().isoformat(timespec="seconds"), **profile}}
-                _profile_cache[coin_id] = entry
-        return entry["payload"] if entry else None
+            return None
+
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        profile = sentiment.safe(sentiment.get_coin_profile, coin_id)
+        return {"updated": datetime.now().isoformat(timespec="seconds"), **profile} if profile else None
+
+    return _profile_cache.get(coin_id, load)
 
 
 def coingecko_error() -> Dict[str, Any]:
@@ -408,6 +416,197 @@ def coingecko_error() -> Dict[str, Any]:
         return {"error": f"CoinGecko-Limit erreicht (kostenlose API), neuer Versuch in {round(wait)} s",
                 "retry_in": round(wait) + 1}
     return {"error": "CoinGecko nicht erreichbar"}
+
+
+class ApiError(Exception):
+    """Fehlerantwort eines Endpunkts: Statuscode und JSON-Inhalt."""
+
+    def __init__(self, status: int, payload: Dict[str, Any]) -> None:
+        super().__init__(status)
+        self.status, self.payload = status, payload
+
+
+class Query:
+    """Parameter einer Anfrage; `q("symbol")` liefert den ersten Wert oder den Standardwert."""
+
+    def __init__(self, query: str) -> None:
+        self.params = parse_qs(query)
+        self.force = self.params.get("refresh") == ["1"]
+
+    def __call__(self, name: str, default: str = "") -> str:
+        return (self.params.get(name) or [default])[0]
+
+    def symbol(self, name: str = "symbol") -> str:
+        return self(name).upper()
+
+    def coin_id(self) -> Optional[str]:
+        return self("id") or None
+
+    def text(self, name: str) -> str:
+        """Leerzeichen zusammenfassen (Suchbegriff, Coin-Name)."""
+        return " ".join(self(name).split())
+
+
+def require(ok: Any, message: str) -> None:
+    """Ungültige Parameter → 400."""
+    if not ok:
+        raise ApiError(400, {"error": message})
+
+
+def found(payload: Optional[Dict[str, Any]], message: str, status: int = 404) -> Dict[str, Any]:
+    """Keine Daten → 404 (bzw. 502, wenn die Quelle nicht erreichbar ist)."""
+    if payload is None:
+        raise ApiError(status, {"error": message})
+    return payload
+
+
+def from_coingecko(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Keine Daten von CoinGecko → 502, bei Limit-Pause mit retry_in."""
+    if payload is None:
+        raise ApiError(502, coingecko_error())
+    return payload
+
+
+def collector() -> liquidations.Collector:
+    if _collector is None:
+        raise ApiError(503, {"error": "Liquidations-Collector läuft nicht"})
+    return _collector
+
+
+def valid_symbol_and_id(q: Query) -> Tuple[str, Optional[str]]:
+    symbol, coin_id = q.symbol(), q.coin_id()
+    require(SYMBOL_RE.match(symbol) and not (coin_id and not COIN_ID_RE.match(coin_id)),
+            "ungültiges Symbol oder ungültige Coin-ID")
+    return symbol, coin_id
+
+
+def valid_symbol(q: Query) -> str:
+    symbol = q.symbol()
+    require(SYMBOL_RE.match(symbol), "ungültiges Symbol")
+    return symbol
+
+
+# --- Endpunkte: je eine Funktion (Query → JSON), Fehler über ApiError
+
+def api_sentiment(q: Query) -> Dict[str, Any]:
+    return get_payload(force=q.force)
+
+
+def api_markets(q: Query) -> Dict[str, Any]:
+    page, category = q("page", "1"), q("category") or None
+    require(page.isdigit() and 1 <= int(page) <= MARKETS_MAX_PAGE, "ungültige Seite")
+    require(not category or CATEGORY_RE.match(category), "ungültige Sparte")
+    return from_coingecko(get_markets(int(page), category))
+
+
+def api_categories(q: Query) -> Dict[str, Any]:
+    return from_coingecko(get_categories())
+
+
+def api_search(q: Query) -> Dict[str, Any]:
+    term = q.text("q")
+    require(1 <= len(term) <= SEARCH_MAX_LEN, "Suchbegriff fehlt oder ist zu lang")
+    return from_coingecko(search_markets(term))
+
+
+def api_coin(q: Query) -> Dict[str, Any]:
+    symbol = valid_symbol(q)
+    coin_id = q.coin_id()
+    require(not coin_id or COIN_ID_RE.match(coin_id), "ungültige Coin-ID")
+    return get_coin(symbol, coin_id, force=q.force)
+
+
+def api_coin_info(q: Query) -> Dict[str, Any]:
+    return from_coingecko(get_coin_profile(*valid_symbol_and_id(q)))
+
+
+def api_klines(q: Query) -> Dict[str, Any]:
+    symbol, interval = q.symbol(), q("interval", "1d")
+    require(SYMBOL_RE.match(symbol) and interval in KLINE_INTERVALS, "ungültiges Symbol oder Intervall")
+    return found(get_klines(symbol, interval), f"Keine Binance-Kursdaten für {symbol}/USDT")
+
+
+def api_score_history(q: Query) -> Dict[str, Any]:
+    symbol = valid_symbol(q)
+    return found(get_score_history(symbol), f"Kein Score-Verlauf für {symbol} (keine Binance-Daten)")
+
+
+def api_defi(q: Query) -> Dict[str, Any]:
+    return found(get_defi_tvl(), "DefiLlama nicht erreichbar", 502)
+
+
+def api_fees(q: Query) -> Dict[str, Any]:
+    symbol, coin_id = valid_symbol_and_id(q)
+    return found(get_fees(symbol, coin_id), f"Keine Gebührendaten für {symbol} bei DefiLlama")
+
+
+def api_news(q: Query) -> Dict[str, Any]:
+    symbol, name = q.symbol(), q.text("name") or None
+    require(SYMBOL_RE.match(symbol) and not (name and not NAME_RE.match(name)),
+            "ungültiges Symbol oder ungültiger Name")
+    return found(get_news(symbol, name), "News-Feeds nicht erreichbar", 502)
+
+
+def api_liquidations(q: Query) -> Dict[str, Any]:
+    symbol = valid_symbol(q)
+    return found(get_liquidation_inputs(symbol), f"Keine Binance-Futures für {symbol}/USDT")
+
+
+def api_derivatives(q: Query) -> Dict[str, Any]:
+    symbol = valid_symbol(q)
+    return found(get_derivatives(symbol), f"Keine Binance-Futures für {symbol}/USDT")
+
+
+def api_liq_history(q: Query) -> Dict[str, Any]:
+    collector()
+    coin, exchange = q.symbol("coin") or None, q("exchange") or None
+    try:
+        days = int(q("days", "30"))
+    except ValueError:
+        days = 0
+    require(days in LIQ_HISTORY_DAYS and not (coin and not SYMBOL_RE.match(coin))
+            and not (exchange and exchange not in LIQ_EXCHANGES), "ungültiger Zeitraum, Coin oder Börse")
+    return get_liq_history(days, coin, exchange)
+
+
+def api_liq_overview(q: Query) -> Dict[str, Any]:
+    col = collector()
+    window = q("window", "24h")
+    require(window in liquidations.WINDOWS, "ungültiges Zeitfenster")
+    return col.overview(window)
+
+
+def api_liq_feed(q: Query) -> Dict[str, Any]:
+    col = collector()
+    coin, exchange = q.symbol("coin") or None, q("exchange") or None
+    try:
+        min_usd = max(0.0, float(q("min", "0")))
+        limit = min(200, max(1, int(q("limit", "60"))))
+    except ValueError:
+        raise ApiError(400, {"error": "ungültige Zahl"})
+    require(not (coin and not SYMBOL_RE.match(coin)) and not (exchange and exchange not in LIQ_EXCHANGES),
+            "ungültiger Coin oder ungültige Börse")
+    return col.feed(coin, exchange, min_usd, limit)
+
+
+ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
+    "/api/sentiment": api_sentiment,
+    "/api/markets": api_markets,
+    "/api/categories": api_categories,
+    "/api/search": api_search,
+    "/api/coin": api_coin,
+    "/api/coin-info": api_coin_info,
+    "/api/klines": api_klines,
+    "/api/score-history": api_score_history,
+    "/api/defi": api_defi,
+    "/api/fees": api_fees,
+    "/api/news": api_news,
+    "/api/liquidations": api_liquidations,
+    "/api/derivatives": api_derivatives,
+    "/api/liq-history": api_liq_history,
+    "/api/liq-overview": api_liq_overview,
+    "/api/liq-feed": api_liq_feed,
+}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -432,184 +631,16 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         url = urlparse(self.path)
-        query = parse_qs(url.query)
-        force = query.get("refresh") == ["1"]
-        if url.path == "/api/sentiment":
-            self.send_json(get_payload(force=force))
+        route = ROUTES.get(url.path)
+        if route is None:
+            super().do_GET()   # statische Dateien aus web/ (unbekannte /api/-Pfade → 404)
             return
-        if url.path == "/api/markets":
-            page = (query.get("page") or ["1"])[0]
-            category = (query.get("category") or [""])[0] or None
-            if not page.isdigit() or not 1 <= int(page) <= MARKETS_MAX_PAGE:
-                self.send_json({"error": "ungültige Seite"}, 400)
-                return
-            if category and not CATEGORY_RE.match(category):
-                self.send_json({"error": "ungültige Sparte"}, 400)
-                return
-            payload = get_markets(int(page), category)
-            if payload is None:
-                self.send_json(coingecko_error(), 502)
-                return
-            self.send_json(payload)
+        try:
+            payload = route(Query(url.query))
+        except ApiError as e:
+            self.send_json(e.payload, e.status)
             return
-        if url.path == "/api/categories":
-            payload = get_categories()
-            if payload is None:
-                self.send_json(coingecko_error(), 502)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/search":
-            q = " ".join((query.get("q") or [""])[0].split())
-            if not 1 <= len(q) <= SEARCH_MAX_LEN:
-                self.send_json({"error": "Suchbegriff fehlt oder ist zu lang"}, 400)
-                return
-            payload = search_markets(q)
-            if payload is None:
-                self.send_json(coingecko_error(), 502)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/coin":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            if not SYMBOL_RE.match(symbol):
-                self.send_json({"error": "ungültiges Symbol"}, 400)
-                return
-            coin_id = (query.get("id") or [""])[0] or None
-            if coin_id and not COIN_ID_RE.match(coin_id):
-                self.send_json({"error": "ungültige Coin-ID"}, 400)
-                return
-            self.send_json(get_coin(symbol, coin_id, force=force))
-            return
-        if url.path == "/api/coin-info":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            coin_id = (query.get("id") or [""])[0] or None
-            if not SYMBOL_RE.match(symbol) or (coin_id and not COIN_ID_RE.match(coin_id)):
-                self.send_json({"error": "ungültiges Symbol oder ungültige Coin-ID"}, 400)
-                return
-            payload = get_coin_profile(symbol, coin_id)
-            if payload is None:
-                self.send_json(coingecko_error(), 502)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/klines":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            interval = (query.get("interval") or ["1d"])[0]
-            if not SYMBOL_RE.match(symbol) or interval not in KLINE_INTERVALS:
-                self.send_json({"error": "ungültiges Symbol oder Intervall"}, 400)
-                return
-            payload = get_klines(symbol, interval)
-            if payload is None:
-                self.send_json({"error": f"Keine Binance-Kursdaten für {symbol}/USDT"}, 404)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/score-history":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            if not SYMBOL_RE.match(symbol):
-                self.send_json({"error": "ungültiges Symbol"}, 400)
-                return
-            payload = get_score_history(symbol)
-            if payload is None:
-                self.send_json({"error": f"Kein Score-Verlauf für {symbol} (keine Binance-Daten)"}, 404)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/defi":
-            payload = get_defi_tvl()
-            if payload is None:
-                self.send_json({"error": "DefiLlama nicht erreichbar"}, 502)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/fees":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            coin_id = (query.get("id") or [""])[0] or None
-            if not SYMBOL_RE.match(symbol) or (coin_id and not COIN_ID_RE.match(coin_id)):
-                self.send_json({"error": "ungültiges Symbol oder ungültige Coin-ID"}, 400)
-                return
-            payload = get_fees(symbol, coin_id)
-            if payload is None:
-                self.send_json({"error": f"Keine Gebührendaten für {symbol} bei DefiLlama"}, 404)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/news":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            name = " ".join((query.get("name") or [""])[0].split()) or None
-            if not SYMBOL_RE.match(symbol) or (name and not NAME_RE.match(name)):
-                self.send_json({"error": "ungültiges Symbol oder ungültiger Name"}, 400)
-                return
-            payload = get_news(symbol, name)
-            if payload is None:
-                self.send_json({"error": "News-Feeds nicht erreichbar"}, 502)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/liquidations":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            if not SYMBOL_RE.match(symbol):
-                self.send_json({"error": "ungültiges Symbol"}, 400)
-                return
-            payload = get_liquidation_inputs(symbol)
-            if payload is None:
-                self.send_json({"error": f"Keine Binance-Futures für {symbol}/USDT"}, 404)
-                return
-            self.send_json(payload)
-            return
-        if url.path == "/api/liq-history":
-            if _collector is None:
-                self.send_json({"error": "Liquidations-Collector läuft nicht"}, 503)
-                return
-            coin = (query.get("coin") or [""])[0].upper() or None
-            exchange = (query.get("exchange") or [""])[0] or None
-            try:
-                days = int((query.get("days") or ["30"])[0])
-            except ValueError:
-                days = 0
-            if days not in LIQ_HISTORY_DAYS or (coin and not SYMBOL_RE.match(coin)) \
-                    or (exchange and exchange not in LIQ_EXCHANGES):
-                self.send_json({"error": "ungültiger Zeitraum, Coin oder Börse"}, 400)
-                return
-            self.send_json(get_liq_history(days, coin, exchange))
-            return
-        if url.path in ("/api/liq-overview", "/api/liq-feed"):
-            if _collector is None:
-                self.send_json({"error": "Liquidations-Collector läuft nicht"}, 503)
-                return
-            if url.path == "/api/liq-overview":
-                window = (query.get("window") or ["24h"])[0]
-                if window not in liquidations.WINDOWS:
-                    self.send_json({"error": "ungültiges Zeitfenster"}, 400)
-                    return
-                self.send_json(_collector.overview(window))
-                return
-            coin = (query.get("coin") or [""])[0].upper() or None
-            exchange = (query.get("exchange") or [""])[0] or None
-            try:
-                min_usd = max(0.0, float((query.get("min") or ["0"])[0]))
-                limit = min(200, max(1, int((query.get("limit") or ["60"])[0])))
-            except ValueError:
-                self.send_json({"error": "ungültige Zahl"}, 400)
-                return
-            if (coin and not SYMBOL_RE.match(coin)) or (exchange and exchange not in LIQ_EXCHANGES):
-                self.send_json({"error": "ungültiger Coin oder ungültige Börse"}, 400)
-                return
-            self.send_json(_collector.feed(coin, exchange, min_usd, limit))
-            return
-        if url.path == "/api/derivatives":
-            symbol = (query.get("symbol") or [""])[0].upper()
-            if not SYMBOL_RE.match(symbol):
-                self.send_json({"error": "ungültiges Symbol"}, 400)
-                return
-            payload = get_derivatives(symbol)
-            if payload is None:
-                self.send_json({"error": f"Keine Binance-Futures für {symbol}/USDT"}, 404)
-                return
-            self.send_json(payload)
-            return
-        super().do_GET()
+        self.send_json(payload)
 
     def log_message(self, fmt: str, *args) -> None:
         if "/api/" in (str(args[0]) if args else ""):
