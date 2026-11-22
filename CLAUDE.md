@@ -32,7 +32,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/defi` (TVL je Kategorie und
   Chain von DefiLlama, aus `/protocols` summiert, Chain-Stände aus `/v2/chains`, Cache 10 Min.), `/api/liquidations?symbol=…`
   (Futures-Kerzen und OI je Stunde, ~21 Tage, für die Liquidations-Heatmap; das Modell selbst
-  rechnet `buildLiqModel` in `coin.html`), `/api/fees?symbol=…&id=…` (Gebühren, Einnahmen und
+  rechnet `buildLiqModel` in `web/coin-liqmap.js`), `/api/fees?symbol=…&id=…` (Gebühren, Einnahmen und
   Weitergabe an Token-Halter von DefiLlama; Coin → Protokoll/Chain über `get_llama_index`,
   Vorrang Dachprotokoll > Chain > Einzelprotokoll, Cache 30 Min., Index 1 Tag), `/api/klines?symbol=…&interval=1d|4h|1h|15m|5m|3m|1m`
   (Binance-Kerzen, Cache 60 s), `/api/derivatives?symbol=…` (Funding 90 T, Open Interest 30 T
@@ -53,14 +53,18 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   mit Kennzahlen (Allzeithoch, Menge, FDV …; Felder `market_stats` aus der ohnehin laufenden
   CoinGecko-Abfrage `coins/markets`, keine eigene Abfrage), Candlestick-Chart (MA50/MA200, RSI-Fenster als zweites, synchronisiertes Chart),
   Funding-/OI-Charts und Zusammensetzung des Scores (Balken je Signal; Fear & Greed steht
-  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln),
+  bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln). `coin.html` enthält nur HTML und
+  den Start; Styles in `coin.css`, Code je Abschnitt in `coin-base.js` (gemeinsame Konstanten, `themeOptions`,
+  `miniChart`, Kacheln), `coin-head.js` (Kopf, Lagebild, News, Kennzahlen, Score-Balken), `coin-chart.js`
+  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js` –
+  normale Skripte ohne Module/Build, alle im selben globalen Bereich,
   `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):
   Art und Kategorien mit Erklärung, Risikostufe mit Stärken/Risiken, aktuelle Marktlage, Beschreibung
   (CoinGecko meist nur englisch, Link zum Google Übersetzer), Fakten und Links, `web/base.css` – gemeinsame Styles und Farbvariablen (hell/dunkel),
   `web/tips.js` – gemeinsame Tooltip-Texte und -Logik, `web/format.js` – gemeinsame Hilfsfunktionen
   (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle Seiten; Formate dort ändern,
   nicht in den Seiten
-- Live-Kurs im Chart der Detailseite: `coin.html` verbindet sich direkt per WebSocket mit Binance
+- Live-Kurs im Chart der Detailseite: `coin-chart.js` verbindet sich direkt per WebSocket mit Binance
   (`connectLive`, Spot oder Futures je nach Quelle der Kerzen) und zieht die laufende Kerze samt
   MA/RSI und Kurs im Kopf nach; der Server ist nicht beteiligt. Rückfall ist `refreshChart` (60 s).
 - Das Chart nutzt TradingView Lightweight Charts **4.2.0** per CDN (unpkg, feste Version).
