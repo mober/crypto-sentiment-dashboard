@@ -125,7 +125,7 @@ def build_payload() -> Dict[str, Any]:
     coins = [build_coin(s, global_data, symbol_data[s]) for s in SYMBOLS]
 
     return {
-        "updated": datetime.now().isoformat(timespec="seconds"),
+        "updated": datetime.now().astimezone().isoformat(timespec="seconds"),  # mit Zeitzone, Browser rechnet das Alter
         "global": global_data,
         "coins": coins,
     }

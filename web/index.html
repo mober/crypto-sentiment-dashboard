@@ -455,6 +455,10 @@ function selectExtra(symbol, id) {
 
 // Letzter Stand im Browser: beim Öffnen sofort anzeigen, die frischen Daten ersetzen ihn kurz darauf
 const PAYLOAD_KEY = "lastPayload";
+const STALE_MS = 5 * 60 * 1000;        // wie CACHE_SECONDS im Server
+const STALE_RETRY_MS = 10 * 1000;
+const STALE_RETRY_MAX = 6;             // höchstens 1 Minute lang nachfragen
+let staleTimer = null, staleRetries = 0;
 function showPayload() {
   renderMarket(payload.global);
   renderCoins();
@@ -481,6 +485,12 @@ async function load(force = false) {
     try { localStorage.setItem(PAYLOAD_KEY, JSON.stringify(payload)); } catch (e) { /* ignorieren */ }
     showPayload();
     $("error").hidden = true;
+    // Alter Stand (Server lädt gerade im Hintergrund neu): bald noch einmal nachfragen statt erst in 5 Min.
+    clearTimeout(staleTimer);
+    if (Date.now() - new Date(payload.updated) > STALE_MS && staleRetries < STALE_RETRY_MAX) {
+      staleRetries++;
+      staleTimer = setTimeout(load, STALE_RETRY_MS);
+    } else staleRetries = 0;
     loadExtra(force);
     if (listMode === "top") loadTop20();  // Rangliste mit aktualisieren
   } catch (e) {
