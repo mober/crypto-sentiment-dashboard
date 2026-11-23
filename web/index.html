@@ -54,7 +54,7 @@
   .chip.fixed { cursor: default; }
 
   /* Coins */
-  .coins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .coins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
   .coin.flash { animation: flash 1.6s ease-out; }
   @keyframes flash { from { box-shadow: 0 0 0 3px #e8a317; } to { box-shadow: 0 0 0 3px transparent; } }
   /* Übersicht: alle Watchlist-Coins kompakt, Klick springt zur Karte */

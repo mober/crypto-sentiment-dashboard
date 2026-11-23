@@ -1351,6 +1351,10 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     die Anzeige übersetzt ihn im Browser. reason ist in der gewünschten Sprache."""
     L = _l(lang)
     signals = []
+    # Zahlen in der Schreibweise der Sprache (deutsch: Komma, „ %“), wie im Lagebild
+    pct = lambda v, d=1, sign=True: _pct_de(v, d, sign, lang)
+    num = lambda v, d: f"{v:.{d}f}" if lang == "en" else f"{v:.{d}f}".replace(".", ",")
+    sgn = lambda v: "+" if v > 0 else "−" if v < 0 else ""
 
     def add(name: str, points: int, reason: str, hot: str, cold: str, neutral: str) -> None:
         word = hot if points >= SIGNAL_STRONG else cold if points <= -SIGNAL_STRONG else neutral
@@ -1367,19 +1371,19 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
         r = fr["avg_7d"]
         takt = fr.get("interval_h", FUNDING_BASE_HOURS)
         note = L(f" (Takt {takt} h, umgerechnet)", f" (every {takt} h, converted)") if takt != FUNDING_BASE_HOURS else ""
-        add("Funding Rate", scale(r, FUNDING_SCALE), f"{L('Ø', 'avg')} {r:.4%} / 8h{note}",
+        add("Funding Rate", scale(r, FUNDING_SCALE), f"{L('Ø', 'avg')} {pct(r, 4)} / 8 h{note}",
             L("Longs zahlen viel", "longs pay a lot"), L("Shorts dominieren", "shorts dominate"), "normal")
 
     oi = d.get("open_interest")
     if oi:
         c = oi["change_7d"]
-        add("Open Interest", scale(c, OI_SCALE), L(f"{c:+.1%} in 7 Tagen", f"{c:+.1%} in 7 days"),
+        add("Open Interest", scale(c, OI_SCALE), L(f"{pct(c)} in 7 Tagen", f"{pct(c)} in 7 days"),
             L("viel neuer Hebel", "lots of new leverage"), L("starker Hebelabbau", "strong deleveraging"), "normal")
 
     ma = d.get("price_ma200")
     if ma:
         dist = ma["distance"]
-        add("Preis vs. MA200", scale(dist, MA200_SCALE), f"{dist:+.1%}",
+        add("Preis vs. MA200", scale(dist, MA200_SCALE), pct(dist),
             L("stark gestreckt", "strongly extended"), L("deutlich unter dem Trend", "well below trend"),
             L("im Trendbereich", "near trend"))
 
@@ -1392,7 +1396,7 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     dv = d.get("dvol")
     if dv:
         v, z = dv["value"], dv["z"]
-        add("Optionsvola (DVOL)", scale(z, DVOL_SCALE), f"{v:.1f} ({z:+.1f}σ)",
+        add("Optionsvola (DVOL)", scale(z, DVOL_SCALE), f"{num(v, 1)} ({sgn(z)}{num(abs(z), 1)}σ)",
             L("ungewöhnlich ruhig, Sorglosigkeit", "unusually calm, complacency"),
             L("ungewöhnlich hoch, Absicherung gefragt", "unusually high, hedging in demand"), "normal")
 
@@ -1401,12 +1405,12 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
         c7, c30, turnover = mo["change_7d"], mo["change_30d"], mo["turnover"]
         up, down, mid = L("starker Anstieg", "strong rise"), L("starker Rückgang", "strong decline"), L("moderat", "moderate")
         if c7 is not None:
-            add("Momentum 7T", scale(c7, MOMENTUM_7D_SCALE), f"{c7:+.1%}", up, down, mid)
+            add("Momentum 7T", scale(c7, MOMENTUM_7D_SCALE), pct(c7), up, down, mid)
         if c30 is not None:
-            add("Momentum 30T", scale(c30, MOMENTUM_30D_SCALE), f"{c30:+.1%}", up, down, mid)
+            add("Momentum 30T", scale(c30, MOMENTUM_30D_SCALE), pct(c30), up, down, mid)
         if turnover is not None and c7 is not None:
             pts = scale(turnover, TURNOVER_SCALE) * (1 if c7 >= 0 else -1)
-            add("Umschlag", pts, L(f"{turnover:.0%} der Marktkap. pro Tag", f"{turnover:.0%} of market cap per day"),
+            add("Umschlag", pts, L(f"{pct(turnover, 0, False)} der Marktkap. pro Tag", f"{pct(turnover, 0, False)} of market cap per day"),
                 L("Spekulationsrausch", "speculative frenzy"), L("Panikverkäufe", "panic selling"), "normal")
         if not rs and mo["rsi_hourly"] is not None:
             v = mo["rsi_hourly"]
@@ -1416,7 +1420,7 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     mv = d.get("mvrv")
     if mv:
         v = mv["value"]
-        add("MVRV", scale(v, MVRV_SCALE), L(f"{v:.2f}".replace(".", ","), f"{v:.2f}"),
+        add("MVRV", scale(v, MVRV_SCALE), num(v, 2),
             L("Halter weit im Gewinn", "holders deep in profit") if v >= 3 else L("Halter deutlich im Gewinn", "holders well in profit"),
             L("Halter im Schnitt im Verlust", "holders at a loss on average") if v < 1
             else L("nahe am Einstand der Halter", "near holders' cost basis"), "normal")
@@ -1424,7 +1428,7 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     ls = d.get("long_short")
     if ls:
         r = ls["ratio"]
-        add("Long/Short Ratio", scale(r, LS_SCALE), f"{r:.2f}",
+        add("Long/Short Ratio", scale(r, LS_SCALE), num(r, 2),
             L("Masse stark long", "crowd heavily long"), L("Masse short", "crowd short"), L("ausgeglichen", "balanced"))
 
     return signals

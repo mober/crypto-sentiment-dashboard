@@ -103,7 +103,7 @@ button.star:disabled { opacity: 1; cursor: default; }
 
 /* Datenstatus (datastatus.js): Punkt + „Quelle · Zustand · Stand“ */
 .ds { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 400; color: var(--muted);
-  letter-spacing: 0; text-transform: none; white-space: nowrap; cursor: help; }
+  letter-spacing: 0; text-transform: none; cursor: help; max-width: 100%; }
 .ds i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--neutral); }
 .ds.st-live i { background: var(--up); animation: ds-blink 1.4s infinite; }
 .ds.st-ok i { background: var(--up); }
@@ -114,7 +114,6 @@ button.star:disabled { opacity: 1; cursor: default; }
 .ds.st-na i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--neutral); }
 @keyframes ds-blink { 50% { opacity: .3; } }
 .ds-line { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; }
-@media (max-width: 640px) { .ds { white-space: normal; } }
 
 /* Kurzfassung oben auf der Seite (renderBrief in format.js) */
 .brief { padding: 14px 18px; margin-bottom: 20px; border-left: 4px solid var(--neutral); }
