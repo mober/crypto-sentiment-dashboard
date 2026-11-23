@@ -19,19 +19,6 @@ const symbol = (params.get("symbol") || "").toUpperCase();
 const coinId = params.get("id") || "";
 const validSymbol = /^[A-Z0-9]{1,15}$/.test(symbol);
 
-// Breadcrumbs: Märkte → Coin → Abschnitt (folgt beim Scrollen, setBreadcrumb in nav.js)
-const CRUMB_SECTIONS = {
-  stats: L("Kennzahlen", "Key figures"), "chart-card": L("Chart", "Chart"), book: L("Orderbuch", "Order book"),
-  fees: L("Gebühren", "Fees"), derivs: L("Derivate", "Derivatives"), onchain: "On-Chain",
-  liq: L("Liquidations-Heatmap", "Liquidation heatmap"), history: L("Score-Verlauf", "Score history"),
-  breakdown: L("Score-Zusammensetzung", "Score breakdown"),
-};
-function setCoinCrumbs(name) {
-  const items = [{ label: L("Märkte", "Markets"), href: "markets.html" }];
-  if (validSymbol) items.push({ label: name || symbol, href: location.pathname.split("/").pop() + location.search });
-  setBreadcrumb(items, validSymbol ? CRUMB_SECTIONS : null);
-}
-
 // --- Zahlen und Kacheln (Kopfbereich, Heatmap, Gebühren) -------------------
 
 const num1 = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1).replace(".", DEC);

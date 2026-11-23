@@ -20,159 +20,180 @@
     </div>
   </header>
 
-  <section id="hero"></section>
-  <section class="card stats-card" id="stats" hidden aria-label="Kennzahlen">
-    <button class="stats-toggle" id="stats-toggle" aria-expanded="true" aria-controls="stats-grid" title="Kennzahlen ein- oder ausklappen">
-      <span class="label"><span class="chev" aria-hidden="true">▼</span> Kennzahlen</span><span class="hint" id="stats-hint"></span>
-    </button>
-    <div class="stats" id="stats-grid"></div>
-  </section>
+  <div class="tabs" id="tabs" role="tablist" aria-label="Bereiche"></div>
 
-  <section class="card chart-card" id="chart-card">
-    <div class="chart-head">
-      <div><span class="pair" id="pair">Kursverlauf</span></div>
-      <div class="chart-tools">
-        <details class="ind-menu" id="ind-menu"></details>
-        <div class="seg" id="range-seg" role="group" aria-label="Zeitraum">
-          <button data-range="0.25" title="Letzte 6 Stunden">6h</button>
-          <button data-range="1" title="Letzte 24 Stunden">24h</button>
-          <button data-range="7" title="Letzte Woche">1W</button>
-          <button data-range="30" title="Letzter Monat">1M</button>
-          <button data-range="91" title="Letzte 3 Monate">3M</button>
-          <button data-range="182" title="Letzte 6 Monate">6M</button>
-          <button data-range="365" title="Letztes Jahr">1J</button>
-          <button data-range="all" title="Alle geladenen Kerzen (max. 1000)">Alle</button>
-        </div>
-        <div class="seg" id="interval-seg" role="group" aria-label="Zeitintervall">
-          <button data-interval="1d">1T</button>
-          <button data-interval="4h">4h</button>
-          <button data-interval="1h">1h</button>
-          <button data-interval="15m" title="15 Minuten je Kerze">15m</button>
-          <button data-interval="5m" title="5 Minuten je Kerze">5m</button>
-          <button data-interval="3m" title="3 Minuten je Kerze">3m</button>
-          <button data-interval="1m" title="1 Minute je Kerze">1m</button>
-        </div>
-      </div>
-    </div>
-    <div class="chart-wrap">
-      <div class="ohlc" id="ohlc"></div>
-      <div id="chart"></div>
-      <div class="chart-msg" id="chart-msg">Lade Kursdaten …</div>
-    </div>
-    <div class="rsi-wrap" id="rsi-wrap">
-      <div class="ohlc" id="rsi-legend"></div>
-      <div id="rsi-chart"></div>
-    </div>
-  </section>
+  <div class="tab-panel" id="tab-overview" data-tab="overview" role="tabpanel">
+    <section id="hero"></section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
-  <section class="card book" id="book">
-    <div class="breakdown-head">
-      <div class="label"><span data-tip="orderbook" tabindex="0">Orderbuch</span> <span class="book-src" id="book-src">Binance</span>
-        <span class="book-live" id="book-live" title="Live über WebSocket von Binance"><i></i>live</span></div>
-      <div class="book-tools">
-        <div class="seg" id="book-market" role="group" aria-label="Markt">
-          <button data-market="spot" aria-pressed="true" title="Binance Spot (USDT-Paar): bis 5.000 Stufen je Seite">Spot</button>
-          <button data-market="futures" aria-pressed="false" title="Binance Futures (USDT-Perpetual): bis 1.000 Stufen je Seite, meist mehr Volumen nahe am Kurs">Futures</button>
-        </div>
-        <div class="seg" id="book-range" role="group" aria-label="Bereich um den Kurs">
-          <button data-range="0.005" aria-pressed="false">±0,5 %</button>
-          <button data-range="0.01" aria-pressed="true">±1 %</button>
-          <button data-range="0.02" aria-pressed="false">±2 %</button>
+  <div class="tab-panel" id="tab-chart" data-tab="chart" role="tabpanel">
+    <section class="card chart-card" id="chart-card">
+      <div class="chart-head">
+        <div><span class="pair" id="pair">Kursverlauf</span></div>
+        <div class="chart-tools">
+          <details class="ind-menu" id="ind-menu"></details>
+          <div class="seg" id="range-seg" role="group" aria-label="Zeitraum">
+            <button data-range="0.25" title="Letzte 6 Stunden">6h</button>
+            <button data-range="1" title="Letzte 24 Stunden">24h</button>
+            <button data-range="7" title="Letzte Woche">1W</button>
+            <button data-range="30" title="Letzter Monat">1M</button>
+            <button data-range="91" title="Letzte 3 Monate">3M</button>
+            <button data-range="182" title="Letzte 6 Monate">6M</button>
+            <button data-range="365" title="Letztes Jahr">1J</button>
+            <button data-range="all" title="Alle geladenen Kerzen (max. 1000)">Alle</button>
+          </div>
+          <div class="seg" id="interval-seg" role="group" aria-label="Zeitintervall">
+            <button data-interval="1d">1T</button>
+            <button data-interval="4h">4h</button>
+            <button data-interval="1h">1h</button>
+            <button data-interval="15m" title="15 Minuten je Kerze">15m</button>
+            <button data-interval="5m" title="5 Minuten je Kerze">5m</button>
+            <button data-interval="3m" title="3 Minuten je Kerze">3m</button>
+            <button data-interval="1m" title="1 Minute je Kerze">1m</button>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="stats book-stats" id="book-stats"></div>
-    <div class="book-grid">
-      <div class="book-depth"><canvas id="book-depth"></canvas><div class="book-hover" id="book-hover" hidden></div>
-        <div class="mini-msg" id="book-msg">Lade Orderbuch …</div></div>
-      <div class="book-side">
-        <div class="book-side-head"><span>Aufträge je Preisstufe</span>
-          <label>Stufe <select id="book-group" aria-label="Preisstufen zusammenfassen"></select></label></div>
-        <table class="book-table"><thead><tr><th>Preis (USDT)</th><th>Menge</th><th>Summe</th></tr></thead>
-          <tbody id="book-asks"></tbody><tbody id="book-mid"></tbody><tbody id="book-bids"></tbody></table>
+      <div class="chart-wrap">
+        <div class="ohlc" id="ohlc"></div>
+        <div id="chart"></div>
+        <div class="chart-msg" id="chart-msg">Lade Kursdaten …</div>
       </div>
-    </div>
-    <div class="book-note" id="book-note"></div>
-  </section>
+      <div class="rsi-wrap" id="rsi-wrap">
+        <div class="ohlc" id="rsi-legend"></div>
+        <div id="rsi-chart"></div>
+      </div>
+    </section>
+    <section class="card book" id="book">
+      <div class="breakdown-head">
+        <div class="label"><span data-tip="orderbook" tabindex="0">Orderbuch</span> <span class="book-src" id="book-src">Binance</span>
+          <span class="book-live" id="book-live" title="Live über WebSocket von Binance"><i></i>live</span></div>
+        <div class="book-tools">
+          <div class="seg" id="book-market" role="group" aria-label="Markt">
+            <button data-market="spot" aria-pressed="true" title="Binance Spot (USDT-Paar): bis 5.000 Stufen je Seite">Spot</button>
+            <button data-market="futures" aria-pressed="false" title="Binance Futures (USDT-Perpetual): bis 1.000 Stufen je Seite, meist mehr Volumen nahe am Kurs">Futures</button>
+          </div>
+          <div class="seg" id="book-range" role="group" aria-label="Bereich um den Kurs">
+            <button data-range="0.005" aria-pressed="false">±0,5 %</button>
+            <button data-range="0.01" aria-pressed="true">±1 %</button>
+            <button data-range="0.02" aria-pressed="false">±2 %</button>
+          </div>
+        </div>
+      </div>
+      <div class="stats book-stats" id="book-stats"></div>
+      <div class="book-grid">
+        <div class="book-depth"><canvas id="book-depth"></canvas><div class="book-hover" id="book-hover" hidden></div>
+          <div class="mini-msg" id="book-msg">Lade Orderbuch …</div></div>
+        <div class="book-side">
+          <div class="book-side-head"><span>Aufträge je Preisstufe</span>
+            <label>Stufe <select id="book-group" aria-label="Preisstufen zusammenfassen"></select></label></div>
+          <table class="book-table"><thead><tr><th>Preis (USDT)</th><th>Menge</th><th>Summe</th></tr></thead>
+            <tbody id="book-asks"></tbody><tbody id="book-mid"></tbody><tbody id="book-bids"></tbody></table>
+        </div>
+      </div>
+      <div class="book-note" id="book-note"></div>
+    </section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
-  <section class="card fees" id="fees" hidden>
-    <div class="breakdown-head">
-      <div class="label"><span data-tip="fees" tabindex="0">Gebühren &amp; Einnahmen</span></div>
-      <div class="note" id="fee-source"></div>
-    </div>
-    <div class="fee-tiles" id="fee-tiles"></div>
-    <div class="fee-legend" id="fee-legend"></div>
-    <div class="mini-wrap"><div class="mini-chart" id="fee-chart"></div></div>
-  </section>
+  <div class="tab-panel" id="tab-derivs" data-tab="derivs" role="tabpanel">
+    <section class="card derivs" id="derivs">
+      <div class="breakdown-head">
+        <div class="label">Derivate auf Binance Futures (USDT-Perpetual)</div>
+        <div class="note">Funding: 90 Tage, pro 8 h · Open Interest: 30 Tage in 4-h-Schritten (mehr liefert Binance nicht)</div>
+      </div>
+      <div class="derivs-grid">
+        <div>
+          <div class="mini-head"><span class="mini-title"><span data-tip="fundingHist" tabindex="0">Funding Rate</span></span><span class="mini-legend" id="fund-legend"></span></div>
+          <div class="mini-wrap"><div class="mini-chart" id="fund-chart"></div><div class="mini-msg" id="fund-msg">Lade …</div></div>
+        </div>
+        <div>
+          <div class="mini-head"><span class="mini-title"><span data-tip="oiHist" tabindex="0">Open Interest</span> und Kurs</span><span class="mini-legend" id="oi-legend"></span></div>
+          <div class="mini-wrap"><div class="mini-chart" id="oi-chart"></div><div class="mini-msg" id="oi-msg">Lade …</div></div>
+        </div>
+      </div>
+    </section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
-  <section class="card derivs" id="derivs">
-    <div class="breakdown-head">
-      <div class="label">Derivate auf Binance Futures (USDT-Perpetual)</div>
-      <div class="note">Funding: 90 Tage, pro 8 h · Open Interest: 30 Tage in 4-h-Schritten (mehr liefert Binance nicht)</div>
-    </div>
-    <div class="derivs-grid">
-      <div>
-        <div class="mini-head"><span class="mini-title"><span data-tip="fundingHist" tabindex="0">Funding Rate</span></span><span class="mini-legend" id="fund-legend"></span></div>
-        <div class="mini-wrap"><div class="mini-chart" id="fund-chart"></div><div class="mini-msg" id="fund-msg">Lade …</div></div>
+  <div class="tab-panel" id="tab-onchain" data-tab="onchain" role="tabpanel">
+    <section class="card onchain" id="onchain">
+      <div class="breakdown-head">
+        <div class="label"><span data-tip="onchain" tabindex="0">On-Chain</span> (Coin Metrics, Tageswerte bis gestern)</div>
+        <div class="note" id="oc-note"></div>
       </div>
-      <div>
-        <div class="mini-head"><span class="mini-title"><span data-tip="oiHist" tabindex="0">Open Interest</span> und Kurs</span><span class="mini-legend" id="oi-legend"></span></div>
-        <div class="mini-wrap"><div class="mini-chart" id="oi-chart"></div><div class="mini-msg" id="oi-msg">Lade …</div></div>
+      <div class="stats oc-stats" id="oc-stats"></div>
+      <div class="oc-grid">
+        <div class="oc-flow">
+          <div class="mini-head"><span class="mini-title"><span data-tip="ocFlow" tabindex="0">Netto-Zufluss zu Börsen</span> je Tag</span><span class="mini-legend" id="oc-flow-legend"></span></div>
+          <div class="mini-wrap"><div class="mini-chart" id="oc-flow-chart"></div></div>
+        </div>
+        <div class="oc-supply">
+          <div class="mini-head"><span class="mini-title"><span data-tip="ocSupply" tabindex="0">Bestand auf Börsen</span> und Kurs</span><span class="mini-legend" id="oc-supply-legend"></span></div>
+          <div class="mini-wrap"><div class="mini-chart" id="oc-supply-chart"></div></div>
+        </div>
+        <div class="oc-mvrv">
+          <div class="mini-head"><span class="mini-title"><span data-tip="ocMvrv" tabindex="0">MVRV</span> und Kurs (2 Jahre)</span><span class="mini-legend" id="oc-mvrv-legend"></span></div>
+          <div class="mini-wrap"><div class="mini-chart" id="oc-mvrv-chart"></div><div class="mini-msg" id="oc-msg">Lade …</div></div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
-  <section class="card onchain" id="onchain">
-    <div class="breakdown-head">
-      <div class="label"><span data-tip="onchain" tabindex="0">On-Chain</span> (Coin Metrics, Tageswerte bis gestern)</div>
-      <div class="note" id="oc-note"></div>
-    </div>
-    <div class="stats oc-stats" id="oc-stats"></div>
-    <div class="oc-grid">
-      <div class="oc-flow">
-        <div class="mini-head"><span class="mini-title"><span data-tip="ocFlow" tabindex="0">Netto-Zufluss zu Börsen</span> je Tag</span><span class="mini-legend" id="oc-flow-legend"></span></div>
-        <div class="mini-wrap"><div class="mini-chart" id="oc-flow-chart"></div></div>
+  <div class="tab-panel" id="tab-liq" data-tab="liq" role="tabpanel">
+    <section class="card liq" id="liq">
+      <div class="breakdown-head">
+        <div class="label"><span data-tip="liqMap" tabindex="0">Liquidations-Heatmap</span> (Modell, Binance Futures, 1 h, ~21 Tage)</div>
+        <div class="mini-legend" id="liq-legend"></div>
+        <div class="seg" id="liq-view" role="group" aria-label="Darstellung der Heatmap">
+          <button data-view="standard" aria-pressed="true" title="Halbtransparente Einfärbung über dem Kurs">Standard</button>
+          <button data-view="dark" aria-pressed="false" title="Dunkle Karte mit Farbverlauf und feineren Preisstufen">Farbverlauf</button>
+        </div>
       </div>
-      <div class="oc-supply">
-        <div class="mini-head"><span class="mini-title"><span data-tip="ocSupply" tabindex="0">Bestand auf Börsen</span> und Kurs</span><span class="mini-legend" id="oc-supply-legend"></span></div>
-        <div class="mini-wrap"><div class="mini-chart" id="oc-supply-chart"></div></div>
+      <div class="liq-wrap"><canvas id="liq-canvas"></canvas><div id="liq-chart"></div><div class="liq-tip" id="liq-tip" hidden></div><div class="mini-msg" id="liq-msg">Lade …</div></div>
+      <div class="liq-foot">
+        <span>Schätzung aus Open Interest und angenommenen Hebeln – keine echten Aufträge</span>
+        <span class="liq-scale">wenig <span class="grad"></span> viele geschätzte Liquidationen</span>
       </div>
-      <div class="oc-mvrv">
-        <div class="mini-head"><span class="mini-title"><span data-tip="ocMvrv" tabindex="0">MVRV</span> und Kurs (2 Jahre)</span><span class="mini-legend" id="oc-mvrv-legend"></span></div>
-        <div class="mini-wrap"><div class="mini-chart" id="oc-mvrv-chart"></div><div class="mini-msg" id="oc-msg">Lade …</div></div>
-      </div>
-    </div>
-  </section>
+      <div class="liq-clusters" id="liq-clusters"></div>
+    </section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
-  <section class="card liq" id="liq">
-    <div class="breakdown-head">
-      <div class="label"><span data-tip="liqMap" tabindex="0">Liquidations-Heatmap</span> (Modell, Binance Futures, 1 h, ~21 Tage)</div>
-      <div class="mini-legend" id="liq-legend"></div>
-      <div class="seg" id="liq-view" role="group" aria-label="Darstellung der Heatmap">
-        <button data-view="standard" aria-pressed="true" title="Halbtransparente Einfärbung über dem Kurs">Standard</button>
-        <button data-view="dark" aria-pressed="false" title="Dunkle Karte mit Farbverlauf und feineren Preisstufen">Farbverlauf</button>
+  <div class="tab-panel" id="tab-fundamentals" data-tab="fundamentals" role="tabpanel">
+    <section class="card stats-card" id="stats" hidden aria-label="Kennzahlen">
+      <button class="stats-toggle" id="stats-toggle" aria-expanded="true" aria-controls="stats-grid" title="Kennzahlen ein- oder ausklappen">
+        <span class="label"><span class="chev" aria-hidden="true">▼</span> Kennzahlen</span><span class="hint" id="stats-hint"></span>
+      </button>
+      <div class="stats" id="stats-grid"></div>
+    </section>
+    <section class="card fees" id="fees" hidden>
+      <div class="breakdown-head">
+        <div class="label"><span data-tip="fees" tabindex="0">Gebühren &amp; Einnahmen</span></div>
+        <div class="note" id="fee-source"></div>
       </div>
-    </div>
-    <div class="liq-wrap"><canvas id="liq-canvas"></canvas><div id="liq-chart"></div><div class="liq-tip" id="liq-tip" hidden></div><div class="mini-msg" id="liq-msg">Lade …</div></div>
-    <div class="liq-foot">
-      <span>Schätzung aus Open Interest und angenommenen Hebeln – keine echten Aufträge</span>
-      <span class="liq-scale">wenig <span class="grad"></span> viele geschätzte Liquidationen</span>
-    </div>
-    <div class="liq-clusters" id="liq-clusters"></div>
-  </section>
+      <div class="fee-tiles" id="fee-tiles"></div>
+      <div class="fee-legend" id="fee-legend"></div>
+      <div class="mini-wrap"><div class="mini-chart" id="fee-chart"></div></div>
+    </section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
-  <section class="card history" id="history">
-    <div class="breakdown-head">
-      <div class="label"><span data-tip="scoreHist" tabindex="0">Score-Verlauf</span> (rückwirkend berechnet, 1 Jahr)</div>
-      <div class="mini-legend" id="hist-legend"></div>
-    </div>
-    <div class="mini-wrap"><div class="mini-chart" id="hist-chart"></div><div class="mini-msg" id="hist-msg">Lade …</div></div>
-    <div class="hist-detail" id="hist-detail"></div>
-  </section>
-
-  <section class="card breakdown" id="breakdown">
-    <div class="status">Lade Score …</div>
-  </section>
+  <div class="tab-panel" id="tab-score" data-tab="score" role="tabpanel">
+    <section class="card breakdown" id="breakdown">
+      <div class="status">Lade Score …</div>
+    </section>
+    <section class="card history" id="history">
+      <div class="breakdown-head">
+        <div class="label"><span data-tip="scoreHist" tabindex="0">Score-Verlauf</span> (rückwirkend berechnet, 1 Jahr)</div>
+        <div class="mini-legend" id="hist-legend"></div>
+      </div>
+      <div class="mini-wrap"><div class="mini-chart" id="hist-chart"></div><div class="mini-msg" id="hist-msg">Lade …</div></div>
+      <div class="hist-detail" id="hist-detail"></div>
+    </section>
+    <div class="card tab-empty" hidden></div>
+  </div>
 
   <footer>Orderbuch: Binance Spot bzw. Futures, Momentaufnahme plus Änderungen per WebSocket direkt im Browser.<br>
     Chart: Binance Spot (USDT-Paar), bei fehlender oder kurzer Spot-Historie Binance Futures (Perpetual), Darstellung mit <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts · „live“: laufende Kerze im Sekundentakt direkt von Binance · Zeiten in Ortszeit, Tageskerzen in UTC.<br>
@@ -191,9 +212,10 @@
 <script src="coin-fees.js"></script>
 <script src="coin-book.js"></script>
 <script src="coin-onchain.js"></script>
+<script src="coin-tabs.js"></script>
 <script>
 addStatic({
-  "Coin-Details": "Coin details", "Lade Daten …": "Loading data …", "Sparten": "Sectors", "Marktübersicht": "Markets",
+  "Coin-Details": "Coin details", "Bereiche": "Sections", "Lade Daten …": "Loading data …", "Sparten": "Sectors", "Marktübersicht": "Markets",
   "Kennzahlen": "Key figures", "Kennzahlen ein- oder ausklappen": "Expand or collapse key figures", "Kursverlauf": "Price chart",
   "Zeitraum": "Period", "Letzte 6 Stunden": "Last 6 hours", "Letzte 24 Stunden": "Last 24 hours", "Letzte Woche": "Last week",
   "Letzter Monat": "Last month", "Letzte 3 Monate": "Last 3 months", "Letzte 6 Monate": "Last 6 months",
@@ -225,7 +247,7 @@ addStatic({
 
 // --- Start ---------------------------------------------------------------
 
-setCoinCrumbs();
+initTabs();  // setzt auch die Breadcrumbs
 
 if (!validSymbol) {
   $("hero").className = "card status error";

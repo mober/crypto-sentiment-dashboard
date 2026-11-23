@@ -102,16 +102,14 @@ button.star:disabled { opacity: 1; cursor: default; }
 /* Aktiver Bereich: farbig gefüllt, damit auf den ersten Blick klar ist, wo man ist */
 .topnav a.on { color: var(--accent-text); font-weight: 600; background: var(--accent); }
 .topnav a.on:hover { color: var(--accent-text); background: var(--accent); }
-/* Breadcrumbs auf Detailseiten (setBreadcrumb in nav.js), kleben oben beim Scrollen */
-.crumbs { position: sticky; top: 0; z-index: 8; margin: -14px -16px 14px; padding: 8px 16px;
-  background: var(--bg); border-bottom: 1px solid transparent; font-size: 13px; }
+/* Breadcrumbs auf Detailseiten (setBreadcrumb in nav.js) */
+.crumbs { margin: -10px 0 14px; font-size: 13px; }
 .crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; }
 .crumbs li { display: flex; align-items: center; min-width: 0; }
 .crumbs li + li::before { content: "→"; color: var(--muted); margin: 0 8px; }
-.crumbs a { color: var(--muted); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crumbs a, .crumbs span { color: var(--muted); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crumbs a:hover { color: var(--text); text-decoration: underline; }
-.crumbs a[aria-current] { color: var(--accent); font-weight: 600; }
-main > section[id] { scroll-margin-top: 48px; }
+.crumbs [aria-current] { color: var(--accent); font-weight: 600; }
 .lang-switch { font-weight: 600; min-width: 42px; padding: 5px 10px; font-size: 13px; }
 .menu-btn { display: none; padding: 4px 11px; font-size: 18px; line-height: 1.2; min-width: 42px; }
 

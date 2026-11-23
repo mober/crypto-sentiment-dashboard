@@ -8,6 +8,21 @@
 .hero .mcap b { color: var(--text); font-weight: 600; }
 .hero .about-link { display: inline-block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--cold); text-decoration: none; }
 .hero .about-link:hover { text-decoration: underline; }
+/* Reiter (coin-tabs.js): Leiste klebt oben; inaktive Reiter unsichtbar, aber mit voller Breite im Layout,
+   damit Charts und Canvas richtig gemessen werden (kein display:none) */
+main { position: relative; }
+.tabs { position: sticky; top: 0; z-index: 8; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 -16px 20px; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs [role=tab] { flex: none; border: 0; background: none; color: var(--muted); font-size: 14px; padding: 7px 12px;
+  border-radius: 8px; white-space: nowrap; }
+.tabs [role=tab]:hover { color: var(--text); background: var(--card); }
+.tabs [role=tab][aria-selected=true] { color: var(--accent-text); background: var(--accent); font-weight: 600; }
+.tabs [role=tab].empty:not([aria-selected=true]) { opacity: .5; }
+.tab-panel:not(.on) { position: absolute; left: 16px; right: 16px; top: 0; height: 0; overflow: hidden;
+  visibility: hidden; pointer-events: none; }
+.tab-panel > section { scroll-margin-top: 60px; }
+.tab-empty { padding: 28px 20px; color: var(--muted); text-align: center; margin-bottom: 20px; }
 #title-star .star { font-size: 22px; margin-left: 6px; vertical-align: 2px; }
 /* Lagebild: Einordnung aus Stimmung und Trend */
 .lage { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 14px; }

@@ -62,9 +62,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   (Liste `NAV_PAGES`, aktive Seite farbig gefüllt in `--accent` mit `aria-current="page"`, Unterseiten über `section` mit
   `aria-current="true"` – `coin.html`/`about.html` gehören zu „Märkte“; die `<h1>` jeder Hauptseite heißt wie ihr Menüpunkt, Sprachumschalter); bis 640 px klappen die Seiten in ein Menü „☰“.
   Seitenlinks gehören dorthin, nicht in den `<header>` der Seiten (dort nur seitenspezifische Knöpfe).
-  Detailseiten setzen darunter Breadcrumbs über `setBreadcrumb(items, sections)` (sticky, `.crumbs`): `coin.html`
-  Märkte → Coin → aktueller Abschnitt beim Scrollen (`CRUMB_SECTIONS`/`setCoinCrumbs` in `coin-base.js`, neue Karten
-  dort eintragen), `about.html` Märkte → Coin → Profil.
+  Detailseiten setzen darunter Breadcrumbs über `setBreadcrumb(items)` (`.crumbs`): `coin.html` Märkte → Coin → Reiter
+  (`setCoinCrumbs` in `coin-tabs.js`), `about.html` Märkte → Coin → Profil.
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
   Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten
@@ -79,7 +78,11 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   bewusst nur dort und im Tacho, nicht in der Signalliste der Kacheln). `coin.html` enthält nur HTML und
   den Start; Styles in `coin.css`, Code je Abschnitt in `coin-base.js` (gemeinsame Konstanten, `themeOptions`,
   `miniChart`, Kacheln), `coin-head.js` (Kopf, Lagebild, News, Kennzahlen, Score-Balken), `coin-chart.js`
-  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js`, `coin-book.js`, `coin-onchain.js` –
+  (Kurs-Chart, RSI, Live-Kurs), `coin-derivs.js`, `coin-score.js`, `coin-liqmap.js`, `coin-fees.js`, `coin-book.js`, `coin-onchain.js`,
+  `coin-tabs.js` (Reiter `TABS`: Übersicht, Chart & Technik, Derivate, On-Chain, Liquidationen, Fundamentaldaten,
+  Score & Historie; je Reiter ein `.tab-panel` in `coin.html`, neue Karten dort einsortieren; inaktive Reiter nur
+  unsichtbar statt `display:none`, damit Charts ihre Breite behalten; Reiter im Hash, `#<Abschnitts-ID>` öffnet den
+  passenden Reiter; Reiter ohne sichtbare Abschnitte gedimmt mit Hinweis) –
   normale Skripte ohne Module/Build, alle im selben globalen Bereich (gleiche Namen auf oberster Ebene
   in zwei Dateien → SyntaxError, das ganze zweite Skript fällt aus),
   `web/about.html?symbol=…&id=…` – Profil je Coin (Link „Was ist …?“ oben im Kopf der Detailseite):

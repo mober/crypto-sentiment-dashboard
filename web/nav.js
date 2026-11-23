@@ -47,43 +47,13 @@ function buildNav() {
 }
 
 // --- Breadcrumbs (Detailseiten) ---------------------------------------------
-// setBreadcrumb([{ label, href }, …], sections): letzter Eintrag ist die aktuelle Seite.
-// sections (optional, { id: Name }): Abschnitt der Seite, in dem man gerade ist, kommt als letzte Stufe dazu
-// und folgt beim Scrollen. Die Leiste klebt deshalb oben (sticky). Kann vor oder nach buildNav laufen.
-let crumbItems = [], crumbSections = null, crumbSection = null;
+// setBreadcrumb([{ label, href }, …]): letzter Eintrag ist die aktuelle Stelle (ohne Link).
+// Kann vor oder nach buildNav laufen; erneuter Aufruf ersetzt die Leiste.
+let crumbItems = [];
 
-function setBreadcrumb(items, sections) {
+function setBreadcrumb(items) {
   crumbItems = items;
-  if (sections && !crumbSections) {
-    crumbSections = sections;
-    let queued = false;
-    window.addEventListener("scroll", () => {
-      if (queued) return;
-      queued = true;
-      requestAnimationFrame(() => { queued = false; updateCrumbSection(); });
-    }, { passive: true });
-  }
-  if (sections) crumbSections = sections;
-  if (crumbSections) crumbSection = currentSection();
   renderCrumbs();
-}
-
-// Letzter sichtbarer Abschnitt, dessen Oberkante schon unter der Leiste durch ist
-function currentSection() {
-  const bar = document.querySelector(".crumbs");
-  const line = (bar ? bar.getBoundingClientRect().bottom : 0) + 60;
-  const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
-  let cur = null;
-  for (const el of document.querySelectorAll("main > section[id]")) {
-    if (el.hidden || !el.offsetParent) continue;
-    if (atEnd || el.getBoundingClientRect().top <= line) cur = el.id;
-  }
-  return cur && crumbSections[cur] ? cur : null;
-}
-
-function updateCrumbSection() {
-  const cur = currentSection();
-  if (cur !== crumbSection) { crumbSection = cur; renderCrumbs(); }
 }
 
 function renderCrumbs() {
@@ -97,19 +67,10 @@ function renderCrumbs() {
     const top = main.querySelector(".topbar");
     top ? top.after(bar) : main.prepend(bar);
   }
-  const items = crumbItems.slice();
-  // Mit Abschnitt verweist die Seite selbst nach oben, der Abschnitt ist die aktuelle Stelle
-  if (crumbSection) {
-    items[items.length - 1] = { ...items[items.length - 1], href: "#" };
-    items.push({ label: crumbSections[crumbSection], href: "#" + crumbSection, current: "location" });
-  }
   const e = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  bar.innerHTML = "<ol>" + items.map((x, i) => {
-    const last = i === items.length - 1;
-    if (last) return `<li><a href="${e(x.href || "#")}" aria-current="${x.current || "page"}">${e(x.label)}</a></li>`;
-    return `<li><a href="${e(x.href)}">${e(x.label)}</a></li>`;
-  }).join("") + "</ol>";
-  bar.querySelector('a[href="#"]')?.addEventListener("click", (ev) => { ev.preventDefault(); scrollTo({ top: 0, behavior: "smooth" }); });
+  bar.innerHTML = "<ol>" + crumbItems.map((x, i) => i === crumbItems.length - 1
+    ? `<li><span aria-current="page">${e(x.label)}</span></li>`
+    : `<li><a href="${e(x.href)}">${e(x.label)}</a></li>`).join("") + "</ol>";
 }
 
 document.addEventListener("DOMContentLoaded", buildNav);
