@@ -59,7 +59,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
 - `web/liquidations.html` – Liquidations-Übersicht im Stil von CoinGlass (Heatmap je Coin/Börse als
   Treemap, Summen 1h–24h, Long/Short, Anteil je Börse, größte Order, Stunden mit BTC-Kurs, Live-Feed)
 - `web/nav.js` (direkt nach `i18n.js` laden) – gemeinsame Navigationsleiste oben in `<main>` für alle Seiten
-  (Liste `NAV_PAGES`, aktive Seite hervorgehoben, Sprachumschalter); bis 640 px klappen die Seiten in ein Menü „☰“.
+  (Liste `NAV_PAGES`, aktive Seite farbig gefüllt in `--accent` mit `aria-current="page"`, Unterseiten über `section` mit
+  `aria-current="true"` – `coin.html`/`about.html` gehören zu „Märkte“; die `<h1>` jeder Hauptseite heißt wie ihr Menüpunkt, Sprachumschalter); bis 640 px klappen die Seiten in ein Menü „☰“.
   Seitenlinks gehören dorthin, nicht in den `<header>` der Seiten (dort nur seitenspezifische Knöpfe).
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen

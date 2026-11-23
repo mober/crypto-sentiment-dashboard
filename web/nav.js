@@ -5,7 +5,8 @@
 
 const NAV_PAGES = [
   { href: "./", files: ["", "index.html"], label: () => L("Dashboard", "Dashboard") },
-  { href: "markets.html", files: ["markets.html"], label: () => L("Märkte", "Markets") },
+  // Detailseite und Profil eines Coins gehören zum Bereich „Märkte“ (section)
+  { href: "markets.html", files: ["markets.html"], section: ["coin.html", "about.html"], label: () => L("Märkte", "Markets") },
   { href: "sectors.html", files: ["sectors.html"], label: () => L("Sparten", "Sectors") },
   { href: "liquidations.html", files: ["liquidations.html"], label: () => L("Liquidationen", "Liquidations") },
   { href: "alerts.html", files: ["alerts.html"], label: () => L("Alarme", "Alerts") },
@@ -16,8 +17,9 @@ function buildNav() {
   const file = location.pathname.split("/").pop();
   const other = EN ? "de" : "en";
   const links = NAV_PAGES.map((p) => {
-    const on = p.files.includes(file);
-    return `<a href="${p.href}"${on ? ' class="on" aria-current="page"' : ""}>${p.label()}</a>`;
+    // aria-current: "page" für genau diese Seite, "true" für eine Unterseite des Bereichs
+    const cur = p.files.includes(file) ? "page" : (p.section || []).includes(file) ? "true" : "";
+    return `<a href="${p.href}"${cur ? ` class="on" aria-current="${cur}"` : ""}>${p.label()}</a>`;
   }).join("");
   const bar = document.createElement("nav");
   bar.className = "topbar";
