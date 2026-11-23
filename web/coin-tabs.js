@@ -48,15 +48,18 @@ function showTab(key, { focus = false, updateHash = true } = {}) {
 // Reiter ohne Inhalt (alle Abschnitte hidden, z. B. keine Futures oder kein On-Chain) gedimmt, im Reiter ein Hinweis
 function updateEmptyTabs() {
   for (const panel of document.querySelectorAll(".tab-panel")) {
-    const empty = [...panel.querySelectorAll(":scope > section")].every((s) => s.hidden);
+    const secs = [...panel.querySelectorAll(":scope > section")];
+    // leer: alles ausgeblendet; ohne Daten: Abschnitte zeigen nur noch einen Hinweis (z. B. SOL bei Coin Metrics)
+    const empty = secs.every((s) => s.hidden);
+    const noData = secs.every((s) => s.hidden || s.querySelector(":scope > .status:only-child"));
     const tab = TABS.find((t) => t.key === panel.dataset.tab);
+    const btn = document.querySelector(`#tabs [data-tab="${tab.key}"]`);
+    btn.classList.toggle("empty", noData);
+    btn.title = noData ? L("Keine Daten für diesen Coin", "No data for this coin") : "";
     const note = panel.querySelector(".tab-empty");
     if (note.hidden === !empty) continue;
     note.hidden = !empty;
     note.textContent = L(`Für ${symbol} gibt es hier keine Daten (${tab.label}).`, `No data for ${symbol} here (${tab.label}).`);
-    const btn = document.querySelector(`#tabs [data-tab="${tab.key}"]`);
-    btn.classList.toggle("empty", empty);
-    btn.title = empty ? L("Keine Daten für diesen Coin", "No data for this coin") : "";
   }
 }
 
@@ -102,7 +105,8 @@ function initTabs() {
   addEventListener("hashchange", fromHash);
   fromHash();
 
+  // auch childList: Abschnitte ohne Daten ersetzen ihren Inhalt durch einen Hinweis
   new MutationObserver(updateEmptyTabs).observe($("tabs").parentElement,
-    { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+    { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
   updateEmptyTabs();
 }

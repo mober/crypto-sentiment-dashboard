@@ -58,6 +58,11 @@ function dsEval(o, now = Date.now()) {
     };
   }
   const at = dsMs(o.at);
+  // verbunden, aber seit dem Start noch keine Meldung (z. B. Liquidationen, die selten kommen): trotzdem live
+  if (at == null && o.kind === "live" && o.connected) {
+    return { state: "live", text: `${src} · live · ${L("verbunden, noch keine Meldung", "connected, no message yet")}`,
+      tip: L("Aktualisierung: laufend (WebSocket)", "Updates: continuous (WebSocket)") };
+  }
   if (at == null) return { state: "na", text: `${src} · ${DS_STATES.na}`, tip: o.note || "" };
   const age = (now - at) / 1000, stand = new Date(at).toLocaleString(LOCALE);
   if (o.kind === "live") {

@@ -409,9 +409,12 @@ function renderHours() {
     const x = pad.l + i * bw + 2, sh = h.short / max * half, lh = h.long / max * half;
     svg += `<rect x="${x}" y="${mid - sh}" width="${bw - 4}" height="${sh}" fill="var(--short)" rx="2"><title>${clock(h.t).slice(0, 5)} Shorts ${money(h.short)}</title></rect>`;
     svg += `<rect x="${x}" y="${mid}" width="${bw - 4}" height="${lh}" fill="var(--long)" rx="2"><title>${clock(h.t).slice(0, 5)} Longs ${money(h.long)}</title></rect>`;
-    if (i % 3 === 0) svg += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${clock(h.t).slice(0, 5)}</text>`;
+    // Uhrzeit nur so oft, wie Platz ist (schmal: alle 6 Stunden)
+    if (i % (W < 600 ? 6 : 3) === 0) svg += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${clock(h.t).slice(0, 5)}</text>`;
   });
-  svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
+  // oben Shorts, unten Longs (gespiegelt um die Mitte) – beide Achsenwerte benennen, sonst steht zweimal dieselbe Zahl
+  svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${pad.t + 24}" text-anchor="end">Shorts</text>`
+    + `<text x="${pad.l - 8}" y="${H - pad.b - 14}" text-anchor="end">Longs</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
   if (btc && btc.length) {
     const pts = hs.map((h, i) => { const c = btc.find((k) => k.time === h.t); return c ? [pad.l + i * bw + bw / 2, c.close] : null; }).filter(Boolean);
     if (pts.length > 1) {
@@ -547,7 +550,9 @@ function renderHistory(h) {
     svg += `<rect x="${x}" y="${mid}" width="${Math.max(0.5, bw - gap)}" height="${lh}" fill="var(--long)">${tip}</rect>`;
     if (i % every === 0) svg += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${dayLabel(d)}</text>`;
   });
-  svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
+  // oben Shorts, unten Longs (gespiegelt um die Mitte) – beide Achsenwerte benennen, sonst steht zweimal dieselbe Zahl
+  svg += `<text x="${pad.l - 8}" y="${pad.t + 10}" text-anchor="end">${money(max)}</text><text x="${pad.l - 8}" y="${pad.t + 24}" text-anchor="end">Shorts</text>`
+    + `<text x="${pad.l - 8}" y="${H - pad.b - 14}" text-anchor="end">Longs</text><text x="${pad.l - 8}" y="${H - pad.b}" text-anchor="end">${money(max)}</text>`;
   $("hist").innerHTML = count ? `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${svg}</svg>`
     : `<div class="status">${L("Für diesen Zeitraum sind noch keine Liquidationen gespeichert.", "No liquidations stored for this period yet.")}</div>`;
 
