@@ -52,6 +52,7 @@ function renderNews() {
   el.hidden = !items.length;
   el.innerHTML = !items.length ? "" : `
     <div class="label news-head"><span${tipAttr("news")}>${newsData.general ? L(`Keine aktuellen Meldungen zu ${who} – neueste Krypto-News`, `No recent news on ${who} – latest crypto news`) : L(`News zu ${who}`, `News on ${who}`)}</span></div>
+    ${dataStatus({ src: L("RSS-Feeds", "RSS feeds"), kind: "poll", at: newsData.fetched_at || newsData.updated, every: NEWS_REFRESH_MS / 1000, small: true })}
     <ul>${items.map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="${esc(i.teaser)}">${esc(i.title)}</a>`
       + `<span class="meta">${esc(i.source)} · ${ago(i.time)}</span></li>`).join("")}</ul>`;
   setupCollapse(el);
@@ -94,6 +95,7 @@ function renderHero(c) {
         ${changes ? `<div class="chg">${changes}</div>` : ""}
       </div>
       <div class="mcap">${facts}</div>
+      <div class="ds-line"><span class="ds" id="ds-price"></span><span class="ds" id="ds-score"></span></div>
     </div>
     <div class="score-box">
       <div class="label">${L("Überhitzungs-Score", "Overheating score")}</div>
@@ -104,6 +106,9 @@ function renderHero(c) {
     ${lageBlock(c)}
     <div class="news" id="hero-news" hidden></div>`;
   if ($("hero-lage")) setupCollapse($("hero-lage"));
+  setDataStatus("ds-score", { src: L("Score: Server (mehrere Quellen)", "Score: server (several sources)"), kind: "poll", at: scoreAt, every: 300,
+    note: L("Quellen je Signal stehen in der Score-Zusammensetzung", "Sources per signal are listed in the score breakdown") });
+  if (typeof chartStatus === "function") chartStatus();
   renderCoinBrief(c);
   renderNews();
   fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
@@ -124,7 +129,24 @@ function renderCoinBrief(c) {
   });
 }
 
-function bdRow(name, reason, points, share, total = false, n = 1, weight = 1) {
+// Quelle und Art je Signal (Schlüssel = Signalname vom Server); Tageswerte mit eigenem Datum, sonst Stand des Scores
+const SIGNAL_SRC = {
+  "Fear & Greed": "alternative.me", "Funding Rate": "Binance Futures", "Open Interest": "Binance Futures",
+  "Preis vs. MA200": L("Binance Tageskerzen", "Binance daily candles"), "RSI (14)": L("Binance Tageskerzen", "Binance daily candles"),
+  "Long/Short Ratio": "Binance Futures", "Optionsvola (DVOL)": "Deribit", "Momentum 7T": "CoinGecko", "Momentum 30T": "CoinGecko",
+  "Umschlag": "CoinGecko", "RSI (14 Std.)": "CoinGecko", "MVRV": "Coin Metrics",
+};
+let scoreAt = null, scoreCoin = null;
+function signalStatus(rawName) {
+  const src = SIGNAL_SRC[rawName];
+  if (!src) return "";
+  const day = (t) => (t ? new Date(t * 1000).toISOString().slice(0, 10) : null);
+  if (rawName === "Fear & Greed") return dataStatus({ src, kind: "daily", day: day(scoreCoin && scoreCoin.fear_greed && scoreCoin.fear_greed.time), lag: 0, small: true });
+  if (rawName === "MVRV") return dataStatus({ src, kind: "daily", day: day(scoreCoin && scoreCoin.data.mvrv && scoreCoin.data.mvrv.time), lag: 1, small: true });
+  return dataStatus({ src, kind: "poll", at: scoreAt, every: 300, small: true });
+}
+
+function bdRow(name, reason, points, share, total = false, n = 1, weight = 1, rawName = "") {
   const w = Math.min(100, Math.abs(points)) / 2;  // halbe Spurbreite = 100 Punkte
   const bar = points === 0 ? "" : `<div class="bd-bar ${points > 0 ? "pos" : "neg"}" style="width:${w}%"></div>`;
   // Tooltip: allgemeine Erklärung (tips.js) plus Einordnung des aktuellen Werts
@@ -136,7 +158,7 @@ function bdRow(name, reason, points, share, total = false, n = 1, weight = 1) {
   const tip = key && TIPS[key] ? ` data-tip="${key}" data-tip-now="${esc(now)}" tabindex="0"` : "";
   return `
     <div class="bd-row${total ? " total" : ""}${reason && !total ? " has-reason" : ""}">
-      <div class="bd-label"><div class="bd-name"><span${tip}>${esc(name)}</span></div>${reason ? `<div class="bd-reason">${esc(reason)}</div>` : ""}</div>
+      <div class="bd-label"><div class="bd-name"><span${tip}>${esc(name)}</span></div>${reason ? `<div class="bd-reason">${esc(reason)}</div>` : ""}${rawName ? `<div class="bd-src">${signalStatus(rawName)}</div>` : ""}</div>
       <div class="bd-track" role="img" aria-label="${esc(name)}: ${signed(points)} ${L("von −100 bis +100", "from −100 to +100")}">${bar}</div>
       <div class="bd-val">${signed(points)}${share != null ? `<span class="share">${num1(share)} ${L("im Score", "in score")}</span>` : ""}</div>
     </div>`;
@@ -153,9 +175,9 @@ function renderBreakdown(c) {
   $("breakdown").innerHTML = `
     <div class="breakdown-head">
       <div class="label">${L("Zusammensetzung des Überhitzungs-Scores", "Breakdown of the overheating score")}${whyTip("breakdown")}</div>
-      <div class="note">${n} ${L("Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)", "signals · score = weighted average (trend and options volatility count more, Fear &amp; Greed and RSI less)")}</div>
+      <div class="note">${n} ${L("Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)", "signals · score = weighted average (trend and options volatility count more, Fear &amp; Greed and RSI less)")} · <a href="methodology.html#signals">${L("Methodik", "Methodology")} →</a></div>
     </div>
-    ${c.signals.map((s) => bdRow(signalName(s.name) + (w(s) !== 1 ? ` ×${w(s).toLocaleString(LOCALE)}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s))).join("")}
+    ${c.signals.map((s) => bdRow(signalName(s.name) + (w(s) !== 1 ? ` ×${w(s).toLocaleString(LOCALE)}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s), s.name)).join("")}
     ${bdRow(L("Überhitzungs-Score", "Overheating score"), c.verdict, c.score, null, true, n)}
     <div class="bd-tap-hint">${L("Zeile antippen für die Begründung", "Tap a row for the reasoning")}</div>
     <div class="bd-axis"><span></span><div class="ticks"><span>−100 ${L("Angst", "Fear")}</span><span>0</span><span>${L("Gier", "Greed")} +100</span></div><span></span></div>`;
@@ -340,7 +362,10 @@ function drawStats() {
       : `<div class="det">${L("kein Maximum festgelegt", "no maximum set")}${st.total_supply ? ` · ${L("ausgegeben", "issued")} ${big(st.total_supply)}` : ""}</div>`;
     tiles.push(statTile("supply", L("Umlaufmenge", "Circulating supply"), `${big(st.circulating_supply)} ${esc(c.symbol)}`, det));
   }
-  $("stats-grid").innerHTML = tiles.join("");
+  $("stats-grid").innerHTML = tiles.join("")
+    + `<div class="ds-line stats-ds">${dataStatus({ src: L("Marktdaten: CoinGecko", "Market data: CoinGecko"), kind: "poll", at: scoreAt, every: 300 })}`
+    + (dailyCandles ? dataStatus({ src: L("Kerzen-Kennzahlen: Binance", "Candle figures: Binance"), kind: "daily", day: new Date(dailyCandles[dailyCandles.length - 1].time * 1000).toISOString().slice(0, 10), lag: 0 }) : "")
+    + `</div>`;
   $("stats").hidden = !tiles.length;
   applyStatsOpen();
   if (typeof updateLevels === "function") updateLevels();  // Kursmarken im Chart (coin-chart.js)
@@ -424,19 +449,22 @@ async function loadDailyStats() {
 async function loadHero() {
   try {
     // Hauptcoins stecken im gecachten Dashboard-Payload, alle anderen im Coin-Cache des Servers
-    let coin, updated;
+    let coin, updated, fetchedAt;
     if (MAIN_SYMBOLS.includes(symbol)) {
       const res = await fetch("api/sentiment");
       if (!res.ok) throw new Error("HTTP " + res.status);
       const p = await res.json();
       coin = p.coins.find((c) => c.symbol === symbol);
       updated = p.updated;
+      fetchedAt = p.fetched_at;
     } else {
       const res = await fetch("api/coin?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : ""));
       if (!res.ok) throw new Error("HTTP " + res.status);
       coin = await res.json();
     }
     if (!coin) throw new Error(L("keine Daten", "no data"));
+    scoreAt = coin.fetched_at || fetchedAt || updated || Date.now();
+    scoreCoin = coin;
     renderHero(coin);
     // Name von CoinGecko, sonst aus der Coin-ID abgeleitet (z. B. "avalanche-2" → "avalanche")
     const name = coin.data.name || coinId.replace(/-\d+$/, "").replace(/-/g, " ");

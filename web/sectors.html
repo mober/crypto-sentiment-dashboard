@@ -105,6 +105,7 @@
     </div>
     <div class="bars" id="bars"><div class="status">Lade …</div></div>
     <div class="market-ref" id="market-ref"></div>
+    <div class="ds-line"><span class="ds" id="ds-cats"></span></div>
   </section>
 
   <section class="card" id="defi">
@@ -124,6 +125,7 @@
       </div>
     </div>
     <div class="bars" id="tvl-bars"><div class="status">Lade …</div></div>
+    <div class="ds-line"><span class="ds" id="ds-defi"></span></div>
   </section>
 
   <section class="card">
@@ -163,6 +165,7 @@
 </main>
 
 <script src="format.js"></script>
+<script src="datastatus.js"></script>
 <script src="tips.js"></script>
 <script>
 const NO_DATA = L("Keine Daten.", "No data.");
@@ -339,6 +342,7 @@ async function load() {
     cats = p.categories.map((c) => ({ ...c, turnover: c.volume_24h && c.market_cap ? c.volume_24h / c.market_cap : null }));
     attachTvl();
     renderBars();
+    setDataStatus("ds-cats", { src: L("CoinGecko-Kategorien", "CoinGecko categories"), kind: "poll", at: p.fetched_at || p.updated, every: 300 });
     renderSectorBrief();
     renderTable();
     $("updated").textContent = `${cats.length} ${L("Sparten nach CoinGecko · Stand:", "sectors per CoinGecko · as of:")} ${new Date(p.updated).toLocaleString(LOCALE)}`;
@@ -459,6 +463,7 @@ async function loadDefi() {
     const p = await res.json();
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     defi = p;
+    setDataStatus("ds-defi", { src: "DefiLlama", kind: "poll", at: p.fetched_at || p.updated, every: 600 });
     renderTvl();
     attachTvl();
     if (cats.length) { renderTable(); renderSectorBrief(); }

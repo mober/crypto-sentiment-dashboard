@@ -104,6 +104,20 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   (`renderCoinBrief` aus `situation`, über den Reitern). „Warum wichtig?“-Knöpfe: `whyTip(key)` mit Texten `WHY`/`WHY_EN`
   in `tips.js` (Tooltip-Schlüssel `why:<key>`); in statischem HTML als `<span class="why-slot" data-why="…">`, ersetzt beim
   Start. Detailbereiche eingeklappt mit `<details class="fold">` (Styles in `base.css`).
+- `web/methodology.html` (Navigation „Methodik“): Ziel und Grenzen, Berechnung, Signale mit Skalen und Gewichten,
+  fehlende/veraltete Daten, Datenquellen und Intervalle, Börsen-Einschränkungen, Rückblick, Änderungsprotokoll. Zahlen
+  kommen aus `/api/methodology` (`api_methodology` in `server.py`: `SIGNAL_SCALES`, `SIGNAL_WEIGHTS`, Schwellen,
+  Cache-Intervalle), Texte je Signal in `SIG` auf der Seite. **Score-Methodik geändert (Signale, Skalen, Gewichte,
+  Schwellen, Einordnung) → `METHODOLOGY_VERSION` erhöhen und Eintrag oben in `METHODOLOGY_CHANGES` (`sentiment.py`)**;
+  neues Signal auch in `SIGNAL_SCALES` und `SIG` eintragen.
+- Datenstatus je Karte/Kennzahl (`web/datastatus.js`, nach `format.js` laden): `dataStatus({src, kind, at|day, every, lag,
+  connected, note})` bzw. `setDataStatus(id, …)` zeigt „Quelle · Zustand · Stand“; alle `.ds` werden jede Sekunde neu bewertet.
+  Zustände live/aktuell/verzögert/veraltet/nicht verfügbar; Arten `live` (WebSocket, `at` = letzte Meldung), `poll`
+  (`at` = Abrufzeit, `every` = Takt in s; aktuell bis 2× Takt + 60 s, verzögert bis 4×), `daily` (`day` = letzter Tageswert,
+  `lag` = übliche Verzögerung in Tagen). Abrufzeit kommt vom Server: `TTLCache.set` hängt an jedes Dict `fetched_at`
+  (Epoch-Sekunden) an, ein gescheitertes Neuladen behält den alten Wert und damit das echte Alter. Fear & Greed hat `time`,
+  MVRV `time` (Tagesbeginn UTC). Score-Signale: Quelle je Signal in `SIGNAL_SRC` (`coin-head.js`). Tooltip `TIPS.ds`.
+  Alle `updated`-Zeitstempel des Servers tragen die Zeitzone (sonst rechnet der Browser bei anderer Zeitzone falsch).
 - Mobil (bis 640 px): Märkte als Karten (`#mtable.cards`, Umschalter Tabelle/Karten `localStorage.marketView`, ohne Wahl
   automatisch nach Breite) und Spaltenauswahl (`MCOLS`, `localStorage.marketCols`, gilt für beide Ansichten; ohne Auswahl
   Tabelle wie bisher über `opt-wide`/`opt-mid`, Karten `CARD_DEFAULT`). Liquidations-Feed als Karten, erst 15 Einträge.
@@ -187,7 +201,7 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   einzeln abzufragen; der Server behält bei Fehlern den letzten erfolgreichen Wert (bei 429
   wiederholt `fetch_json` nur für die anderen Quellen, für CoinGecko siehe unten). Neue Features nicht mit zusätzlichen CoinGecko-Abfragen pro
   Seitenaufruf bauen.
-- **Skalen stehen an zwei Stellen:** Ändert sich ein Ankerpunkt in `sentiment.py`, auch den
+- **Skalen stehen an zwei Stellen (plus Methodik-Version):** Ändert sich ein Ankerpunkt in `sentiment.py`, auch den
   Tooltip-Text im Objekt `TIPS` in `web/tips.js` anpassen (gemeinsam für Dashboard und Detailseite). Neue Signale brauchen dort
   einen Eintrag in `TIPS` und `SIGNAL_TIPS`.
 - Symbole sind nicht eindeutig: Für Einzelabfragen bei CoinGecko die Coin-ID verwenden,

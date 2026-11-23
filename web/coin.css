@@ -152,6 +152,12 @@ main { position: relative; }
 .bd-row.total .bd-val { font-size: 18px; }
 .bd-axis { display: grid; grid-template-columns: minmax(150px, 1.1fr) 2fr 92px; gap: 16px; color: var(--muted); font-size: 11px; }
 .bd-axis .ticks { display: flex; justify-content: space-between; }
+.bd-src { margin-top: 2px; }
+.bd-src .ds { font-size: 10.5px; }
+.stats-ds { grid-column: 1 / -1; margin: 0; padding: 8px 14px; border-top: 1px solid var(--border); }
+.hero .ds-line { margin-top: 6px; }
+.news .ds { margin: 2px 0 4px; }
+.ds-line:has(.ds:empty:only-child) { display: none; }
 .bd-tap-hint { display: none; }
 @media (max-width: 640px) {
   /* Name | Wert in einer Zeile, Balken darunter; Begründung erst nach Antippen */
@@ -165,7 +171,7 @@ main { position: relative; }
   .bd-row.has-reason { cursor: pointer; }
   .bd-row.has-reason .bd-name::after { content: " ▸"; color: var(--muted); font-weight: 400; }
   .bd-row.has-reason.open .bd-name::after { content: " ▾"; }
-  .bd-row.has-reason:not(.open) .bd-reason { display: none; }
+  .bd-row.has-reason:not(.open) .bd-reason, .bd-row.has-reason:not(.open) .bd-src { display: none; }
   .bd-tap-hint { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; }
   .bd-axis { grid-template-columns: 1fr; }
   .bd-axis > :first-child, .bd-axis > :last-child { display: none; }

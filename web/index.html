@@ -13,6 +13,8 @@
 
   /* Markt-Leiste */
   .market { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 20px; }
+  .market .market-ds { grid-column: 1 / -1; margin: 0; padding: 8px 20px 10px; border-left: 0; border-top: 1px solid var(--border); }
+  .coin .ds-line { margin-top: auto; }
   .market > div { padding: 16px 20px; border-left: 1px solid var(--border); }
   .market > div:first-child { border-left: 0; }
   .market .val { font-size: 22px; font-weight: 600; margin-top: 2px; }
@@ -171,13 +173,14 @@
 
   <footer>
     Score je Coin: Fear &amp; Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio, Optionsvola DVOL (nur BTC/ETH), MVRV (Coin Metrics, nicht für alle Coins) (je −100 … +100, Score = gewichteter Durchschnitt: MA200 und DVOL 1,5-fach, Fear &amp; Greed und RSI halb).<br>
-    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten.
+    Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten · <a href="methodology.html">Methodik &amp; Datenquellen</a>.
   </footer>
 </main>
 
 <div id="tip" role="tooltip" hidden></div>
 
 <script src="format.js"></script>
+<script src="datastatus.js"></script>
 <script src="tips.js"></script>
 <script src="watchlist.js"></script>
 <script>
@@ -188,8 +191,9 @@ addStatic({
   "als Tabelle": "as table",
   "Score je Coin: Fear & Greed, Funding Rate, Open Interest, Preis vs. MA200, RSI (14), Long/Short Ratio, Optionsvola DVOL (nur BTC/ETH), MVRV (Coin Metrics, nicht für alle Coins) (je −100 … +100, Score = gewichteter Durchschnitt: MA200 und DVOL 1,5-fach, Fear & Greed und RSI halb).":
     "Score per coin: Fear & Greed, funding rate, open interest, price vs. MA200, RSI (14), long/short ratio, options volatility DVOL (BTC/ETH only), MVRV (Coin Metrics, not for all coins) (each −100 … +100, score = weighted average: MA200 and DVOL 1.5×, Fear & Greed and RSI half).",
-  "Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten.":
-    "Data: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Refreshes every 5 minutes.",
+  "Daten: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Aktualisiert sich alle 5 Minuten ·":
+    "Data: alternative.me, Binance, Deribit, DefiLlama, CoinGecko · Refreshes every 5 minutes ·",
+  "Methodik & Datenquellen": "Methodology & data sources",
 });
 const REFRESH_MS = 5 * 60 * 1000;
 // $, esc, pct, usd, usd6, signed und tone kommen aus format.js
@@ -256,6 +260,10 @@ function renderMarket(g) {
       <div class="label"><span${tipAttr("dominance")}>${L("BTC-Dominanz", "BTC dominance")}</span></div>
       <div class="val">${dom ? dom.btc.toFixed(1).replace(".", DEC) + PCT : "–"}</div>
       <div class="note">${dom ? (dom.btc >= 55 ? L("Risk-off / BTC-Phase", "Risk-off / BTC phase") : L("Altcoins gewinnen Anteile", "Altcoins gaining share")) : NA}</div>
+    </div>
+    <div class="ds-line market-ds">
+      ${dataStatus({ src: "Fear & Greed: alternative.me", kind: "daily", lag: 0, day: fng && fng.time ? new Date(fng.time * 1000).toISOString().slice(0, 10) : null })}
+      ${dataStatus({ src: "CoinGecko, DefiLlama", kind: "poll", at: payload.fetched_at || payload.updated, every: 300 })}
     </div>`;
   renderChips();
   renderDashBrief();
@@ -268,6 +276,7 @@ let listMode = "trending";  // "trending" | "top"
 try { if (localStorage.getItem(LIST_KEY) === "top") listMode = "top"; } catch (e) { /* ignorieren */ }
 { const l = new URLSearchParams(location.search).get("list"); if (l === "top" || l === "trending") listMode = l; }  // Link hat Vorrang
 let top20 = null;           // null = noch nicht geladen
+let top20At = null;         // Abrufzeit der Top 20 (Datenstatus)
 let top20Error = null;
 let top20Loading = false;
 
@@ -293,6 +302,7 @@ async function loadTop20() {
     const res = await fetch("api/markets?page=1");
     const p = await res.json();
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+    top20At = p.fetched_at || p.updated;
     top20 = p.coins.filter((c) => !isStablecoin(c)).slice(0, TOP_COUNT).map((c) => ({
       id: c.id, symbol: c.symbol, name: c.name, rank: c.rank, change_24h: c.change["24h"],
     }));
@@ -347,7 +357,10 @@ function renderChips() {
       </div>
       <div class="note">${isTop ? L("ohne Stablecoins · Zahl = Marktkap.-Rang", "without stablecoins · number = market cap rank") : L("Rang 1 = meistgesucht", "rank 1 = most searched")} · ${L("rechts: Kurs 24 h · Klick = zur Watchlist (dunkel = schon dabei)", "right: price 24 h · click = add to watchlist (dark = already in)")}</div>
     </div>
-    <div class="chips">${list.length ? list.map(chip).join("") : `<span class="note">${empty}</span>`}</div>`;
+    <div class="chips">${list.length ? list.map(chip).join("") : `<span class="note">${empty}</span>`}</div>
+    <div class="ds-line">${isTop
+      ? dataStatus({ src: "CoinGecko", kind: "poll", at: top20At, every: 300 })
+      : dataStatus({ src: "CoinGecko Trending", kind: "poll", at: payload && (payload.fetched_at || payload.updated), every: 300 })}</div>`;
 }
 
 function renderCoin(c, id = null) {
@@ -424,6 +437,7 @@ function renderCoin(c, id = null) {
         : noData ? `<div class="coin-note">${L("Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.", "No Binance data for this coin – score from Fear &amp; Greed only.")}</div>` : ""}
       <ul class="signals">${signals}</ul>
       </details>
+      <div class="ds-line">${dataStatus({ src: L("Score und Kurs: Server", "Score and price: server"), kind: "poll", at: c.fetched_at || watchUpdated, every: 300, small: true })}</div>
     </article>`;
 }
 

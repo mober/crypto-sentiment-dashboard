@@ -88,6 +88,11 @@ async function loadFees() {
     if (!res.ok) return;   // keine Gebührendaten: Karte bleibt ausgeblendet
     feeData = await res.json();
     $("fees").hidden = false;
+    const feeLast = Math.max(0, ...FEE_SERIES.map(([k]) => feeData[k] && feeData[k].weekly.length ? feeData[k].weekly[feeData[k].weekly.length - 1].time : 0));
+    setDataStatus("ds-fees", feeLast
+      ? { src: "DefiLlama", kind: "daily", day: new Date(feeLast * 1000).toISOString().slice(0, 10), lag: 8,
+        note: L("Chart in Wochensummen (Beginn der letzten Woche); Abruf beim Server alle 30 Min.", "Chart in weekly sums (start of the latest week); fetched by the server every 30 min") }
+      : { src: "DefiLlama", kind: "poll", at: feeData.fetched_at, every: 1800 });
     $("fee-source").textContent = `DefiLlama · ${feeData.name} (${feeData.kind === "chain" ? "Chain" : L("Protokoll", "protocol")}) · ${L("täglich aktualisiert", "updated daily")}`;
     initFeeChart();
     for (const [k] of FEE_SERIES) {

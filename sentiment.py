@@ -90,6 +90,44 @@ FUNDING_HISTORY_DAYS = 90 # Funding-Verlauf auf der Detailseite
 FUNDING_BASE_HOURS = 8    # FUNDING_SCALE gilt pro 8 h; kürzere Takte werden darauf umgerechnet
 SCORE_HISTORY_DAYS = 365  # rückwirkend berechneter Score-Verlauf auf der Detailseite
 
+# Versionsnummer und Änderungsprotokoll der Score-Methodik (Seite „Methodik & Datenquellen“, /api/methodology).
+# Bei jeder Änderung an Signalen, Skalen, Gewichten, Schwellen oder an der Einordnung: Version erhöhen und
+# Eintrag oben ergänzen. Hauptversion = Score-Werte ändern sich; Nebenversion = Ergänzung ohne Bruch.
+METHODOLOGY_VERSION = "2.1"
+METHODOLOGY_CHANGES = [
+    {"version": "2.1", "date": "2026-11-23",
+     "de": "Datenstatus je Kennzahl (Quelle, Stand, live/aktuell/verzögert/veraltet/nicht verfügbar); Fear & Greed mit Datum. "
+           "Berechnung unverändert.",
+     "en": "Data status per figure (source, as-of time, live/current/delayed/stale/not available); Fear & Greed with date. "
+           "Calculation unchanged."},
+    {"version": "2.0", "date": "2026-11-22",
+     "de": "Score als gewichteter statt einfacher Durchschnitt (Preis vs. MA200 und DVOL ×1,5, Fear & Greed und RSI ×0,5), "
+           "abgeleitet aus einem Backtest BTC/ETH/SOL. Neues Signal MVRV (Coin Metrics). Trefferquote je Score-Zone. "
+           "Einordnung angepasst: extreme Angst allein gilt nicht mehr als Kaufsignal.",
+     "en": "Score as a weighted instead of a simple average (price vs. MA200 and DVOL ×1.5, Fear & Greed and RSI ×0.5), "
+           "derived from a backtest on BTC/ETH/SOL. New signal MVRV (Coin Metrics). Hit rate per score zone. "
+           "Assessment adjusted: extreme fear alone no longer counts as a buy signal."},
+    {"version": "1.2", "date": "2026-11-15",
+     "de": "Lagebild (Stimmung × Trend) und Handlungsempfehlung je Coin.",
+     "en": "Situation assessment (sentiment × trend) and suggested action per coin."},
+    {"version": "1.1", "date": "2026-11-14",
+     "de": "Funding auf 8 h umgerechnet (Coins mit 1-h- oder 4-h-Takt). Rückwirkend berechneter Score-Verlauf.",
+     "en": "Funding converted to 8 h (coins paying every 1 h or 4 h). Retroactively calculated score history."},
+    {"version": "1.0", "date": "2026-10-25",
+     "de": "Stufenloser Score −100 … +100 als Durchschnitt aus Fear & Greed, Funding, Open Interest, Preis vs. MA200, "
+           "RSI (14), Long/Short Ratio und DVOL (BTC/ETH); Ersatz-Signale aus CoinGecko für Coins ohne Binance-Daten.",
+     "en": "Continuous score −100 … +100 as the average of Fear & Greed, funding, open interest, price vs. MA200, "
+           "RSI (14), long/short ratio and DVOL (BTC/ETH); fallback signals from CoinGecko for coins without Binance data."},
+]
+
+# Skala je Signal (Schlüssel wie in score()), für die Offenlegung auf der Methodik-Seite
+SIGNAL_SCALES = {
+    "Fear & Greed": FNG_SCALE, "Funding Rate": FUNDING_SCALE, "Open Interest": OI_SCALE,
+    "Preis vs. MA200": MA200_SCALE, "RSI (14)": RSI_SCALE, "Long/Short Ratio": LS_SCALE,
+    "Optionsvola (DVOL)": DVOL_SCALE, "MVRV": MVRV_SCALE, "Momentum 7T": MOMENTUM_7D_SCALE,
+    "Momentum 30T": MOMENTUM_30D_SCALE, "Umschlag": TURNOVER_SCALE, "RSI (14 Std.)": RSI_SCALE,
+}
+
 
 _cg_lock = threading.Lock()
 _cg_next = 0.0   # frühester Zeitpunkt für die nächste CoinGecko-Abfrage
@@ -161,6 +199,7 @@ def get_fear_greed() -> Dict[str, Any]:
     return {
         "value": int(data[0]["value"]),
         "label": data[0]["value_classification"],
+        "time": int(data[0]["timestamp"]),   # Beginn des Tages (UTC), für die Statusanzeige
         "yesterday": int(data[1]["value"]),
         "week_ago": int(data[7]["value"]),
     }

@@ -98,6 +98,7 @@
   .src { font-size: 12px; color: var(--muted); }
   .src b.ok { color: var(--up); } .src b.err { color: var(--down); }
 
+  .sources-ds { margin: -14px 0 16px; }
   .feed-more { display: none; margin: 10px auto 0; font-size: 13px; }
   .card-head h2 .why-tip { vertical-align: 2px; }
   /* Handy: Live-Feed als Karten (Coin, Seite, Betrag; darunter Zeit, Börse, Preis), erst 15 Einträge */
@@ -135,6 +136,7 @@
     </div>
   </header>
 
+  <div class="ds-line sources-ds" id="ds-sources"></div>
   <div class="notice" id="notice" hidden></div>
   <section class="card brief" id="summary" hidden></section>
 
@@ -148,6 +150,7 @@
         </div>
       </div>
       <div class="tree" id="tree"><div class="status">Lade Daten …</div></div>
+      <div class="ds-line"><span class="ds" id="ds-ov"></span></div>
       <div class="legend"><span><i style="background:var(--long)"></i>vor allem Longs liquidiert</span><span><i style="background:var(--short)"></i>vor allem Shorts liquidiert</span><span>Fläche = Betrag · Klick filtert den Live-Feed</span></div>
     </div>
     <div class="totals" id="totals"></div>
@@ -163,6 +166,7 @@
     <div class="card-head"><h2>Liquidationen je Stunde (24 h) und BTC-Kurs<span class="why-slot" data-why="liqHours"></span></h2>
       <div class="legend" style="margin:0"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span><i style="background:var(--cold)"></i>BTC</span></div></div>
     <div id="hours"></div>
+    <div class="ds-line"><span class="ds" id="ds-hours"></span><span class="ds" id="ds-btc"></span></div>
   </section>
 
   <section class="card hist">
@@ -180,6 +184,7 @@
     </div>
     </details>
     <div class="hist-note" id="histNote"></div>
+    <div class="ds-line"><span class="ds" id="ds-hist"></span></div>
   </section>
 
   <section class="card">
@@ -195,6 +200,7 @@
       <tbody id="feed"><tr><td colspan="6" class="status">Lade …</td></tr></tbody>
     </table></div>
     <button type="button" class="feed-more" id="feedMore">Alle anzeigen</button>
+    <div class="ds-line"><span class="ds" id="ds-feed"></span></div>
   </section>
 
   <footer>
@@ -206,6 +212,7 @@
 </main>
 
 <script src="format.js"></script>
+<script src="datastatus.js"></script>
 <script src="tips.js"></script>
 <script>
 addStatic({
@@ -369,7 +376,11 @@ let btc = null;
 async function loadBtc() {
   try {
     const r = await fetch("api/klines?symbol=BTC&interval=1h");
-    if (r.ok) btc = (await r.json()).candles.slice(-30);
+    if (r.ok) {
+      const p = await r.json();
+      btc = p.candles.slice(-30);
+      setDataStatus("ds-btc", { src: L("BTC-Kurs: Binance", "BTC price: Binance"), kind: "poll", at: p.fetched_at || Date.now(), every: 600 });
+    }
   } catch (e) {}
 }
 
@@ -408,6 +419,12 @@ function renderStatus(st) {
     `Currently not connected: ${down.map((s) => s.name).join(", ")} – reconnects automatically.`));
   $("notice").hidden = !notes.length;
   $("notice").innerHTML = notes.join("<br>");
+  // Datenstatus je Börse (WebSocket) oben auf der Seite; Liquidationen kommen unregelmäßig, verbunden = live
+  $("ds-sources").innerHTML = st.sources.map((s) => dataStatus({ src: `${s.name} WebSocket`, kind: "live", at: s.last_event, every: 120,
+    connected: s.connected, note: `${s.events.toLocaleString(LOCALE)} ${L("Meldungen seit Start", "messages since start")}${s.error ? " · " + s.error : ""}` })).join("");
+  const ovSrc = { src: L("Mitschnitt (Server)", "Recording (server)"), kind: "poll", at: ov && ov.updated, every: 15 };
+  setDataStatus("ds-ov", ovSrc);
+  setDataStatus("ds-hours", ovSrc);
   $("sources").innerHTML = L("Quellen: ", "Sources: ") + st.sources.map((s) => `${s.name} <b class="${s.connected ? "ok" : "err"}">${s.connected ? "●" : "○"}</b> ${s.events.toLocaleString(LOCALE)} ${L("seit Start", "since start")}`).join(" · ") + "<br>";
 }
 
@@ -447,6 +464,7 @@ async function loadFeed() {
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     save(feedKey(params), d);
     renderFeed(d);
+    setDataStatus("ds-feed", { src: L("Live-Feed (Server)", "Live feed (server)"), kind: "poll", at: d.updated, every: 5 });
   } catch (e) {
     if (!firstFeed) return;   // letzten Stand stehen lassen
     $("feed").innerHTML = `<tr><td colspan="6" class="status">${L("Fehler", "Error")}: ${esc(e.message)}</td></tr>`;
@@ -537,6 +555,7 @@ async function loadHistory() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     if (days === histDays && coin === coinFilter) renderHistory(d);
+    setDataStatus("ds-hist", { src: L("Eigene Aufzeichnung (SQLite)", "Own recording (SQLite)"), kind: "poll", at: d.updated, every: 60 });
   } catch (e) {
     $("hist").innerHTML = `<div class="status">${L("Verlauf nicht verfügbar", "History not available")}: ${esc(e.message)}</div>`;
   }

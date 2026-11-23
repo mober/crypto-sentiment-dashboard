@@ -105,6 +105,7 @@ async function loadDerivs() {
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     fundData = p.funding;
     oiData = p.open_interest;
+    setDataStatus("ds-derivs", { src: "Binance Futures", kind: "poll", at: p.fetched_at, every: 300 });
     derivMessage("");
     if (fundData.length) {
       setFundBars();
@@ -119,6 +120,7 @@ async function loadDerivs() {
     renderFundLegend(null);
     renderOiLegend(null);
   } catch (e) {
+    setDataStatus("ds-derivs", { src: "Binance Futures", na: true });
     derivMessage(L(`Daten nicht verfügbar (${e.message}).`, `Data not available (${e.message}).`));
   }
 }

@@ -98,7 +98,11 @@ class TTLCache:
             entry = self._entries.get(key)
         return bool(entry) and time.time() < entry[0]
 
-    def set(self, key: Any, value: Any, seconds: Optional[float] = None) -> None:
+    def set(self, key: Any, value: Any, seconds: Optional[float] = None) -> Any:
+        # Abrufzeit für die Statusanzeige im Browser (Quelle · Stand · aktuell/verzögert/veraltet);
+        # bleibt beim letzten Wert stehen, wenn ein Neuladen scheitert, und zeigt dann das echte Alter
+        if isinstance(value, dict) and "fetched_at" not in value:
+            value = {**value, "fetched_at": round(time.time())}
         with self._guard:
             self._entries.pop(key, None)
             self._entries[key] = (time.time() + (self.ttl if seconds is None else seconds), value)
@@ -108,6 +112,7 @@ class TTLCache:
                 lock = self._locks.get(old)
                 if lock is not None and not lock.locked():
                     del self._locks[old]
+        return value
 
     def get(self, key: Any, loader: Callable[[Any], Any], force: bool = False) -> Any:
         """Wert zum Schlüssel; loader(letzter Wert oder None) lädt neu, wenn nötig."""
@@ -150,8 +155,7 @@ class TTLCache:
             result, seconds = result.value, result.seconds
         if result is None:
             return previous
-        self.set(key, result, seconds)
-        return result
+        return self.set(key, result, seconds)
 
     def _refresh(self, key: Any, loader: Callable[[Any], Any]) -> None:
         try:
@@ -304,7 +308,7 @@ def get_markets(page: int, category: Optional[str] = None) -> Optional[Dict[str,
             "per_page": CATEGORY_PER_PAGE if category else MARKETS_PER_PAGE,
             "max_page": 1 if category else MARKETS_MAX_PAGE,
             "category": category,
-            "updated": datetime.now().isoformat(timespec="seconds"),
+            "updated": datetime.now().astimezone().isoformat(timespec="seconds"),
             "coins": coins,
         }
 
@@ -315,7 +319,7 @@ def get_categories() -> Optional[Dict[str, Any]]:
     """Alle Sparten; eine CoinGecko-Abfrage, 5 Min. gecacht."""
     def load(_: Any) -> Optional[Dict[str, Any]]:
         cats = sentiment.safe(sentiment.get_categories)
-        return {"updated": datetime.now().isoformat(timespec="seconds"), "categories": cats} if cats else None
+        return {"updated": datetime.now().astimezone().isoformat(timespec="seconds"), "categories": cats} if cats else None
 
     return _categories_cache.get("all", load)
 
@@ -326,7 +330,7 @@ def get_watchlist(ids: List[str]) -> Optional[Dict[str, Any]]:
         coins = sentiment.safe(sentiment.get_markets_by_ids, ids)
         if coins is None:
             return None
-        return {"updated": datetime.now().isoformat(timespec="seconds"), "coins": coins}
+        return {"updated": datetime.now().astimezone().isoformat(timespec="seconds"), "coins": coins}
 
     return _watchlist_cache.get(",".join(ids), load)
 
@@ -337,7 +341,7 @@ def search_markets(query: str) -> Optional[Dict[str, Any]]:
         coins = sentiment.safe(sentiment.search_markets, query)
         if coins is None:
             return None
-        return {"query": query, "updated": datetime.now().isoformat(timespec="seconds"), "coins": coins}
+        return {"query": query, "updated": datetime.now().astimezone().isoformat(timespec="seconds"), "coins": coins}
 
     return _search_cache.get(query.lower(), load)
 
@@ -369,7 +373,7 @@ def get_defi_tvl() -> Optional[Dict[str, Any]]:
     """TVL je Kategorie und Chain (DefiLlama); bei Fehlern der letzte erfolgreiche Stand."""
     def load(_: Any) -> Optional[Dict[str, Any]]:
         result = sentiment.safe(sentiment.get_defi_tvl)
-        return {"updated": datetime.now().isoformat(timespec="seconds"), **result} if result else None
+        return {"updated": datetime.now().astimezone().isoformat(timespec="seconds"), **result} if result else None
 
     return _defi_cache.get("all", load)
 
@@ -401,7 +405,7 @@ def get_news(symbol: str, name: Optional[str], lang: str = "de") -> Optional[Dic
     gecacht, gefiltert wird je Abruf. Bei Fehlern der letzte erfolgreiche Stand."""
     def load(_: Any) -> Optional[Dict[str, Any]]:
         items = sentiment.safe(sentiment.get_news, lang)
-        return {"items": items, "updated": datetime.now().isoformat(timespec="seconds")} if items else None
+        return {"items": items, "updated": datetime.now().astimezone().isoformat(timespec="seconds")} if items else None
 
     feeds = _news_cache.get(lang, load)
     if not feeds:
@@ -446,7 +450,7 @@ def get_coin_profile(symbol: str, coin_id: Optional[str]) -> Optional[Dict[str, 
 
     def load(_: Any) -> Optional[Dict[str, Any]]:
         profile = sentiment.safe(sentiment.get_coin_profile, coin_id)   # {"de": …, "en": …}
-        return {"updated": datetime.now().isoformat(timespec="seconds"), **profile} if profile else None
+        return {"updated": datetime.now().astimezone().isoformat(timespec="seconds"), **profile} if profile else None
 
     return _profile_cache.get(coin_id, load)
 
@@ -693,6 +697,27 @@ def api_liq_feed(q: Query) -> Dict[str, Any]:
     return col.feed(coin, exchange, min_usd, limit)
 
 
+def api_methodology(q: Query) -> Dict[str, Any]:
+    """Offenlegung der Score-Methodik aus den echten Konstanten (Seite methodology.html), damit Seite und Code
+    nicht auseinanderlaufen."""
+    S = sentiment
+    return {
+        "version": S.METHODOLOGY_VERSION,
+        "changes": [{"version": c["version"], "date": c["date"], "text": c.get(q.lang) or c["de"]} for c in S.METHODOLOGY_CHANGES],
+        "signals": [{"name": name, "scale": anchors, "weight": S.SIGNAL_WEIGHTS.get(name, 1.0)}
+                    for name, anchors in S.SIGNAL_SCALES.items()],
+        "thresholds": {"hot": S.VERDICT_HOT, "warm": S.VERDICT_WARM, "strong": S.SIGNAL_STRONG},
+        "params": {"rsi_period": S.RSI_PERIOD, "ma_period": S.MA_PERIOD, "dvol_window": S.DVOL_WINDOW,
+                   "funding_base_hours": S.FUNDING_BASE_HOURS, "score_history_days": S.SCORE_HISTORY_DAYS,
+                   "score_stats_days": S.SCORE_STATS_DAYS, "mvrv_wait": S.MVRV_WAIT, "mvrv_max_age": S.MVRV_MAX_AGE,
+                   "dvol_symbols": sorted(S.DVOL_SYMBOLS)},
+        "intervals": {"cache": CACHE_SECONDS, "klines": KLINE_CACHE_SECONDS, "defi": DEFI_CACHE_SECONDS,
+                      "fees": FEES_CACHE_SECONDS, "news": NEWS_CACHE_SECONDS, "profile": PROFILE_CACHE_SECONDS,
+                      "onchain": 3600, "retry": RETRY_SECONDS, "liq_history": LIQ_HISTORY_CACHE_SECONDS,
+                      "alerts": alerts.CHECK_SECONDS},
+    }
+
+
 # --- Alarme (alerts.py): GET liefert alles für die Seite, POST ändert Regeln und Einstellungen
 
 def alert_checker() -> alerts.Checker:
@@ -784,6 +809,7 @@ ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
     "/api/watch-coins": api_watch_coins,
     "/api/coin": api_coin,
     "/api/coin-info": api_coin_info,
+    "/api/methodology": api_methodology,
     "/api/klines": api_klines,
     "/api/score-history": api_score_history,
     "/api/onchain": api_onchain,

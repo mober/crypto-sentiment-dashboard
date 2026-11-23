@@ -269,6 +269,7 @@ async function loadLiquidations() {
     }
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     liqCandles = p.candles;
+    setDataStatus("ds-liq", { src: L("Binance Futures (Modell)", "Binance Futures (model)"), kind: "poll", at: p.fetched_at, every: 300 });
     liqModels = { standard: buildLiqModel(p.candles, p.open_interest),
       dark: buildLiqModel(p.candles, p.open_interest, LIQ_BINS_FINE) };
     liqModel = liqView === "dark" ? liqModels.dark : liqModels.standard;

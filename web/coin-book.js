@@ -61,7 +61,18 @@ function closeBook() {
   setBookLive(false);
 }
 
-function setBookLive(on) { if (!bookOff) $("book-live").classList.toggle("on", on); }
+function setBookLive(on) {
+  if (bookOff) return;
+  $("book-live").classList.toggle("on", on);
+  if (!on) bookStatus(false);
+}
+
+// Datenstatus: letzte Meldung des Diff-Streams, höchstens einmal je Sekunde neu gesetzt
+let bookLastMsg = 0, bookStatusAt = 0;
+function bookStatus(connected = true) {
+  setDataStatus("ds-book", { src: `${BOOK_MARKETS[bookMarket].name} WebSocket`, kind: "live", at: bookLastMsg || null,
+    every: 10, connected: connected && !!bookSocket });
+}
 
 function bookMessage(text) {
   $("book-msg").textContent = text;
@@ -81,6 +92,8 @@ async function connectBook() {
     let d;
     try { d = JSON.parse(ev.data); } catch (e) { return; }
     if (d.e !== "depthUpdate") return;
+    bookLastMsg = Date.now();
+    if (bookLastMsg - bookStatusAt > 1000) { bookStatusAt = bookLastMsg; bookStatus(); }
     if (!book) { bookBuffer.push(d); return; }
     applyBookEvent(d, token);
   };

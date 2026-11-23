@@ -466,10 +466,24 @@ function chartMessage(text, isError = false) {
   el.classList.toggle("error", isError);
 }
 
+// Datenstatus des Charts und des Kurses im Kopf: live über WebSocket, sonst Stand der Kerzen vom Server
+let chartRestAt = null, chartRestSource = "";
+function chartStatus() {
+  if (!liveLast && !chartRestAt) return;   // noch nichts geladen
+  const o = liveLast
+    ? { src: `${liveSource} WebSocket`, kind: "live", at: liveLast, every: LIVE_STALE_MS / 1000 }
+    : { src: `${chartRestSource || "Binance"} REST`, kind: "poll", at: chartRestAt, every: CHART_REFRESH_MS / 1000,
+      note: L("Live-Verbindung gerade nicht aktiv", "Live connection currently not active") };
+  setDataStatus("ds-chart-card", o);
+  setDataStatus("ds-price", { ...o, src: L("Kurs: ", "Price: ") + o.src });
+}
+
 async function fetchKlines(iv) {
   const res = await fetch(`api/klines?symbol=${encodeURIComponent(symbol)}&interval=${iv}`);
   const p = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { status: res.status });
+  chartRestAt = p.fetched_at || Date.now();
+  if (p.source) chartRestSource = p.source;
   return p;  // { source, candles }
 }
 
@@ -518,6 +532,7 @@ async function loadChart() {
     setIndicatorData();
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - VISIBLE_BARS), to: candles.length + 5 });
     updateRangeButtons();
+    chartStatus();
     updateLevels();
     renderOhlc(candles[candles.length - 1]);
     renderLowerLegend(null);
@@ -572,7 +587,8 @@ async function refreshChart() {
     const { candles: data } = await fetchKlines(iv);
     if (token !== loadToken) return;
     applyCandles(data);
-  } catch (e) { /* beim nächsten Intervall erneut versuchen */ }
+    chartStatus();
+  } catch (e) { chartStatus(); /* beim nächsten Intervall erneut versuchen */ }
 }
 
 // Preis im Kopf aus der letzten Kerze: immer, wenn sie neuer ist als der Score (force),
@@ -637,12 +653,14 @@ function connectLive(source) {
     liveSocket = null;
     liveLast = 0;
     setLive(false);
+    chartStatus();
     liveRetryTimer = setTimeout(resumeLive, LIVE_RETRY_MS);
   };
 }
 
 function drawLive() {
   liveDrawTimer = null;
+  chartStatus();
   const c = livePending;
   livePending = null;
   if (c) applyCandles([c]);

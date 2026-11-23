@@ -138,6 +138,9 @@ async function loadOnchain() {
     }
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     ocData = p;
+    const lastDay = p.days.length ? new Date(p.days[p.days.length - 1].time * 1000).toISOString().slice(0, 10) : null;
+    setDataStatus("ds-onchain", { src: "Coin Metrics", kind: "daily", day: lastDay, lag: 1,
+      note: L("Abruf beim Server: stündlich", "Fetched by the server: hourly") });
     ocByTime.clear();
     for (const d of p.days) ocByTime.set(d.time, d);
     $("onchain").classList.toggle("mvrv-only", !p.has_flows);
@@ -156,6 +159,7 @@ async function loadOnchain() {
     renderOcStats();
     renderOcLegends(null);
   } catch (e) {
+    setDataStatus("ds-onchain", { src: "Coin Metrics", na: true });
     $("oc-msg").textContent = L(`On-Chain-Daten nicht verfügbar (${e.message}).`, `On-chain data not available (${e.message}).`);
   }
 }

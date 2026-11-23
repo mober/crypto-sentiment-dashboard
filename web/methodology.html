@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Methodik & Datenquellen</title>
+<link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
+<script src="nav.js"></script>
+<style>
+  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
+  .toc { position: sticky; top: 16px; font-size: 13px; }
+  .toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+  .toc a { display: block; padding: 5px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+  .toc a:hover { color: var(--text); background: var(--card); }
+  .toc a.on { color: var(--accent); font-weight: 600; background: var(--card); }
+  .doc .card { padding: 20px 24px; margin-bottom: 20px; scroll-margin-top: 16px; }
+  .doc h2 { margin: 0 0 10px; font-size: 18px; }
+  .doc h3 { margin: 18px 0 6px; font-size: 15px; }
+  .doc p, .doc li { font-size: 14px; line-height: 1.6; }
+  .doc p { margin: 0 0 10px; }
+  .doc ul { margin: 0 0 10px; padding-left: 20px; }
+  .doc li { margin: 3px 0; }
+  .doc code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--track); padding: 1px 5px; border-radius: 4px; }
+  .doc .muted { color: var(--muted); }
+  .formula { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--track); border-radius: 8px;
+    padding: 10px 14px; margin: 8px 0 12px; overflow-x: auto; white-space: nowrap; }
+  .version { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+  .version b { color: var(--accent-text); background: var(--accent); padding: 1px 8px; border-radius: 6px; }
+
+  .table-wrap { overflow-x: auto; margin: 6px 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.nw { white-space: nowrap; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .anchors { display: flex; flex-wrap: wrap; gap: 4px; }
+  .anchors span { white-space: nowrap; background: var(--track); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+  .anchors .cold { color: var(--cold); } .anchors .hot { color: var(--hot); }
+  .zones { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; }
+  .zones div { border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+  .zones b { display: block; font-size: 13px; }
+  .z-cold2 { background: var(--cold-bg); color: var(--cold); } .z-cold1 { background: color-mix(in srgb, var(--cold-bg) 55%, var(--card)); }
+  .z-neutral { background: var(--neutral-bg); } .z-hot1 { background: color-mix(in srgb, var(--hot-bg) 55%, var(--card)); }
+  .z-hot2 { background: var(--hot-bg); color: var(--hot); }
+  .changes li { margin: 8px 0; }
+  .changes .v { font-weight: 700; margin-right: 6px; }
+  .status { padding: 24px; text-align: center; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc { position: static; }
+    .toc ol { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .doc .card { padding: 16px; }
+    .zones { grid-template-columns: 1fr 1fr; }
+    /* Tabellen als Karten: jede Zeile ein Block, Spaltenname vor dem Wert */
+    .stack thead { display: none; }
+    .stack, .stack tbody, .stack tr, .stack td { display: block; }
+    .stack tr { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .stack tbody tr:last-child { border-bottom: 0; }
+    .stack td { border: 0; padding: 2px 0; text-align: left; white-space: normal; }
+    .stack td[data-l]::before { content: attr(data-l) ": "; color: var(--muted); font-size: 12px; }
+    .stack td:first-child { font-weight: 600; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Methodik & Datenquellen</h1>
+      <div class="sub" id="updated">Wie der Score entsteht, woher die Daten kommen und wo die Grenzen liegen</div>
+    </div>
+    <div class="version" id="version"></div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Inhalt"><ol id="toc"></ol></nav>
+    <div class="doc" id="doc"><section class="card status">Lade …</section></div>
+  </div>
+
+  <footer>Alle Skalen, Gewichte und Intervalle auf dieser Seite kommen direkt aus dem laufenden Programm (sentiment.py, server.py)
+    und sind damit immer auf dem Stand der Berechnung. Keine Anlageberatung.</footer>
+</main>
+
+<script src="format.js"></script>
+<script>
+addStatic({
+  "Methodik & Datenquellen": "Methodology & data sources",
+  "Wie der Score entsteht, woher die Daten kommen und wo die Grenzen liegen": "How the score is built, where the data comes from and where its limits are",
+  "Inhalt": "Contents", "Lade …": "Loading …",
+  "Alle Skalen, Gewichte und Intervalle auf dieser Seite kommen direkt aus dem laufenden Programm (sentiment.py, server.py) und sind damit immer auf dem Stand der Berechnung. Keine Anlageberatung.":
+    "All scales, weights and intervals on this page come straight from the running program (sentiment.py, server.py) and therefore always match the calculation. Not investment advice.",
+});
+document.title = L("Methodik & Datenquellen", "Methodology & data sources");
+
+// Zahlen deutsch bzw. englisch
+const n = (v, d = 0) => v.toLocaleString(LOCALE, { minimumFractionDigits: d, maximumFractionDigits: d });
+const pctN = (v, d = 0) => (v > 0 ? "+" : v < 0 ? "−" : "") + n(Math.abs(v * 100), d) + PCT;
+const dur = (s) => s >= 86400 ? L(`${n(s / 86400)} Tag${s >= 172800 ? "e" : ""}`, `${n(s / 86400)} day${s >= 172800 ? "s" : ""}`)
+  : s >= 3600 ? L(`${n(s / 3600)} Std.`, `${n(s / 3600)} h`) : s >= 60 ? L(`${n(s / 60)} Min.`, `${n(s / 60)} min`) : `${s} s`;
+
+// Beschreibung je Signal (Schlüssel = Signalname im Code); fmt formatiert den Messwert der Ankerpunkte
+const SIG = {
+  "Fear & Greed": { label: "Fear & Greed", fmt: (v) => n(v),
+    what: L("Marktweiter Stimmungsindex 0–100 (Volatilität, Volumen, Social Media, BTC-Dominanz, Google Trends); für alle Coins gleich.", "Market-wide sentiment index 0–100 (volatility, volume, social media, BTC dominance, Google Trends); the same for all coins."),
+    src: "alternative.me", avail: L("alle Coins", "all coins") },
+  "Funding Rate": { label: "Funding Rate", fmt: (v) => pctN(v, 3) + L(" je 8 h", " per 8 h"),
+    what: L("Durchschnittliche Funding Rate der letzten 7 Tage. Coins mit 1-h- oder 4-h-Takt werden auf 8 h umgerechnet.", "Average funding rate of the last 7 days. Coins paying every 1 h or 4 h are converted to 8 h."),
+    src: "Binance Futures", avail: L("Coins mit USDT-Perpetual", "coins with a USDT perpetual") },
+  "Open Interest": { label: "Open Interest", fmt: (v) => pctN(v) + L(" in 7 T", " in 7 d"),
+    what: L("Veränderung des offenen Futures-Kapitals über 7 Tage. Aufbau von Hebel = Gier, Abbau = Angst.", "Change in open futures capital over 7 days. Building leverage = greed, deleveraging = fear."),
+    src: "Binance Futures", avail: L("Coins mit USDT-Perpetual", "coins with a USDT perpetual") },
+  "Preis vs. MA200": { label: L("Preis vs. MA200", "Price vs. MA200"), fmt: (v) => pctN(v),
+    what: L("Abstand des Kurses zum Durchschnitt der letzten 200 Tages-Schlusskurse. +10 % gilt als normaler Aufwärtstrend (0 Punkte).", "Distance of the price from the average of the last 200 daily closes. +10% counts as a normal uptrend (0 points)."),
+    src: L("Binance Tageskerzen", "Binance daily candles"), avail: L("ab 200 Tageskerzen", "from 200 daily candles") },
+  "RSI (14)": { label: "RSI (14)", fmt: (v) => n(v),
+    what: L("Relative-Stärke-Index über 14 Tageskerzen (Wilder-Glättung).", "Relative strength index over 14 daily candles (Wilder smoothing)."),
+    src: L("Binance Tageskerzen", "Binance daily candles"), avail: L("Coins mit Binance-Kerzen", "coins with Binance candles") },
+  "Long/Short Ratio": { label: "Long/Short Ratio", fmt: (v) => n(v, 1),
+    what: L("Verhältnis der Binance-Konten mit Long- zu Short-Position, als Kontraindikator gelesen. Auf Binance meist um 2 (0 Punkte).", "Ratio of Binance accounts holding longs vs. shorts, read as a contrarian indicator. On Binance usually around 2 (0 points)."),
+    src: "Binance Futures", avail: L("Coins mit USDT-Perpetual", "coins with a USDT perpetual") },
+  "Optionsvola (DVOL)": { label: L("Optionsvola (DVOL)", "Options vol (DVOL)"), fmt: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + n(Math.abs(v), 1) + " σ",
+    what: L("Implizite Volatilität der Optionen als z-Wert gegenüber den 90 Tagen davor. Umgekehrt gepolt: ungewöhnlich ruhig = Sorglosigkeit (+), ungewöhnlich hoch = Panik (−).", "Implied options volatility as a z-score against the preceding 90 days. Inverted: unusually calm = complacency (+), unusually high = panic (−)."),
+    src: "Deribit", avail: "BTC, ETH" },
+  "MVRV": { label: "MVRV", fmt: (v) => n(v, 1),
+    what: L("Marktkapitalisierung geteilt durch den realisierten Wert (jede Münze zum Kurs ihrer letzten Bewegung, grob der Einstand aller Halter). Letzter Tageswert = gestern.", "Market cap divided by realised value (each coin at the price of its last move, roughly holders' cost basis). Latest daily value = yesterday."),
+    src: "Coin Metrics (Community)", avail: L("größere Coins (z. B. nicht SOL)", "larger coins (e.g. not SOL)") },
+  "Momentum 7T": { label: L("Momentum 7T", "Momentum 7D"), fmt: (v) => pctN(v), fallback: true,
+    what: L("Kursänderung über 7 Tage.", "Price change over 7 days."), src: "CoinGecko", avail: L("Ersatz, wenn Binance-Daten fehlen", "fallback when Binance data is missing") },
+  "Momentum 30T": { label: L("Momentum 30T", "Momentum 30D"), fmt: (v) => pctN(v), fallback: true,
+    what: L("Kursänderung über 30 Tage.", "Price change over 30 days."), src: "CoinGecko", avail: L("Ersatz, wenn Binance-Daten fehlen", "fallback when Binance data is missing") },
+  "Umschlag": { label: L("Umschlag", "Turnover"), fmt: (v) => pctN(v).replace("+", ""), fallback: true,
+    what: L("Tagesvolumen geteilt durch Marktkapitalisierung; Vorzeichen folgt dem 7-Tage-Trend (Rausch bzw. Panik).", "Daily volume divided by market cap; the sign follows the 7-day trend (frenzy or panic)."),
+    src: "CoinGecko", avail: L("Ersatz, wenn Binance-Daten fehlen", "fallback when Binance data is missing") },
+  "RSI (14 Std.)": { label: L("RSI (14 Std.)", "RSI (14h)"), fmt: (v) => n(v), fallback: true,
+    what: L("RSI über 14 Stundenkerzen, nur wenn der Tages-RSI fehlt.", "RSI over 14 hourly candles, only if the daily RSI is missing."),
+    src: "CoinGecko", avail: L("Ersatz, wenn Binance-Daten fehlen", "fallback when Binance data is missing") },
+};
+
+const SECTIONS = [
+  ["goal", L("Ziel und Grenzen", "Purpose and limits")],
+  ["calc", L("Berechnung", "Calculation")],
+  ["signals", L("Signale, Skalen, Gewichte", "Signals, scales, weights")],
+  ["missing", L("Fehlende und veraltete Daten", "Missing and stale data")],
+  ["sources", L("Datenquellen und Intervalle", "Data sources and intervals")],
+  ["exchanges", L("Börsenspezifische Einschränkungen", "Exchange-specific limitations")],
+  ["backtest", L("Rückblick und Trefferquote", "Backtest and hit rate")],
+  ["changes", L("Version und Änderungen", "Version and changes")],
+];
+
+function anchorsHtml(sig, scale) {
+  return `<div class="anchors">${scale.map(([x, y]) => `<span class="${y < 0 ? "cold" : y > 0 ? "hot" : ""}">${sig.fmt(x)} → ${y > 0 ? "+" : y < 0 ? "−" : ""}${Math.abs(y)}</span>`).join("")}</div>`;
+}
+
+function render(m) {
+  const t = m.thresholds, p = m.params, iv = m.intervals;
+  const W = (x) => n(x, x % 1 ? 1 : 0);
+  $("version").innerHTML = `${L("Methodik", "Methodology")} <b>v${esc(m.version)}</b> ${L("vom", "of")} ${new Date(m.changes[0].date).toLocaleDateString(LOCALE)}`;
+  $("toc").innerHTML = SECTIONS.map(([id, title]) => `<li><a href="#${id}">${esc(title)}</a></li>`).join("");
+  const main = m.signals.filter((s) => !SIG[s.name] || !SIG[s.name].fallback), fb = m.signals.filter((s) => SIG[s.name] && SIG[s.name].fallback);
+  const sigRows = (list) => list.map((s) => {
+    const d = SIG[s.name] || { label: s.name, fmt: (v) => n(v, 2), what: "", src: "", avail: "" };
+    return `<tr><td class="nw">${esc(d.label)}</td><td data-l="${L("Was", "What")}">${esc(d.what)}</td><td data-l="${L("Quelle", "Source")}">${esc(d.src)}</td>
+      <td data-l="${L("Skala", "Scale")}">${anchorsHtml(d, s.scale)}</td><td class="num" data-l="${L("Gewicht", "Weight")}">×${W(s.weight)}</td><td data-l="${L("Verfügbar", "Available")}">${esc(d.avail)}</td></tr>`;
+  }).join("");
+  const sigHead = `<thead><tr><th>${L("Signal", "Signal")}</th><th>${L("Was gemessen wird", "What is measured")}</th><th>${L("Quelle", "Source")}</th><th>${L("Skala (Messwert → Punkte)", "Scale (value → points)")}</th><th class="num">${L("Gewicht", "Weight")}</th><th>${L("Verfügbar", "Available")}</th></tr></thead>`;
+  const zone = (cls, name, range) => `<div class="z-${cls}"><b>${name}</b>${range}</div>`;
+
+  const SRC = [
+    ["alternative.me", L("Fear & Greed Index (Tageswert)", "Fear & Greed index (daily value)"), L(`Abruf alle ${dur(iv.cache)}; Wert ändert sich täglich`, `fetched every ${dur(iv.cache)}; value changes daily`), "REST"],
+    ["Binance Spot / Futures", L("Kerzen (Chart, MA200, RSI, 52 Wochen, Volatilität)", "Candles (chart, MA200, RSI, 52 weeks, volatility)"), L(`${dur(iv.klines)} (Chart), ${dur(iv.cache)} (Score)`, `${dur(iv.klines)} (chart), ${dur(iv.cache)} (score)`), "REST"],
+    ["Binance Futures", L("Funding (90 T), Open Interest (30 T), Long/Short", "Funding (90 d), open interest (30 d), long/short"), dur(iv.cache), "REST"],
+    ["Binance WebSocket", L("Live-Kurs, Orderbuch (direkt im Browser)", "Live price, order book (directly in the browser)"), L("laufend", "continuous"), "WebSocket"],
+    ["Deribit", L("DVOL (BTC, ETH)", "DVOL (BTC, ETH)"), dur(iv.cache), "REST"],
+    ["CoinGecko", L("Marktdaten, Kennzahlen, Sparten, Suche, Trending, Profil", "Market data, figures, sectors, search, trending, profile"), L(`${dur(iv.cache)}, Profil ${dur(iv.profile)}`, `${dur(iv.cache)}, profile ${dur(iv.profile)}`), L("REST, ohne Key stark limitiert", "REST, heavily limited without key")],
+    ["Coin Metrics (Community)", L("MVRV, Börsenzu-/abflüsse, Börsenbestand (Tageswerte bis gestern)", "MVRV, exchange in/outflows, exchange balance (daily values up to yesterday)"), L(`Abruf ${dur(iv.onchain)}; Wert täglich`, `fetched every ${dur(iv.onchain)}; value daily`), "REST"],
+    ["DefiLlama", L("TVL je Kategorie und Chain, Gebühren und Einnahmen", "TVL per category and chain, fees and revenue"), L(`TVL ${dur(iv.defi)}, Gebühren ${dur(iv.fees)} (Tageswerte)`, `TVL ${dur(iv.defi)}, fees ${dur(iv.fees)} (daily values)`), "REST"],
+    [L("Binance, Bybit, OKX", "Binance, Bybit, OKX"), L("Echte Liquidationen (eigener Mitschnitt, SQLite)", "Real liquidations (own recording, SQLite)"), L(`laufend; Verlauf ${dur(iv.liq_history)}`, `continuous; history ${dur(iv.liq_history)}`), "WebSocket"],
+    [L("RSS-Feeds", "RSS feeds"), L("Schlagzeilen zum Coin", "Headlines for the coin"), dur(iv.news), "RSS"],
+    [L("Alarme", "Alerts"), L("Prüfung aller Regeln mit denselben Daten wie die Karten", "Checks all rules with the same data as the cards"), dur(iv.alerts), L("intern", "internal")],
+  ];
+
+  const sec = {
+    goal: `
+      <p>${L("Der <b>Überhitzungs-Score</b> fasst für jeden Coin bis zu acht Signale (ohne Binance-Daten ergänzt um Ersatz-Signale) zu einer Zahl von −100 (extreme Angst) bis +100 (Überhitzung) zusammen. Er soll zeigen, ob ein Markt <b>einseitig</b> geworden ist – zu viel Hebel, zu viel Euphorie oder Panik –, denn solche Phasen enden oft in Gegenbewegungen.",
+        "The <b>overheating score</b> combines up to eight signals per coin (supplemented by fallback signals without Binance data) into one number from −100 (extreme fear) to +100 (overheating). It is meant to show whether a market has become <b>one-sided</b> – too much leverage, too much euphoria or panic – because such phases often end in reversals.")}</p>
+      <h3>${L("Was der Score nicht kann", "What the score cannot do")}</h3>
+      <ul>
+        <li>${L("Er ist <b>keine Kursprognose</b> und kein Timing-Werkzeug. Märkte können lange überhitzt oder ängstlich bleiben.", "It is <b>not a price forecast</b> and not a timing tool. Markets can stay overheated or fearful for a long time.")}</li>
+        <li>${L("Er kennt keine Fundamentaldaten, Nachrichten, Regulierung oder Projekt-Risiken (Hacks, Unlocks, Delistings).", "It knows nothing about fundamentals, news, regulation or project risks (hacks, unlocks, delistings).")}</li>
+        <li>${L("Skalen und Gewichte beruhen auf wenigen Coins und einem Marktzyklus. Der Rückblick zeigt Tendenzen, keine Gewissheit.", "Scales and weights are based on a few coins and one market cycle. The backtest shows tendencies, not certainty.")}</li>
+        <li>${L("Bei kleinen Coins fehlen oft mehrere Signale; der Score ist dann weniger belastbar (die Anzahl steht in der Score-Zusammensetzung auf der Detailseite).", "Smaller coins often lack several signals; the score is then less robust (the count is shown in the score breakdown on the detail page).")}</li>
+        <li>${L("Empfehlungen sind regelbasierte Einordnungen nach Erfahrungswerten, <b>keine Anlageberatung</b>.", "Suggestions are rule-based assessments from rules of thumb, <b>not investment advice</b>.")}</li>
+      </ul>`,
+    calc: `
+      <h3>${L("1. Normalisierung", "1. Normalisation")}</h3>
+      <p>${L("Jedes Signal wird über feste <b>Ankerpunkte</b> in Punkte umgerechnet. Zwischen zwei Ankerpunkten wird linear interpoliert, außerhalb auf −100 bzw. +100 begrenzt. Beispiel RSI: 30 → −100, 50 → 0, 70 → +100; ein RSI von 60 ergibt +50.",
+        "Each signal is converted into points via fixed <b>anchor points</b>. Between two anchors the value is interpolated linearly, outside it is capped at −100 or +100. Example RSI: 30 → −100, 50 → 0, 70 → +100; an RSI of 60 gives +50.")}</p>
+      <h3>${L("2. Gewichteter Durchschnitt", "2. Weighted average")}</h3>
+      <div class="formula">Score = Σ (${L("Punkte", "points")}ᵢ × ${L("Gewicht", "weight")}ᵢ) / Σ ${L("Gewicht", "weight")}ᵢ</div>
+      <p>${L("Gemittelt wird nur über die <b>vorhandenen</b> Signale. Dadurch bleiben Coins mit unterschiedlich vielen Signalen vergleichbar; ein fehlendes Signal zählt nicht als 0.",
+        "The average covers only the signals that are <b>available</b>. This keeps coins with different numbers of signals comparable; a missing signal does not count as 0.")}</p>
+      <h3>${L("3. Zonen und Einschätzung", "3. Zones and verdict")}</h3>
+      <div class="zones">
+        ${zone("cold2", L("Extreme Angst", "Extreme fear"), `≤ −${t.hot}`)}
+        ${zone("cold1", L("Angst", "Fear"), `−${t.hot} … −${t.warm}`)}
+        ${zone("neutral", "Neutral", `−${t.warm} … +${t.warm}`)}
+        ${zone("hot1", L("Gier", "Greed"), `+${t.warm} … +${t.hot}`)}
+        ${zone("hot2", L("Überhitzt", "Overheated"), `≥ +${t.hot}`)}
+      </div>
+      <p>${L(`Ein Einzelsignal gilt ab ±${t.strong} Punkten als <b>ausgeprägt</b> und erscheint dann im Lagebild unter „spricht dafür / dagegen“.`, `A single signal counts as <b>pronounced</b> from ±${t.strong} points and then appears in the situation assessment under “in favour / against”.`)}</p>
+      <h3>${L("4. Lagebild und Empfehlung", "4. Situation and suggestion")}</h3>
+      <p>${L(`Das Lagebild kombiniert <b>Stimmung</b> (Score ab ±${t.warm} gierig bzw. ängstlich) mit dem <b>Trend</b> (Kurs über oder unter dem MA200, ohne MA200 die 30-Tage-Änderung) zu einem von neun Feldern. Gelesen wird antizyklisch: Angst im Aufwärtstrend ist eher eine Gelegenheit, Gier im Abwärtstrend eher eine Erholung zum Verkaufen. Ab ±${t.hot} gibt es verschärfte Empfehlungen.`,
+        `The situation assessment combines <b>sentiment</b> (score from ±${t.warm} greedy or fearful) with the <b>trend</b> (price above or below the MA200, without MA200 the 30-day change) into one of nine fields. It is read contrarian: fear in an uptrend is more of an opportunity, greed in a downtrend more of a rally to sell into. From ±${t.hot} the suggestions become stricter.`)}</p>`,
+    signals: `
+      <p>${L("Skalen und Gewichte direkt aus dem Programm. Kalte Farbe = Angst-Seite, warme Farbe = Gier-Seite. Gewicht ×1 ist der Standard.", "Scales and weights straight from the program. Cool colour = fear side, warm colour = greed side. Weight ×1 is the default.")}</p>
+      <div class="table-wrap"><table class="stack">${sigHead}<tbody>${sigRows(main)}</tbody></table></div>
+      <h3>${L("Ersatz-Signale", "Fallback signals")}</h3>
+      <p>${L("Nur für Coins ohne Binance-Futures oder -Tageskerzen; sie ersetzen dann die fehlenden Trend- und Hebel-Signale.", "Only for coins without Binance futures or daily candles; they then replace the missing trend and leverage signals.")}</p>
+      <div class="table-wrap"><table class="stack">${sigHead}<tbody>${sigRows(fb)}</tbody></table></div>
+      <h3>${L("Feste Parameter", "Fixed parameters")}</h3>
+      <ul>
+        <li>${L(`RSI über ${p.rsi_period} Kerzen, gleitender Durchschnitt über ${p.ma_period} Tage (berechnet erst ab ${p.ma_period} Tageskerzen).`, `RSI over ${p.rsi_period} candles, moving average over ${p.ma_period} days (only calculated from ${p.ma_period} daily candles).`)}</li>
+        <li>${L(`DVOL-z-Wert gegen die ${p.dvol_window} Tage davor; nur ${p.dvol_symbols.join(", ")}.`, `DVOL z-score against the preceding ${p.dvol_window} days; only ${p.dvol_symbols.join(", ")}.`)}</li>
+        <li>${L(`Funding-Skala gilt pro ${p.funding_base_hours} h; andere Takte werden umgerechnet.`, `Funding scale applies per ${p.funding_base_hours} h; other intervals are converted.`)}</li>
+        <li>${L("Gewichte aus einem Backtest (siehe unten), bewusst in groben Stufen (×0,5 / ×1 / ×1,5), um nicht an einen einzelnen Zyklus angepasst zu sein.", "Weights from a backtest (see below), deliberately in coarse steps (×0.5 / ×1 / ×1.5) to avoid fitting a single cycle.")}</li>
+      </ul>`,
+    missing: `
+      <ul>
+        <li>${L("<b>Signal fehlt:</b> Es fällt aus dem Durchschnitt heraus (siehe Berechnung). Ohne ein einziges Signal zeigt der Coin „Keine Daten verfügbar“ statt einer Zahl.", "<b>Signal missing:</b> it drops out of the average (see calculation). With no signal at all the coin shows “No data available” instead of a number.")}</li>
+        <li>${L("<b>Quelle kurz nicht erreichbar:</b> Der Server behält den letzten erfolgreichen Wert und zeigt ihn weiter an. Am Datenstatus jeder Karte sieht man dann „verzögert“ bzw. „veraltet“ mit dem echten Alter.", "<b>Source briefly unreachable:</b> the server keeps the last successful value and keeps showing it. The data status on each card then shows “delayed” or “stale” with the real age.")}</li>
+        <li>${L(`<b>Teilergebnisse</b> (eine von mehreren Abfragen scheitert) werden nur ${dur(iv.retry)} zwischengespeichert und dann neu versucht.`, `<b>Partial results</b> (one of several requests fails) are cached for only ${dur(iv.retry)} and then retried.`)}</li>
+        <li>${L(`<b>MVRV:</b> Der erste Abruf je Coin wartet höchstens ${p.mvrv_wait} s; dauert Coin Metrics länger, fehlt MVRV vorerst und kommt beim nächsten Durchlauf dazu. Werte älter als ${dur(p.mvrv_max_age)} werden nicht verwendet.`, `<b>MVRV:</b> the first request per coin waits at most ${p.mvrv_wait} s; if Coin Metrics takes longer, MVRV is missing for now and is added on the next run. Values older than ${dur(p.mvrv_max_age)} are not used.`)}</li>
+        <li>${L("<b>CoinGecko-Limit (HTTP 429):</b> Alle CoinGecko-Abfragen pausieren; die Seiten zeigen einen Countdown und laden danach selbst neu.", "<b>CoinGecko limit (HTTP 429):</b> all CoinGecko requests pause; pages show a countdown and reload by themselves afterwards.")}</li>
+        <li>${L("<b>Im Browser</b> wird beim Öffnen zuerst der letzte gespeicherte Stand gezeigt und kurz darauf ersetzt; der Datenstatus zeigt, wie alt er ist.", "<b>In the browser</b>, the last saved state is shown first on opening and replaced shortly after; the data status shows how old it is.")}</li>
+        <li>${L(`<b>Score-Verlauf:</b> rückwirkend für ${p.score_history_days} Tage berechnet; Open Interest und Long/Short gibt es bei Binance nur für 30 Tage, die CoinGecko-Ersatzsignale gar nicht – ältere Tage beruhen daher auf weniger Signalen.`, `<b>Score history:</b> calculated retroactively for ${p.score_history_days} days; Binance provides open interest and long/short for only 30 days and the CoinGecko fallback signals not at all – older days are therefore based on fewer signals.`)}</li>
+      </ul>
+      <h3>${L("Zustände des Datenstatus", "Data status states")}</h3>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>${L("Zustand", "State")}</th><th>${L("Bedeutung", "Meaning")}</th></tr></thead><tbody>
+        <tr><td>live</td><td>${L("Laufende WebSocket-Verbindung, Meldungen kommen an.", "Open WebSocket connection, messages are arriving.")}</td></tr>
+        <tr><td>${L("aktuell", "current")}</td><td>${L("Stand innerhalb von zwei Abruftakten plus 1 Minute; Tageswerte bis zum üblichen Folgetag.", "As of within two polling intervals plus 1 minute; daily values until the usual following day.")}</td></tr>
+        <tr><td>${L("verzögert", "delayed")}</td><td>${L("Bis vier Abruftakte (Tageswerte bis zwei Tage) überfällig; der letzte Stand wird gezeigt.", "Up to four intervals overdue (daily values up to two days); the last value is shown.")}</td></tr>
+        <tr><td>${L("veraltet", "stale")}</td><td>${L("Deutlich überfällig oder Verbindung getrennt.", "Well overdue or disconnected.")}</td></tr>
+        <tr><td>${L("nicht verfügbar", "not available")}</td><td>${L("Für diesen Coin oder gerade keine Daten.", "No data for this coin or right now.")}</td></tr>
+      </tbody></table></div>`,
+    sources: `
+      <p>${L("Alle Quellen sind kostenlos und ohne API-Key. „Abruf“ ist die Zwischenspeicherung beim Server; die Seiten fragen in ähnlichem Takt nach.", "All sources are free and need no API key. “Fetched” is the server-side caching; the pages poll at a similar pace.")}</p>
+      <div class="table-wrap"><table class="stack"><thead><tr><th>${L("Quelle", "Source")}</th><th>${L("Daten", "Data")}</th><th>${L("Aktualisierung", "Updates")}</th><th>${L("Zugang", "Access")}</th></tr></thead><tbody>
+        ${SRC.map((r) => `<tr><td class="nw">${esc(r[0])}</td><td data-l="${L("Daten", "Data")}">${esc(r[1])}</td><td data-l="${L("Aktualisierung", "Updates")}">${esc(r[2])}</td><td data-l="${L("Zugang", "Access")}">${esc(r[3])}</td></tr>`).join("")}
+      </tbody></table></div>`,
+    exchanges: `
+      <h3>Binance</h3>
+      <ul>
+        <li>${L("Funding, Open Interest und Long/Short stammen <b>nur von Binance</b>, nicht aggregiert über alle Börsen. Die Long/Short Ratio zählt Konten, nicht Kapital, und ist auf Binance typischerweise long-lastig (Kleinanleger).", "Funding, open interest and long/short come <b>from Binance only</b>, not aggregated across exchanges. The long/short ratio counts accounts, not capital, and is typically long-heavy on Binance (retail).")}</li>
+        <li>${L("Kerzen von Spot; fehlt das Spot-Paar oder ist die Historie kürzer, von Futures (Perpetual). Coins ohne USDT-Paar haben weder Chart noch Orderbuch.", "Candles from spot; if the spot pair is missing or its history shorter, from futures (perpetual). Coins without a USDT pair have neither chart nor order book.")}</li>
+        <li>${L("Liquidationen: Binance meldet je Kontrakt höchstens <b>eine Liquidation pro Sekunde</b> (die größte). COIN-M-Kontrakte werden über die Kontraktgröße (100 $ BTC, 10 $ sonst) umgerechnet.", "Liquidations: Binance reports at most <b>one liquidation per contract and second</b> (the largest). COIN-M contracts are converted via contract size ($100 BTC, $10 otherwise).")}</li>
+        <li>${L("Orderbuch: Momentaufnahme mit 5.000 (Spot) bzw. 1.000 (Futures) Stufen je Seite; weiter entfernte Aufträge sind nicht enthalten. Die Abfragen zählen für die IP des Nutzers.", "Order book: snapshot with 5,000 (spot) or 1,000 (futures) levels per side; orders further away are not included. Requests count against the user's IP.")}</li>
+        <li>${L("Funding-Takt: manche Kontrakte zahlen alle 1 oder 4 Stunden; der Score rechnet auf 8 h um.", "Funding interval: some contracts pay every 1 or 4 hours; the score converts to 8 h.")}</li>
+      </ul>
+      <h3>Bybit, OKX</h3>
+      <ul>
+        <li>${L("Bybit: alle Liquidationen über den öffentlichen Stream; <code>S = Buy</code> bedeutet, eine Long-Position wurde liquidiert.", "Bybit: all liquidations via the public stream; <code>S = Buy</code> means a long position was liquidated.")}</li>
+        <li>${L("OKX: Kontrakte werden über den Kontraktwert in US-Dollar umgerechnet; nach einem Neuverbinden schickt OKX ältere Meldungen erneut, Duplikate werden verworfen.", "OKX: contracts are converted to US dollars via the contract value; after reconnecting OKX resends older messages, duplicates are discarded.")}</li>
+        <li>${L("Hyperliquid und kleinere Börsen fehlen. Die Liquidations-Summen liegen daher unter denen von Aggregatoren wie CoinGlass.", "Hyperliquid and smaller exchanges are missing. Liquidation totals are therefore below those of aggregators such as CoinGlass.")}</li>
+      </ul>
+      <h3>${L("Weitere Quellen", "Other sources")}</h3>
+      <ul>
+        <li>${L("Deribit: DVOL nur für BTC und ETH.", "Deribit: DVOL only for BTC and ETH.")}</li>
+        <li>${L("Coin Metrics (Community): Börsenflüsse und -bestand nur für BTC und ETH, MVRV für viele größere Coins (nicht SOL); letzter Wert ist gestern; seltene Abfragen dauern manchmal über 40 s.", "Coin Metrics (community): exchange flows and balance only for BTC and ETH, MVRV for many larger coins (not SOL); the latest value is yesterday; rare queries sometimes take over 40 s.")}</li>
+        <li>${L("CoinGecko ohne Key: stark limitiert; Symbole sind nicht eindeutig, daher wird wo möglich die Coin-ID verwendet.", "CoinGecko without key: heavily limited; symbols are ambiguous, so the coin ID is used where possible.")}</li>
+        <li>${L("DefiLlama: TVL ohne zentrale Börsen und Bridges; Gebühren als Tageswerte; Zuordnung Coin → Protokoll über CoinGecko-ID bzw. Symbol.", "DefiLlama: TVL excluding centralised exchanges and bridges; fees as daily values; coin → protocol mapping via CoinGecko ID or symbol.")}</li>
+        <li>${L("Liquidations-Heatmap auf der Detailseite ist ein <b>Modell</b> (Open-Interest-Zuwachs × angenommene Hebel), keine echten Aufträge.", "The liquidation heatmap on the detail page is a <b>model</b> (open interest growth × assumed leverage), not real orders.")}</li>
+      </ul>`,
+    backtest: `
+      <p>${L(`Die Gewichte stammen aus einem Rückblick auf BTC, ETH und SOL von 04/2024 bis 11/2026: Der täglich nachgerechnete Score wurde mit der Kursänderung 30 und 90 Tage danach verglichen. Ergebnis: Ab +${t.hot} folgten deutlich schwächere Renditen; Trend (MA200) und Optionsvola sagten am meisten voraus, Fear & Greed und RSI kaum etwas. Extreme Angst allein war <b>kein</b> verlässliches Kaufsignal – daran sind Einschätzung und Empfehlungen ausgerichtet.`,
+        `The weights come from a backtest on BTC, ETH and SOL from 04/2024 to 11/2026: the daily recalculated score was compared with the price change 30 and 90 days later. Result: from +${t.hot}, clearly weaker returns followed; trend (MA200) and options volatility were most predictive, Fear & Greed and RSI hardly at all. Extreme fear alone was <b>not</b> a reliable buy signal – the verdict and suggestions are aligned with this.`)}</p>
+      <p>${L(`Auf der Detailseite steht unter dem Score die <b>Trefferquote</b> für den jeweiligen Coin: Für ${p.score_stats_days} nachgerechnete Tage je Zone der Anteil der Fälle mit höherem Kurs nach 30 bzw. 90 Tagen und der Median der Änderung, verglichen mit allen Tagen. Die Zeiträume überlappen sich, und Open Interest und Long/Short fehlen in der Rückrechnung weitgehend – ein Indiz, keine Prognose.`,
+        `On the detail page the <b>hit rate</b> for each coin is shown below the score: for ${p.score_stats_days} recalculated days, per zone the share of cases with a higher price after 30 or 90 days and the median change, compared with all days. The periods overlap, and open interest and long/short are largely missing from the recalculation – an indication, not a forecast.`)}</p>`,
+    changes: `
+      <p>${L("Die Hauptversion steigt, wenn sich Score-Werte ändern (Signale, Skalen, Gewichte, Schwellen); die Nebenversion bei Ergänzungen ohne Auswirkung auf die Zahlen.", "The major version increases when score values change (signals, scales, weights, thresholds); the minor version for additions that do not affect the numbers.")}</p>
+      <ul class="changes">${m.changes.map((c) => `<li><span class="v">v${esc(c.version)}</span><span class="muted">${new Date(c.date).toLocaleDateString(LOCALE)}</span><br>${esc(c.text)}</li>`).join("")}</ul>`,
+  };
+  $("doc").innerHTML = SECTIONS.map(([id, title]) => `<section class="card" id="${id}"><h2>${esc(title)}</h2>${sec[id]}</section>`).join("");
+  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  trackToc();
+}
+
+// Inhaltsverzeichnis: aktueller Abschnitt beim Scrollen hervorgehoben
+function trackToc() {
+  const links = [...document.querySelectorAll("#toc a")];
+  const update = () => {
+    let cur = SECTIONS[0][0];
+    for (const [id] of SECTIONS) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top < 120) cur = id; }
+    links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + cur));
+  };
+  addEventListener("scroll", update, { passive: true });
+  update();
+}
+
+(async () => {
+  try {
+    const res = await fetch("api/methodology");
+    const m = await res.json();
+    if (!res.ok) throw new Error(m.error || "HTTP " + res.status);
+    render(m);
+  } catch (e) {
+    $("doc").innerHTML = `<section class="card status">${L("Methodik konnte nicht geladen werden", "Methodology could not be loaded")} (${esc(e.message)}). ${L("Läuft server.py?", "Is server.py running?")}</section>`;
+  }
+})();
+</script>
+</body>
+</html>

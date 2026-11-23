@@ -97,6 +97,7 @@
     <div>
       <h1>Märkte</h1>
       <div class="sub" id="updated">Top 1000 nach Marktkapitalisierung</div>
+      <div class="ds-line"><span class="ds" id="ds-markets"></span></div>
     </div>
   </header>
 
@@ -149,6 +150,7 @@
 </main>
 
 <script src="format.js"></script>
+<script src="datastatus.js"></script>
 <script src="tips.js"></script>
 <script src="watchlist.js"></script>
 <script>
@@ -290,6 +292,9 @@ function renderMarketBrief(coins, scope) {
 // Nur Symbole, die Detailseite und API verarbeiten können (Binance-/API-taugliche Zeichen)
 const linkable = (c) => /^[A-Z0-9]{1,15}$/.test(c.symbol);
 
+// Datenstatus: Abrufzeit beim Server (CoinGecko, 5 Min. gecacht)
+const marketStatus = (p) => setDataStatus("ds-markets", { src: "CoinGecko", kind: "poll", at: p.fetched_at || p.updated, every: 300 });
+
 function renderRows(coins) {
   $("rows").innerHTML = coins.map((c) => `
     <tr${linkable(c) ? ` data-symbol="${esc(c.symbol)}" data-id="${esc(c.id)}" title="${L("Detailseite für", "Open details for")} ${esc(c.name)}${L(" öffnen", "")}"` : ""}>
@@ -359,6 +364,7 @@ async function loadWatch() {
   if (token !== loadToken) return;
   watchRows = p.coins;
   renderRows(p.coins);
+  marketStatus(p);
   renderMarketBrief(p.coins, "Watchlist");
   const missing = watchList().length - p.coins.length;
   $("updated").textContent = `Watchlist · ${p.coins.length} ${L("Coins nach Marktkapitalisierung", "coins by market cap")}`
@@ -403,6 +409,7 @@ async function load() {
     const p = await res.json();
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     if (token !== loadToken || (!category && p.page !== page)) return;  // inzwischen andere Seite oder Suche
+    marketStatus(p);
     if (category) {
       renderRows(p.coins);
       renderMarketBrief(p.coins, L(`Sparte „${esc(categoryName || category)}“`, `Sector “${esc(categoryName || category)}”`));
@@ -469,6 +476,7 @@ async function runSearch() {
       $("search-info").textContent = "";
     } else {
       renderRows(p.coins);
+      marketStatus(p);
       $("search-info").textContent = `${p.coins.length}${p.coins.length === 25 ? "+" : ""} ${L("Treffer, nach Relevanz", "results, by relevance")}`;
     }
     $("updated").textContent = `${L("Suche in allen Coins auf CoinGecko", "Search across all coins on CoinGecko")} · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;

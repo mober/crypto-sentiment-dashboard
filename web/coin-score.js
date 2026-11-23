@@ -121,6 +121,7 @@ async function loadHistory() {
     }
     if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
     histData = p.days;
+    setDataStatus("ds-history", { src: L("Score je Tag (berechnet)", "Score per day (calculated)"), kind: "poll", at: p.fetched_at, every: 300 });
     trackRecord = p.track_record || null;
     renderTrack();
     histSeries.setData(histData.map((d) => ({ time: d.time, value: d.score })));

@@ -79,6 +79,7 @@
     <div>
       <h1 id="title">Coin-Profil</h1>
       <div class="sub" id="updated">Lade Daten …</div>
+      <div class="ds-line"><span class="ds" id="ds-profile"></span></div>
     </div>
     <nav class="actions">
       <a class="navlink" id="back" href="coin.html">← Details</a>
@@ -92,6 +93,7 @@
 </main>
 
 <script src="format.js"></script>
+<script src="datastatus.js"></script>
 <script src="tips.js"></script>
 <script>
 addStatic({
@@ -286,6 +288,7 @@ async function loadProfile() {
     document.title = `${p.name} – ${L("Profil", "Profile")}`;
     $("title").textContent = `${L("Über", "About")} ${p.name}`;
     setAboutCrumbs(p.name);
+    setDataStatus("ds-profile", { src: "CoinGecko", kind: "poll", at: p.fetched_at || p.updated, every: 86400 });
     $("updated").textContent = L("Profil-Stand: ", "Profile as of: ") + new Date(p.updated).toLocaleString(LOCALE);
     render();
   } catch (e) {

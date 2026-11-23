@@ -11,6 +11,7 @@ const NAV_PAGES = [
   { href: "sectors.html", files: ["sectors.html"], label: () => L("Sparten", "Sectors") },
   { href: "liquidations.html", files: ["liquidations.html"], label: () => L("Liquidationen", "Liquidations") },
   { href: "alerts.html", files: ["alerts.html"], label: () => L("Alarme", "Alerts") },
+  { href: "methodology.html", files: ["methodology.html"], label: () => L("Methodik", "Methodology") },
 ];
 
 function buildNav() {

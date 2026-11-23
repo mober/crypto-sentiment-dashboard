@@ -65,6 +65,7 @@ const TIPS = {
   turnover: "Handelsvolumen der letzten 24 h im Verhältnis zur Marktkapitalisierung (CoinGecko). Sehr hoher Umschlag zeigt hektischen Handel: im Aufwärtstrend Spekulationsrausch (+), im Abwärtstrend Panikverkäufe (−). Ersatz-Signal. Im Score: bis 5 % → 0, ab 50 % → ±100.",
   rsiHourly: "RSI über 14 Stunden statt Tage, berechnet aus den stündlichen Kursen der letzten 7 Tage (CoinGecko). Ersatz, wenn keine Binance-Tageskerzen verfügbar sind; reagiert schneller als der Tages-RSI. Im Score: 50 → 0, ab 70 → +100, bis 30 → −100.",
   rsi: "Relative Strength Index über 14 Tage (0–100): misst, wie stark die Kursgewinne die Verluste zuletzt überwogen haben. Im Score: 50 → 0, ab 70 überkauft → +100, bis 30 überverkauft → −100, linear dazwischen.",
+  ds: "Datenstatus: woher die Zahl kommt und wie frisch sie ist. live = laufende Verbindung (WebSocket), Meldungen kommen an · aktuell = Stand im üblichen Abruftakt · verzögert = der letzte Abruf ist überfällig (Quelle langsam oder kurz nicht erreichbar, es wird der letzte Stand gezeigt) · veraltet = deutlich überfällig oder Verbindung getrennt · nicht verfügbar = für diesen Coin bzw. gerade keine Daten. Tageswerte (z. B. Coin Metrics) gelten bis zum Folgetag als aktuell.",
 };
 const SIGNAL_TIPS = {
   "Fear & Greed": "fng", "Funding Rate": "funding", "Open Interest": "oiChange",
@@ -75,6 +76,7 @@ const SIGNAL_TIPS = {
 // Englische Fassung der Tooltips (gleiche Schlüssel wie TIPS); ersetzt die deutschen bei LANG = "en".
 // Schwellen hier wie oben mitpflegen.
 const TIPS_EN = {
+  ds: "Data status: where the number comes from and how fresh it is. live = open connection (WebSocket), messages are arriving · current = as of the usual polling interval · delayed = the last fetch is overdue (source slow or briefly unreachable, the last known value is shown) · stale = well overdue or disconnected · not available = no data for this coin or right now. Daily values (e.g. Coin Metrics) count as current until the following day.",
   fng: "Fear & Greed Index by alternative.me (0–100), based on volatility, volume, social media, BTC dominance and Google Trends. 0 = extreme fear, 100 = extreme greed. In the score: 50 → 0, from 80 → +100, down to 20 → −100, linear in between.",
   stablecoins: "Total market cap of all stablecoins (DefiLlama). Growing supply is seen as “dry powder” that can flow into crypto; shrinking supply as capital outflow. Not part of the score.",
   dominance: "Bitcoin's share of the total crypto market cap (CoinGecko). Above 55% points to a cautious, BTC-heavy phase; falling dominance to altcoins attracting capital. Not part of the score.",
