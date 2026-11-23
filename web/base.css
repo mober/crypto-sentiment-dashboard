@@ -72,6 +72,9 @@ button:disabled { opacity: .5; cursor: default; }
 .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 
 footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
+/* Textlinks ohne eigene Klasse: Akzentfarbe statt Browser-Blau (auf dunklem Grund kaum lesbar); in der Fußzeile gedämpft */
+a:not([class]) { color: var(--accent); }
+footer a:not([class]) { color: inherit; text-decoration: underline; }
 
 /* Tooltips (tips.js) */
 [data-tip] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--border);

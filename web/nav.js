@@ -6,7 +6,7 @@
 
 const NAV_PAGES = [
   { href: "./", files: ["", "index.html"], label: () => L("Dashboard", "Dashboard") },
-  // Detailseite und Profil eines Coins gehören zum Bereich „Märkte“ (section)
+  // Detailseite und Profil eines Coins (section) gehören zu dem Bereich, aus dem man kam (navOrigin), sonst zu „Märkte“
   { href: "markets.html", files: ["markets.html"], section: ["coin.html", "about.html"], label: () => L("Märkte", "Markets") },
   { href: "sectors.html", files: ["sectors.html"], label: () => L("Sparten", "Sectors") },
   { href: "liquidations.html", files: ["liquidations.html"], label: () => L("Liquidationen", "Liquidations") },
@@ -14,13 +14,27 @@ const NAV_PAGES = [
   { href: "methodology.html", files: ["methodology.html"], label: () => L("Methodik", "Methodology") },
 ];
 
+// Herkunft für Detailseiten: Von welchem Hauptbereich kam man (Dashboard, Märkte, …)? Jede Hauptseite merkt sich
+// in sessionStorage; Coin-Detailseite und Profil markieren dann diesen Bereich und beginnen die Breadcrumbs dort.
+const NAV_FILE = location.pathname.split("/").pop();
+(() => {
+  const own = NAV_PAGES.find((p) => p.files.includes(NAV_FILE));
+  if (own) { try { sessionStorage.setItem("navFrom", own.href); } catch (e) { /* ignorieren */ } }
+})();
+function navOrigin() {
+  let from = null;
+  try { from = sessionStorage.getItem("navFrom"); } catch (e) { /* ignorieren */ }
+  return NAV_PAGES.find((p) => p.href === from) || NAV_PAGES.find((p) => p.href === "markets.html");
+}
+
 function buildNav() {
   if (document.querySelector(".topbar")) return;
-  const file = location.pathname.split("/").pop();
+  const file = NAV_FILE;
+  const origin = NAV_PAGES.some((p) => (p.section || []).includes(file)) ? navOrigin() : null;
   const other = EN ? "de" : "en";
   const links = NAV_PAGES.map((p) => {
     // aria-current: "page" für genau diese Seite, "true" für eine Unterseite des Bereichs
-    const cur = p.files.includes(file) ? "page" : (p.section || []).includes(file) ? "true" : "";
+    const cur = p.files.includes(file) ? "page" : origin === p ? "true" : "";
     return `<a href="${p.href}"${cur ? ` class="on" aria-current="${cur}"` : ""}>${p.label()}</a>`;
   }).join("");
   const bar = document.createElement("nav");

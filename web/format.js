@@ -33,12 +33,18 @@ const usd = (v) => {
   if (v !== 0 && Math.abs(v) < 1) return "$" + v.toLocaleString(LOCALE, { maximumSignificantDigits: 4 });
   return "$" + v.toLocaleString(LOCALE, v < 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 });
 };
-// Große Beträge (Marktkap., Volumen, TVL) auf 6 signifikante Stellen mit Einheit, z. B. „$1,61238 Bio.“
+// Große Beträge (Marktkap., Volumen, TVL) auf 4 signifikante Stellen mit Einheit, z. B. „$1,612 Bio.“, „$44,01 Mrd.“
+// (früher 6 Stellen: Scheingenauigkeit). Name bleibt usd6, damit alle Seiten unverändert weiterlaufen.
 const usd6 = (v) => {
   if (v == null || v === 0) return dash;
-  const [div, unit] = v >= 1e12 ? [1e12, L(" Bio.", "T")] : v >= 1e9 ? [1e9, L(" Mrd.", "B")] : v >= 1e6 ? [1e6, L(" Mio.", "M")] : [1, ""];
-  return "$" + (v / div).toLocaleString(LOCALE, { minimumSignificantDigits: 6, maximumSignificantDigits: 6 }) + unit;
+  const [div, unit] = v >= 1e12 ? [1e12, L(" Bio.", "T")] : v >= 1e9 ? [1e9, L(" Mrd.", "B")] : v >= 1e6 ? [1e6, L(" Mio.", "M")]
+    : v >= 1e3 ? [1e3, L(" Tsd.", "K")] : [1, ""];
+  return "$" + (v / div).toLocaleString(LOCALE, div === 1 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: 4 }) + unit;
 };
+
+// Zone des Stimmungs-Scores, Grenzen wie VERDICT_WARM / VERDICT_HOT in sentiment.py
+const zoneName = (s) => (s <= -40 ? L("Extreme Angst", "Extreme fear") : s <= -15 ? L("Angst", "Fear")
+  : s < 15 ? "Neutral" : s < 40 ? L("Gier", "Greed") : L("Überhitzt", "Overheated"));
 
 // Fear & Greed (0–100): Zonen wie auf alternative.me / CNN; Farben von Rot (Angst) über Grau zu Grün (Gier)
 const FNG_ZONES = [

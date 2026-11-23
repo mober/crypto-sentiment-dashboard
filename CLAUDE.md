@@ -115,6 +115,17 @@ Stimmungs-Score je Coin berechnet. Nur Python-Standardbibliothek, kein Build-Sch
   Aktien/ETF/Rohstoff-Kontrakte nach Kennzeichnung der Börsen (`load_tradfi` in `liquidations.py`: Binance
   `underlyingType` ≠ COIN, Bybit `symbolType`, OKX `instCategory` ≠ 1), Paare (Börse, Coin), alle 6 h erneuert.
 - Marktübersicht ohne eigene Spaltenauswahl: `fitColumns` blendet `opt-wide`, dann `opt-mid` aus, bis die Tabelle passt.
+- Binance-Futures für billige Coins heißen `1000PEPEUSDT`, `1MBABYDOGEUSDT`, `1000000MOGUSDT`: alle Futures-Abfragen über
+  `futures_pair(symbol)` / `fpair` (`sentiment.py`, Zuordnung aus `exchangeInfo`, täglich); Kurse daraus durch den Faktor teilen
+  (OI-Kurs, Liquidations-Modell), USD-Werte, Funding und Long/Short unverändert. Nie mehr `f"{symbol}USDT"` für Futures.
+- Einheitliche Wörter: RSI über `rsi_zone`/`rsi_word` (gerundeter Wert, überverkauft < 30, überkauft > 70; Chart in
+  `coin-chart.js` gleich), MVRV über `mvrv_word` (Stufen auch in `coin-onchain.js`). Score-Verlauf: heutiger Punkt =
+  aktueller Score (`syncTodayScore` in `coin-score.js`).
+- Reiter der Detailseite im Hash als `#tab=<key>` (reines `#chart` ließe den Browser zu `div#chart` springen).
+  Detailseite/Profil gehören zum Bereich, aus dem man kam (`navOrigin` in `nav.js`, `sessionStorage.navFrom`).
+- Sparten: Änderung über ±30 % in 24 h (`JUMP`) gilt als Datensprung (Coin neu einsortiert), nicht in Skala/Kurzfassung.
+- Zahlen: `usd6` rundet auf 4 signifikante Stellen (Name aus Kompatibilität), Preisachsen ab 1.000 $ ohne Cent.
+  Datenstatus mit `quiet: true` zeigt bei live/aktuell nur Punkt und Quelle.
 - Filter der Marktübersicht (`markets.html`, Menü „Filter“, `localStorage.marketFilter`, Chips über der Tabelle): Sortierung
   (Gewinner/Verlierer 24 h/7 T, Volumen, Umschlag, Abstand MA200), Assetklassen, Mindest-Marktkap./-Volumen, Trend zu MA50/MA200,
   Stablecoins ausblenden, nur vollständiger Score, nur Watchlist, Liquiditätswarnungen ausblenden. Aktiver Filter → alle Top 1000

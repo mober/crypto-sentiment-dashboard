@@ -54,7 +54,7 @@ function renderNews() {
   el.hidden = !items.length;
   el.innerHTML = !items.length ? "" : `
     <div class="label news-head"><span${tipAttr("news")}>${newsData.general ? L(`Keine aktuellen Meldungen zu ${who} – neueste Krypto-News`, `No recent news on ${who} – latest crypto news`) : L(`News zu ${who}`, `News on ${who}`)}</span></div>
-    ${dataStatus({ src: L("RSS-Feeds", "RSS feeds"), kind: "poll", at: newsData.fetched_at || newsData.updated, every: NEWS_REFRESH_MS / 1000, small: true })}
+    ${dataStatus({ src: L("RSS-Feeds", "RSS feeds"), kind: "poll", at: newsData.fetched_at || newsData.updated, every: NEWS_REFRESH_MS / 1000, small: true, quiet: true })}
     <ul>${items.map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="${esc(i.teaser)}">${esc(i.title)}</a>`
       + `<span class="meta">${esc(i.source)} · ${ago(i.time)}</span></li>`).join("")}</ul>`;
 }
@@ -84,6 +84,11 @@ function renderHero(c) {
     fng ? `Fear &amp; Greed <b>${fng.value}</b> (${fngZone(fng.value).name})` : "",
   ].filter(Boolean).join(" · ");
   const coinName = c.data.name || symbol;
+  // Überschrift mit Namen, das Kürzel daneben (vorher nur „BTC“)
+  if (c.data.name && c.data.name.toUpperCase() !== symbol) {
+    $("title").innerHTML = `${esc(c.data.name)} <span class="title-sym">${esc(symbol)}</span>`;
+    document.title = `${c.data.name} (${symbol}) – ${L("Details", "Details")}`;
+  }
   setCoinCrumbs(coinName);
   $("title-star").innerHTML = watchStar({ id: coinId || c.data.coin_id, symbol, name: c.data.name });
   const aboutHref = "about.html?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : "");
@@ -101,7 +106,7 @@ function renderHero(c) {
     <div class="score-box">
       <div class="label">${L("Stimmungs-Score", "Sentiment score")}</div>
       <div class="score">${signed(c.score)}</div>
-      <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
+      <div class="verdict ${tone(c.score)}" title="${esc(c.verdict)}">${zoneName(c.score)}</div>
       <div class="track" id="score-track"></div>
     </div>
     ${lageBlock(c)}
@@ -115,16 +120,16 @@ function renderHero(c) {
   renderStats(c);
   renderBreakdown(c);
   renderTrack();   // Trefferquote, falls der Score-Verlauf schon geladen ist
+  if (typeof syncTodayScore === "function") syncTodayScore();
 }
 
 // Kurzfassung über den Reitern (in jedem Reiter sichtbar): Lage in einem Satz und Empfehlung aus dem Lagebild
 function renderCoinBrief(c) {
   const s = c.situation;
   if (!s) { renderBrief($("brief"), null); return; }
+  // knapp: Lage, Score und Empfehlung in einer Zeile; die Begründung steht im Lagebild der Übersicht
   renderBrief($("brief"), {
-    title: `${esc(s.title)} · Score ${signed(c.score)}` + whyTip("situation"),
-    text: esc(s.summary),
-    action: s.action ? `<b>${esc(s.action)}</b> – ${esc(s.action_text)}` : "",
+    title: `${esc(s.title)} · Score ${signed(c.score)}${s.action ? ` · ${L("Empfehlung", "Suggestion")}: ${esc(s.action)}` : ""}` + whyTip("situation"),
     tone: s.action_tone || "neutral",
   });
 }
@@ -141,9 +146,9 @@ function signalStatus(rawName) {
   const src = SIGNAL_SRC[rawName];
   if (!src) return "";
   const day = (t) => (t ? new Date(t * 1000).toISOString().slice(0, 10) : null);
-  if (rawName === "Fear & Greed") return dataStatus({ src, kind: "daily", day: day(scoreCoin && scoreCoin.fear_greed && scoreCoin.fear_greed.time), lag: 0, small: true });
-  if (rawName === "MVRV") return dataStatus({ src, kind: "daily", day: day(scoreCoin && scoreCoin.data.mvrv && scoreCoin.data.mvrv.time), lag: 1, small: true });
-  return dataStatus({ src, kind: "poll", at: scoreAt, every: 300, small: true });
+  if (rawName === "Fear & Greed") return dataStatus({ src, kind: "daily", day: day(scoreCoin && scoreCoin.fear_greed && scoreCoin.fear_greed.time), lag: 0, small: true, quiet: true });
+  if (rawName === "MVRV") return dataStatus({ src, kind: "daily", day: day(scoreCoin && scoreCoin.data.mvrv && scoreCoin.data.mvrv.time), lag: 1, small: true, quiet: true });
+  return dataStatus({ src, kind: "poll", at: scoreAt, every: 300, small: true, quiet: true });
 }
 
 function bdRow(name, reason, points, share, total = false, n = 1, weight = 1, rawName = "") {
@@ -337,7 +342,9 @@ function drawStats() {
   if (st) {
     const ch = st.change || {};
     tiles.push(statTile("changes", L("Kursänderung", "Price change"), "",
-      `<div class="changes"><span>24 h</span><span>${L("7 T", "7 d")}</span><span>${L("30 T", "30 d")}</span><span>${L("1 J", "1 y")}</span>${["24h", "7d", "30d", "1y"].map((k) => chgSpan(ch[k])).join("")}</div>`)
+      // je Zeile Zeitraum | Änderung (vier Spalten nebeneinander passten nicht in die Kachel)
+      `<div class="changes">${[["24h", "24 h"], ["7d", L("7 T", "7 d")], ["30d", L("30 T", "30 d")], ["1y", L("1 J", "1 y")]]
+        .map(([k, label]) => `<span>${label}</span>${chgSpan(ch[k])}`).join("")}</div>`)
       .replace('<div class="val"></div>', ""));
   }
   if (st && st.volume_24h != null) {

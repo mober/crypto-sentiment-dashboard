@@ -9,6 +9,7 @@
 //   daily – day = letzter Tageswert "YYYY-MM-DD" (UTC); lag = übliche Verzögerung in Tagen (Standard 1 = gestern)
 // at: Sekunden, Millisekunden oder ISO-Text. Fehlt at bzw. day (oder na: true) → nicht verfügbar.
 //
+// quiet: true zeigt bei live/aktuell nur Punkt und Quelle (für viele Marken auf engem Raum).
 // Verwendung: dataStatus({...}) liefert HTML, setDataStatus(el, {...}) setzt ein vorhandenes Element.
 // Alle .ds-Elemente werden jede Sekunde neu bewertet, das Alter läuft also mit.
 
@@ -82,7 +83,9 @@ function dsRender(el) {
   try { o = JSON.parse(el.dataset.ds || "{}"); } catch (e) { return; }
   const r = dsEval(o);
   el.className = "ds st-" + r.state + (o.small ? " small" : "");
-  el.innerHTML = `<i aria-hidden="true"></i>${esc(r.text)}`;
+  // quiet: solange alles in Ordnung ist, nur Punkt und Quelle (Details im Tooltip); auffällig erst bei Verzug
+  const text = o.quiet && (r.state === "ok" || r.state === "live") ? o.src || "" : r.text;
+  el.innerHTML = `<i aria-hidden="true"></i>${esc(text)}`;
   el.dataset.tip = "ds";
   el.dataset.tipNow = [L("Quelle: ", "Source: ") + (o.src || "–"), L("Status: ", "Status: ") + DS_STATES[r.state], r.tip].filter(Boolean).join("\n");
   el.tabIndex = 0;

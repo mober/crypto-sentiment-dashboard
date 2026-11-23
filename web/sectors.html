@@ -27,10 +27,12 @@
   .bar { position: absolute; top: 5px; height: 10px; }
   .bar.pos { left: 50%; border-radius: 0 4px 4px 0; background: var(--up); }
   .bar.neg { right: 50%; border-radius: 4px 0 0 4px; background: var(--down); }
-  .bar-val { text-align: right; font-weight: 700; font-size: 14px; }
+  .bar-val { text-align: right; font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .jump { color: var(--hot); cursor: help; }
   .bar-axis { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 76px; gap: 14px; color: var(--muted); font-size: 11px; padding-top: 4px; }
   .bar-axis .ticks { display: flex; justify-content: space-between; }
   .market-ref { color: var(--muted); font-size: 13px; padding: 0 20px 14px; }
+  section.card > .ds-line { margin: 0; padding: 0 20px 14px; }
   .market-ref b { color: var(--text); }
 
   /* DeFi-TVL */
@@ -216,7 +218,13 @@ const MAIN_EN = { "Interoperabilität": "Interoperability", "Speicher": "Storage
   "Infrastruktur": "Infrastructure", "Finanzen": "Finance", "Anwendungen": "Applications" };
 const trMain = (x) => (EN && MAIN_EN[x]) || x;
 const MAIN_INFO = new Map(MAIN.map(([id, name, group]) => [id, { name: trMain(name), group: trMain(group) }]));
-const NOT_IN_CHART = new Set(["stablecoins"]);  // Marktkap. folgt der Menge, nicht dem Kurs
+const NOT_IN_CHART = new Set(["stablecoins"]);
+// Mehr als ±30 % Marktkap. an einem Tag ist bei einer ganzen Sparte fast immer ein Datensprung (CoinGecko hat einen
+// großen Coin neu einsortiert), keine Kursbewegung: nicht in die Skala, nicht in die Kurzfassung, mit ⚠ markiert
+const JUMP = 0.3;
+const isJump = (c) => c.change_24h != null && Math.abs(c.change_24h) > JUMP;
+const JUMP_TIP = L("Wahrscheinlich ein Datensprung: CoinGecko hat einen großen Coin neu in diese Sparte aufgenommen oder entfernt. Die Veränderung der Marktkapitalisierung kommt dann nicht aus Kursbewegungen und ist für die Rotation nicht aussagekräftig.",
+  "Probably a data jump: CoinGecko added or removed a large coin in this sector. The change in market cap then does not come from price moves and says nothing about rotation.");  // Marktkap. folgt der Menge, nicht dem Kurs
 const MARKET_REF = "layer-1";                    // Bezugsgröße für „der Gesamtmarkt“ (enthält BTC und ETH)
 
 let cats = [];
@@ -242,35 +250,38 @@ function renderBars() {
     .sort((a, b) => b.change_24h - a.change_24h);
   if (!list.length) { $("bars").innerHTML = `<div class="status">${NO_DATA}</div>`; return; }
   // Skala symmetrisch auf die größte Bewegung, auf glatte Prozent gerundet
-  const maxAbs = Math.max(0.01, ...list.map((c) => Math.abs(c.change_24h)));
+  const maxAbs = Math.max(0.01, ...list.filter((c) => !isJump(c)).map((c) => Math.abs(c.change_24h)));
   const lim = Math.ceil(maxAbs * 100) / 100;
   $("bars").innerHTML = list.map((c) => {
-    const w = Math.abs(c.change_24h) / lim * 50;
+    const w = Math.min(50, Math.abs(c.change_24h) / lim * 50);   // Datensprung: am Rand abgeschnitten
     const info = MAIN_INFO.get(c.id);
     return `<a class="bar-row" href="${esc(categoryHref(c))}" data-tip="row" data-tip-now="${esc(rowTip(c))}">
         <div class="bar-name">${esc(info.name)}<span class="grp">${esc(info.group)}</span></div>
         <div class="bar-track" role="img" aria-label="${esc(info.name)}: ${pct(c.change_24h)}">
           <div class="bar ${c.change_24h >= 0 ? "pos" : "neg"}" style="width:${w}%"></div></div>
-        <div class="bar-val">${change(c.change_24h)}</div>
+        <div class="bar-val">${isJump(c) ? `<span class="jump" data-tip="row" data-tip-now="${esc(JUMP_TIP)}">⚠</span> ` : ""}${change(c.change_24h)}</div>
       </a>`;
   }).join("") + `<div class="bar-axis"><span></span><div class="ticks"><span>${pct(-lim, 0)}</span><span>0</span><span>${pct(lim, 0)}</span></div><span></span></div>`;
 
   // Einordnung: Sparten besser/schlechter als Layer 1 (≈ Gesamtmarkt, dominiert von BTC und ETH)
   const ref = cats.find((c) => c.id === MARKET_REF);
   if (ref && ref.change_24h != null) {
-    const better = list.filter((c) => c.id !== MARKET_REF && c.change_24h > ref.change_24h).length;
+    const better = list.filter((c) => c.id !== MARKET_REF && !isJump(c) && c.change_24h > ref.change_24h).length;
+    const jumps = list.filter(isJump).length;
     $("market-ref").innerHTML = EN
       ? `Reference: Layer 1 (contains BTC and ETH, ≈ overall market) ${change(ref.change_24h)} · `
-        + `<b>${better}</b> of ${list.length - 1} sectors do better, ${list.length - 1 - better} worse.`
+        + `<b>${better}</b> of ${list.length - 1 - jumps} sectors do better, ${list.length - 1 - jumps - better} worse.`
+        + (jumps ? ` ⚠ = probable data jump, not counted.` : "")
       : `Bezug: Layer 1 (enthält BTC und ETH, ≈ Gesamtmarkt) ${change(ref.change_24h)} · `
-        + `<b>${better}</b> von ${list.length - 1} Sparten laufen besser, ${list.length - 1 - better} schlechter.`;
+        + `<b>${better}</b> von ${list.length - 1 - jumps} Sparten laufen besser, ${list.length - 1 - jumps - better} schlechter.`
+        + (jumps ? ` ⚠ = wahrscheinlich Datensprung, nicht mitgezählt.` : "");
   }
 }
 
 // Kurzfassung oben: wohin fließt Kapital, gemessen an Layer 1 (≈ Gesamtmarkt)
 const SPECULATIVE = new Set(["meme-token", "ai-agents", "gaming", "socialfi", "metaverse", "non-fungible-tokens-nft"]);
 function renderSectorBrief() {
-  const list = cats.filter((c) => MAIN_INFO.has(c.id) && !NOT_IN_CHART.has(c.id) && c.change_24h != null && c.id !== MARKET_REF)
+  const list = cats.filter((c) => MAIN_INFO.has(c.id) && !NOT_IN_CHART.has(c.id) && c.change_24h != null && c.id !== MARKET_REF && !isJump(c))
     .sort((a, b) => b.change_24h - a.change_24h);
   const ref = cats.find((c) => c.id === MARKET_REF);
   if (list.length < 4 || !ref || ref.change_24h == null) { renderBrief($("brief"), null); return; }
@@ -320,7 +331,7 @@ function renderTable() {
       <td class="rank">${i + 1}</td>
       <td class="left"><span class="sname">${esc(displayName(c))}${main ? `<span class="orig">${esc(c.name)}</span>` : ""}</span></td>
       <td>${usd6(c.market_cap)}</td>
-      <td>${change(c.change_24h)}</td>
+      <td>${isJump(c) ? `<span class="jump" data-tip="row" data-tip-now="${esc(JUMP_TIP)}" tabindex="0">⚠</span> ` : ""}${change(c.change_24h)}</td>
       <td class="opt-mid">${usd6(c.volume_24h)}</td>
       <td class="opt-wide">${c.turnover != null ? pct(c.turnover).replace("+", "") : dash}</td>
       <td class="opt-mid tvl-cell">${c.tvl != null ? `${usd6(c.tvl)}<span class="sub7">${change(c.tvl_7d)}</span>` : dash}</td>

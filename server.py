@@ -333,7 +333,7 @@ NON_CRYPTO = {"stable", "fund", "gold", "wrapped"}
 MA_FAST, MA_SLOW = 50, sentiment.MA_PERIOD
 MA_PRICE_TOLERANCE = 0.15   # Binance-Kurs weicht mehr ab → anderes Projekt mit gleichem Kürzel, nicht verwenden
 SCREENER_MA_WORKERS = 8
-CLASSES_PAUSE = 15          # s zusätzlich zwischen den Kategorie-Abfragen (15 Stück, einmal am Tag, ~5 Min.)
+CLASSES_PAUSE = 30          # s zusätzlich zwischen den Kategorie-Abfragen (15 Stück, einmal am Tag, ~9 Min.; lässt Platz für die Seiten)
 _screener_cache = TTLCache("screener", CACHE_SECONDS, max_entries=1, stale=True)
 _classes_cache = TTLCache("asset-classes", 24 * 3600, max_entries=1, stale=True)
 _ma_cache = TTLCache("screener-ma", 3600, max_entries=1, stale=True)
@@ -397,7 +397,7 @@ def load_screener_ma(symbols: List[str]) -> Callable[[Any], Any]:
             last = closes[-1]
             dist = lambda n: (last / (sum(closes[-n:]) / n) - 1) if len(closes) >= n else None
             return sym, {"close": last, "days": len(closes), "ma50": dist(MA_FAST), "ma200": dist(MA_SLOW),
-                         "futures": pair in fut}
+                         "futures": pair in fut or sentiment.fpair(sym) in fut}   # auch 1000PEPE usw.
 
         with ThreadPoolExecutor(max_workers=SCREENER_MA_WORKERS) as pool:
             got = [r for r in pool.map(one, symbols) if r]

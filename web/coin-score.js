@@ -68,6 +68,20 @@ function renderHistDetail(time) {
     `<span class="${scoreTone(x.points)}">${esc(SHORT_NAMES[x.name] || x.name)} <b>${signed(x.points)}</b></span>`).join("");
 }
 
+// Heute im Verlauf = aktueller Score aus dem Kopf (sonst zwei Werte für heute: der Verlauf rechnet mit Tageswerten,
+// z. B. Open Interest von 00:00 UTC). Läuft nach dem Laden von Verlauf und Kopf, egal was zuerst fertig ist.
+function syncTodayScore() {
+  if (!histData.length || !scoreCoin || !histSeries) return;
+  const last = histData[histData.length - 1];
+  const today = Math.floor(Date.now() / 86400000) * 86400;
+  if (last.time !== today) return;
+  last.score = scoreCoin.score;
+  last.signals = scoreCoin.signals.map((x) => ({ name: x.name, points: x.points }));
+  histSeries.update({ time: last.time, value: last.score });
+  histSeries.setMarkers(histMarkers());
+  renderHistDetail(null);
+}
+
 // Markierung, wo Signale dazukommen oder wegfallen (z. B. OI und L/S nur 30 Tage)
 function histMarkers() {
   const markers = [];
@@ -129,6 +143,7 @@ async function loadHistory() {
     histPrice.setData(histData.filter((d) => d.price != null).map((d) => ({ time: d.time, value: d.price })));
     histChart.timeScale().fitContent();
     renderHistDetail(null);
+    syncTodayScore();
     $("hist-msg").hidden = true;
   } catch (e) {
     $("hist-msg").textContent = L(`Score-Verlauf nicht verfügbar (${e.message}).`, `Score history not available (${e.message}).`);

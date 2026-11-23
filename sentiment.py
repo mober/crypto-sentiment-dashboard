@@ -93,8 +93,15 @@ SCORE_HISTORY_DAYS = 365  # rückwirkend berechneter Score-Verlauf auf der Detai
 # Versionsnummer und Änderungsprotokoll der Score-Methodik (Seite „Methodik & Datenquellen“, /api/methodology).
 # Bei jeder Änderung an Signalen, Skalen, Gewichten, Schwellen oder an der Einordnung: Version erhöhen und
 # Eintrag oben ergänzen. Hauptversion = Score-Werte ändern sich; Nebenversion = Ergänzung ohne Bruch.
-METHODOLOGY_VERSION = "3.0"
+METHODOLOGY_VERSION = "3.1"
 METHODOLOGY_CHANGES = [
+    {"version": "3.1", "date": "2026-11-23",
+     "de": "Futures-Signale jetzt auch für Coins, die Binance als Vielfache führt (1000PEPE, 1000SHIB, 1000BONK, 1MBABYDOGE …) – "
+           "deren Score war bisher unvollständig. RSI-Begriffe am angezeigten Wert (überverkauft unter 30, überkauft über 70), "
+           "einheitliche MVRV-Stufen, Score-Verlauf zeigt für heute den aktuellen Score.",
+     "en": "Futures signals now also for coins Binance lists as multiples (1000PEPE, 1000SHIB, 1000BONK, 1MBABYDOGE …) – "
+           "their score was incomplete before. RSI wording based on the displayed value (oversold below 30, overbought above 70), "
+           "consistent MVRV levels, the score history shows the current score for today."},
     {"version": "3.0", "date": "2026-11-23",
      "de": "Umbenannt in „Stimmungs-Score“ (−100 Angst … +100 Gier/Überhitzung). Open Interest aus 4-h-Werten statt "
            "Tageswerten (frischer, gleich wie im Derivate-Tab) – dadurch leicht andere Score-Werte. RSI-Begriffe einheitlich: "
@@ -214,6 +221,40 @@ def get_fear_greed() -> Dict[str, Any]:
     }
 
 
+# Binance führt sehr billige Coins als Vielfache: 1000PEPEUSDT (Kurs × 1000), 1MBABYDOGEUSDT, 1000000MOGUSDT.
+# futures_pair liefert das Kontrakt-Kürzel und den Faktor; Kurse daraus durch den Faktor teilen.
+# USD-Werte (Open Interest), Funding und Long/Short brauchen keine Umrechnung.
+FUTURES_PREFIX = re.compile(r"^(1000000|1000|1M)(?=[A-Z])")
+FUTURES_MAP_SECONDS = 24 * 3600
+_futures_map: Dict[str, Tuple[str, float]] = {}
+_futures_map_at = 0.0
+_futures_map_lock = threading.Lock()
+
+
+def futures_pair(symbol: str) -> Tuple[str, float]:
+    global _futures_map, _futures_map_at
+    with _futures_map_lock:
+        if time.time() - _futures_map_at > (FUTURES_MAP_SECONDS if _futures_map else 300):
+            _futures_map_at = time.time()
+            info = safe(fetch_json, "https://fapi.binance.com/fapi/v1/exchangeInfo")
+            if info:
+                m: Dict[str, Tuple[str, float]] = {}
+                coins = [x for x in info.get("symbols", []) if x.get("contractType") == "PERPETUAL"
+                         and x.get("quoteAsset") == "USDT" and x.get("underlyingType") == "COIN"]
+                for x in coins:
+                    hit = FUTURES_PREFIX.match(x["baseAsset"])
+                    if hit:
+                        m.setdefault(x["baseAsset"][hit.end():], (x["symbol"], 1e3 if hit.group(1) == "1000" else 1e6))
+                for x in coins:   # exakter Treffer hat Vorrang
+                    m[x["baseAsset"]] = (x["symbol"], 1.0)
+                _futures_map = m
+        return _futures_map.get(symbol, (symbol + "USDT", 1.0))
+
+
+def fpair(symbol: str) -> str:
+    return futures_pair(symbol)[0]
+
+
 def futures_data(url: str, symbol: str) -> List[Dict[str, Any]]:
     """Abfrage bei Binance Futures; leere Antwort = kein USDT-Perpetual für diesen Coin."""
     data = fetch_json(url)
@@ -252,7 +293,7 @@ def funding_avg_7d(funding: List[Dict[str, Any]], until: float) -> Optional[floa
 def get_funding(symbol: str) -> Dict[str, Any]:
     # 200 Zahlungen reichen auch bei 1-h-Takt für 7 Tage
     funding = normalize_funding(futures_data(
-        f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=200", symbol
+        f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={fpair(symbol)}&limit=200", symbol
     ))
     last = funding[-1]
     values = [f["rate_8h"] for f in funding if f["time"] > last["time"] - 7 * 86400]
@@ -264,7 +305,7 @@ def get_open_interest(symbol: str) -> Dict[str, Any]:
     # statt Tageswerten, die bis zu 24 h alt sein können
     hist = futures_data(
         "https://fapi.binance.com/futures/data/openInterestHist"
-        f"?symbol={symbol}USDT&period=4h&limit=43", symbol
+        f"?symbol={fpair(symbol)}&period=4h&limit=43", symbol
     )
     first = float(hist[0]["sumOpenInterestValue"])
     last = float(hist[-1]["sumOpenInterestValue"])
@@ -274,7 +315,7 @@ def get_open_interest(symbol: str) -> Dict[str, Any]:
 def get_long_short(symbol: str) -> Dict[str, Any]:
     data = futures_data(
         "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
-        f"?symbol={symbol}USDT&period=1d&limit=1", symbol
+        f"?symbol={fpair(symbol)}&period=1d&limit=1", symbol
     )
     return {"ratio": float(data[-1]["longShortRatio"])}
 
@@ -282,7 +323,7 @@ def get_long_short(symbol: str) -> Dict[str, Any]:
 def get_funding_history(symbol: str, days: int = FUNDING_HISTORY_DAYS) -> List[Dict[str, Any]]:
     """Funding-Zahlungen der letzten `days` Tage (Binance liefert max. 1000 je Abfrage,
     ältere werden mit endTime nachgeladen, höchstens 4 Abfragen)."""
-    url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}USDT&limit=1000"
+    url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={fpair(symbol)}&limit=1000"
     rates = futures_data(url, symbol)
     cutoff = rates[-1]["fundingTime"] - days * 86400 * 1000
     for _ in range(3):
@@ -302,12 +343,13 @@ def get_open_interest_history(symbol: str) -> List[Dict[str, Any]]:
     Der Kurs ergibt sich aus Wert / Anzahl Kontrakte, ohne zusätzliche Abfrage."""
     hist = futures_data(
         "https://fapi.binance.com/futures/data/openInterestHist"
-        f"?symbol={symbol}USDT&period=4h&limit=500", symbol
+        f"?symbol={fpair(symbol)}&period=4h&limit=500", symbol
     )
+    mult = futures_pair(symbol)[1]   # 1000PEPE: Menge in 1000er-Einheiten
     out = []
     for h in hist:
         value, amount = float(h["sumOpenInterestValue"]), float(h["sumOpenInterest"])
-        out.append({"time": h["timestamp"] // 1000, "usd": value, "price": value / amount if amount else None})
+        out.append({"time": h["timestamp"] // 1000, "usd": value, "price": value / (amount * mult) if amount else None})
     return out
 
 
@@ -318,8 +360,10 @@ def get_binance_klines(symbol: str, interval: str, limit: int) -> Tuple[List[lis
                 f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval={interval}&limit={limit}")
     if spot and len(spot) >= limit:
         return spot, "Binance Spot"
+    pair, mult = futures_pair(symbol)
+    # Vielfache (1000PEPE) haben fast immer ein Spot-Paar; deren Futures-Kurse nicht ins Chart mischen
     futures = safe(fetch_json,
-                   f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}USDT&interval={interval}&limit={limit}")
+                   f"https://fapi.binance.com/fapi/v1/klines?symbol={pair}&interval={interval}&limit={limit}") if mult == 1 else None
     if futures and len(futures) > len(spot or []):
         return futures, "Binance Futures"
     if spot:
@@ -1330,16 +1374,36 @@ def _l(lang: str):
     return (lambda de, en: en) if lang == "en" else (lambda de, en: de)
 
 
-def rsi_word(v: float, L: Any, prefix: str = "") -> str:
-    # Einheitliche RSI-Wörter (wie im Lagebild): überverkauft/überkauft erst ab 30/70, bis 40/60 „nahe am …“
+def mvrv_word(v: float, L: Any) -> str:
+    # Einheitliche MVRV-Stufen (auch in coin-onchain.js, MVRV_ZONES): 1 = Einstand, 3,5 = frühere BTC-Hochs
+    if v < 1:
+        return L("Halter im Schnitt im Verlust", "holders at a loss on average")
+    if v < 1.6:
+        return L("Halter leicht im Gewinn, nahe am Einstand", "holders slightly in profit, near cost basis")
+    if v < 2.5:
+        return L("Halter moderat im Gewinn", "holders moderately in profit")
+    if v < 3.5:
+        return L("Halter deutlich im Gewinn", "holders well in profit")
+    return L("Halter weit im Gewinn", "holders deep in profit")
+
+
+def rsi_zone(v: float) -> str:
+    # Einheitlich für Score, Lagebild und Chart: am angezeigten (gerundeten) Wert, überverkauft erst unter 30,
+    # überkauft erst über 70; bis 40 bzw. ab 60 „nahe am …“
+    r = round(v)
     low, high = RSI_SCALE[0][0], RSI_SCALE[-1][0]
-    if v <= low:
+    return "sold" if r < low else "bought" if r > high else "weak" if r <= 40 else "strong" if r >= 60 else "neutral"
+
+
+def rsi_word(v: float, L: Any, prefix: str = "") -> str:
+    z = rsi_zone(v)
+    if z == "sold":
         return prefix + L("überverkauft", "oversold")
-    if v >= high:
+    if z == "bought":
         return prefix + L("überkauft", "overbought")
-    if v <= 40:
+    if z == "weak":
         return L("schwach, nahe am überverkauften Bereich", "weak, close to oversold")
-    if v >= 60:
+    if z == "strong":
         return L("stark, nahe am überkauften Bereich", "strong, close to overbought")
     return "neutral"
 
@@ -1420,10 +1484,8 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     mv = d.get("mvrv")
     if mv:
         v = mv["value"]
-        add("MVRV", scale(v, MVRV_SCALE), num(v, 2),
-            L("Halter weit im Gewinn", "holders deep in profit") if v >= 3 else L("Halter deutlich im Gewinn", "holders well in profit"),
-            L("Halter im Schnitt im Verlust", "holders at a loss on average") if v < 1
-            else L("nahe am Einstand der Halter", "near holders' cost basis"), "normal")
+        w = mvrv_word(v, L)
+        add("MVRV", scale(v, MVRV_SCALE), num(v, 2), w, w, w)
 
     ls = d.get("long_short")
     if ls:
@@ -1650,15 +1712,15 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int, lang
                   "Price far above the MA200: strongly extended, prone to pullbacks"),
                 L("stark gestreckt", "strongly extended")))
     if rs:
-        low, high = RSI_SCALE[0][0], RSI_SCALE[-1][0]   # 30 / 70: erst dort gilt der RSI als überverkauft / überkauft
         r0 = num(rs["value"], 0)
-        sold = L("überverkauft", "oversold") if rs["value"] <= low else L("schwach, nahe am überverkauften Bereich", "weak, close to oversold")
-        bought = L("überkauft", "overbought") if rs["value"] >= high else L("stark, nahe am überkauften Bereich", "strong, close to overbought")
+        zone = rsi_zone(rs["value"])
+        sold = L("überverkauft", "oversold") if zone == "sold" else L("schwach, nahe am überverkauften Bereich", "weak, close to oversold")
+        bought = L("überkauft", "overbought") if zone == "bought" else L("stark, nahe am überkauften Bereich", "strong, close to overbought")
         strong("RSI (14)",
                (L(f"RSI {r0}: {sold}, Gegenbewegungen sind häufig", f"RSI {r0}: {sold}, rebounds are common"),
-                L("überverkauft", "oversold") if rs["value"] <= low else L("RSI schwach", "RSI weak")),
+                L("überverkauft", "oversold") if zone == "sold" else L("RSI schwach", "RSI weak")),
                (L(f"RSI {r0}: {bought}, Rücksetzer sind häufig", f"RSI {r0}: {bought}, pullbacks are common"),
-                L("überkauft", "overbought") if rs["value"] >= high else L("RSI stark", "RSI strong")))
+                L("überkauft", "overbought") if zone == "bought" else L("RSI stark", "RSI strong")))
     if mo.get("rsi_hourly") is not None:
         rh = num(mo["rsi_hourly"], 0)
         strong("RSI (14 Std.)",
@@ -1674,14 +1736,14 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int, lang
                (L(f"MVRV {mvs}: Halter im Schnitt im Verlust – bei Bitcoin lagen frühere Tiefs hier",
                   f"MVRV {mvs}: holders at a loss on average – earlier Bitcoin lows were here"),
                 L("Halter im Verlust", "holders at a loss"))
-               if v < 1 else (L(f"MVRV {mvs}: Kurs nahe am durchschnittlichen Einstand der Halter, "
+               if v < 1 else (L(f"MVRV {mvs}: Halter leicht im Gewinn, Kurs nahe am durchschnittlichen Einstand – "
                                 "historisch eine eher günstige Zone",
-                                f"MVRV {mvs}: price near holders' average cost basis, historically a rather cheap zone"),
+                                f"MVRV {mvs}: holders slightly in profit, price near their average cost basis – historically a rather cheap zone"),
                               L("nahe am Einstand", "near cost basis")),
                (L(f"MVRV {mvs}: Halter weit im Gewinn – bei Bitcoin lagen frühere Hochs hier",
                   f"MVRV {mvs}: holders deep in profit – earlier Bitcoin tops were here"),
                 L("Halter weit im Gewinn", "holders deep in profit"))
-               if v >= 3 else (L(f"MVRV {mvs}: Halter deutlich im Gewinn, Gewinnmitnahmen werden wahrscheinlicher",
+               if v >= 3.5 else (L(f"MVRV {mvs}: Halter deutlich im Gewinn, Gewinnmitnahmen werden wahrscheinlicher",
                                  f"MVRV {mvs}: holders well in profit, profit taking becomes more likely"),
                                L("Halter deutlich im Gewinn", "holders well in profit")))
     if fr:
@@ -1819,15 +1881,16 @@ def get_liquidation_inputs(symbol: str) -> Dict[str, Any]:
 
     Beides von Binance Futures (Perpetual), damit Kurs und OI zum selben Markt gehören."""
     klines = futures_data(
-        f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}USDT&interval=1h&limit={LIQ_MODEL_HOURS}", symbol
+        f"https://fapi.binance.com/fapi/v1/klines?symbol={fpair(symbol)}&interval=1h&limit={LIQ_MODEL_HOURS}", symbol
     )
+    mult = futures_pair(symbol)[1]
     oi = futures_data(
         "https://fapi.binance.com/futures/data/openInterestHist"
-        f"?symbol={symbol}USDT&period=1h&limit={LIQ_MODEL_HOURS}", symbol
+        f"?symbol={fpair(symbol)}&period=1h&limit={LIQ_MODEL_HOURS}", symbol
     )
     return {
-        "candles": [{"time": k[0] // 1000, "open": float(k[1]), "high": float(k[2]),
-                     "low": float(k[3]), "close": float(k[4])} for k in klines],
+        "candles": [{"time": k[0] // 1000, "open": float(k[1]) / mult, "high": float(k[2]) / mult,
+                     "low": float(k[3]) / mult, "close": float(k[4]) / mult} for k in klines],
         # Zeitstempel = Stand zu Beginn der Stunde → der Kerze zuordnen, die dort beginnt
         "open_interest": [{"time": h["timestamp"] // 1000, "usd": float(h["sumOpenInterestValue"])} for h in oi],
     }
@@ -1863,8 +1926,8 @@ def get_score_history(symbol: str, days: int = SCORE_HISTORY_DAYS) -> Optional[D
         "fng": (fetch_json, f"https://api.alternative.me/fng/?limit={days + 2}"),
         "klines": (get_binance_klines, symbol, "1d", 1000),
         "funding": (get_funding_history, symbol, days + 8),
-        "oi": (futures_data, f"{fut}/openInterestHist?symbol={symbol}USDT&period=1d&limit=30", symbol),
-        "ls": (futures_data, f"{fut}/globalLongShortAccountRatio?symbol={symbol}USDT&period=1d&limit=30", symbol),
+        "oi": (futures_data, f"{fut}/openInterestHist?symbol={fpair(symbol)}&period=1d&limit=30", symbol),
+        "ls": (futures_data, f"{fut}/globalLongShortAccountRatio?symbol={fpair(symbol)}&period=1d&limit=30", symbol),
     }
     if symbol in DVOL_SYMBOLS:
         jobs["dvol"] = (get_dvol_history, symbol, days)

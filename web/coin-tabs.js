@@ -2,7 +2,7 @@
 // Jeder Reiter ist ein <div class="tab-panel" data-tab="…"> in coin.html. Inaktive Reiter sind nur unsichtbar
 // (CSS in coin.css), nicht display:none: so behalten Charts und Canvas ihre Breite, fitContent und Zeitbereiche
 // stimmen beim Umschalten, und alle Abschnitte laden wie bisher gleich beim Öffnen der Seite.
-// Gewählter Reiter steht im Hash (#derivs), damit Neuladen und geteilte Links ihn behalten;
+// Gewählter Reiter steht im Hash (#tab=derivs), damit Neuladen und geteilte Links ihn behalten;
 // ein Hash mit der ID eines Abschnitts (#book) öffnet dessen Reiter und springt hin.
 
 const TABS = [
@@ -19,7 +19,8 @@ let crumbCoinName = "";
 
 function setCoinCrumbs(name) {
   if (name) crumbCoinName = name;
-  const items = [{ label: L("Märkte", "Markets"), href: "markets.html" }];
+  const o = navOrigin();
+  const items = [{ label: o.label(), href: o.href }];
   if (validSymbol) {
     items.push({ label: crumbCoinName || symbol, href: "coin.html" + location.search });
     items.push({ label: TABS.find((t) => t.key === activeTab).label });
@@ -37,7 +38,10 @@ function showTab(key, { focus = false, updateHash = true } = {}) {
     if (on && focus) btn.focus();
   }
   for (const panel of document.querySelectorAll(".tab-panel")) panel.classList.toggle("on", panel.dataset.tab === key);
-  if (updateHash) history.replaceState(null, "", key === "overview" ? location.pathname + location.search : "#" + key);
+  // Reiter an <main>: Kurzfassung über der Übersicht ausblenden (doppelt zum Lagebild), Fußzeile je Reiter (coin.css)
+  document.querySelector("main").dataset.tab = key;
+  // „#tab=…“ statt „#…“: sonst springt der Browser zu Elementen mit derselben ID (div#chart, section#derivs)
+  if (updateHash) history.replaceState(null, "", key === "overview" ? location.pathname + location.search : "#tab=" + key);
   setCoinCrumbs();
 }
 
@@ -77,7 +81,15 @@ function initTabs() {
   });
 
   const fromHash = () => {
-    const h = decodeURIComponent(location.hash.slice(1));
+    const raw = decodeURIComponent(location.hash.slice(1));
+    if (raw.startsWith("tab=")) { showTab(raw.slice(4), { updateHash: false }); return; }
+    const h = raw;
+    // alte Links „#derivs“: Reiter öffnen, aber nicht zum gleichnamigen Element springen
+    if (TABS.some((t) => t.key === h)) {
+      showTab(h);
+      requestAnimationFrame(() => scrollTo(0, 0));
+      return;
+    }
     const section = h && document.getElementById(h);
     const panel = section && section.closest(".tab-panel");
     if (panel && section.tagName === "SECTION") {

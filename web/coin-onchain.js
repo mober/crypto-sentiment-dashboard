@@ -28,7 +28,8 @@ function initOnchainCharts() {
     ch.applyOptions({ leftPriceScale: { visible: true, borderColor: css("--border") } });
     const main = ch.addAreaSeries(series);
     const price = ch.addLineSeries({ priceScaleId: "left", color: c.muted, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
-      priceLineVisible: false, crosshairMarkerVisible: false, title: L("Kurs", "Price"),
+      // Kurs nur als Linie, ohne Label an der Achse (überdeckte sonst die Achsenzahlen; der Wert steht in der Legende)
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: { type: "custom", formatter: (v) => usd(v), minMove: 1e-10 },
       priceFormat: { type: "custom", formatter: (v) => usd(v), minMove: 1e-8 } });
     return [ch, main, price];
   };
@@ -99,10 +100,12 @@ function renderOcStats() {
   }
   if (last.mvrv != null) {
     const m = last.mvrv;
+    // Stufen wie mvrv_word in sentiment.py (gleiche Wörter wie in der Score-Zusammensetzung)
     const zone = m < 1 ? ["cold", L("Halter im Schnitt im Verlust – bei BTC lagen frühere Tiefs hier", "holders at a loss on average – earlier BTC lows were here")]
-      : m < 2.5 ? ["", L("Halter im Schnitt moderat im Gewinn", "holders moderately in profit on average")]
-      : m < 3.5 ? ["hot", L("erhöht – Halter deutlich im Gewinn", "elevated – holders well in profit")]
-      : ["hot", L("sehr hoch – bei BTC lagen frühere Hochs hier", "very high – earlier BTC tops were here")];
+      : m < 1.6 ? ["", L("Halter leicht im Gewinn, nahe am Einstand", "holders slightly in profit, near cost basis")]
+      : m < 2.5 ? ["", L("Halter moderat im Gewinn", "holders moderately in profit")]
+      : m < 3.5 ? ["hot", L("Halter deutlich im Gewinn", "holders well in profit")]
+      : ["hot", L("Halter weit im Gewinn – bei BTC lagen frühere Hochs hier", "holders deep in profit – earlier BTC tops were here")];
     const m365 = ocData.days.slice(-365).map((d) => d.mvrv).filter((v) => v != null);
     tiles.push(statTile("ocMvrv", "MVRV", `<span class="${zone[0] === "cold" ? "up" : zone[0] === "hot" ? "down" : ""}">${ocNum(m)}</span>`,
       `<div class="det">${zone[1]} · ${L("1 J", "1 y")}: ${ocNum(Math.min(...m365))} – ${ocNum(Math.max(...m365))}</div>`));

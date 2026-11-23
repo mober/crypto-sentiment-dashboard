@@ -55,9 +55,10 @@
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
 
-  /* Passt die Tabelle nicht in den Bereich, blendet fitColumns erst opt-wide, dann opt-mid aus
+  /* Passt die Tabelle nicht in den Bereich, blendet fitColumns Spalten einzeln nach FIT_ORDER aus
      (nur ohne eigene Spaltenauswahl); gemessen wird die echte Breite, nicht die Bildschirmbreite */
-  #mtable.fit-wide .opt-wide, #mtable.fit-mid .opt-mid { display: none; }
+  #mtable:not(.cards) td.left .name { white-space: normal; }
+  #mtable:not(.cards) td.left { white-space: normal; min-width: 160px; }
 
   /* Ansicht (Tabelle/Karten) und Spaltenauswahl */
   .view-tools { display: flex; gap: 8px; align-items: center; margin-left: auto; }
@@ -202,7 +203,8 @@ const REFRESH_MS = 5 * 60 * 1000;
 // $, esc, dash, usd6 und change kommen aus format.js
 const price = (v) => {
   if (v == null) return dash;
-  const opts = v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumSignificantDigits: 4 };
+  // unter 1 $ immer 4 signifikante Stellen, auch bei 0,99995 („$1,000“ statt „$1“)
+  const opts = v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { minimumSignificantDigits: 4, maximumSignificantDigits: 4 };
   return "$" + v.toLocaleString(LOCALE, opts);
 };
 
@@ -264,13 +266,21 @@ const narrow = matchMedia("(max-width: 640px)");
 const isCards = () => (savedView || (narrow.matches ? "cards" : "table")) === "cards";
 const colStyle = document.head.appendChild(document.createElement("style"));
 
-// Ohne eigene Spaltenauswahl: so viele Spalten zeigen, wie in den Bereich passen (kein seitliches Scrollen)
+// Ohne eigene Spaltenauswahl: so viele Spalten zeigen, wie in den Bereich passen (kein seitliches Scrollen).
+// Ausgeblendet wird eine Spalte nach der anderen, die unwichtigste zuerst.
+const FIT_ORDER = ["vol", "1y", "30d", "1h", "7d", "mcap"];
+const fitStyle = document.head.appendChild(document.createElement("style"));
+let fitHidden = [];
 function fitColumns() {
   const t = $("mtable"), wrap = t.parentElement;
-  t.classList.remove("fit-wide", "fit-mid");
+  fitHidden = [];
+  fitStyle.textContent = "";
   if (t.classList.contains("cards") || t.classList.contains("custom")) return;
-  if (t.scrollWidth > wrap.clientWidth + 1) t.classList.add("fit-wide");
-  if (t.scrollWidth > wrap.clientWidth + 1) t.classList.add("fit-mid");
+  for (const k of FIT_ORDER) {
+    if (t.scrollWidth <= wrap.clientWidth + 1) break;
+    fitHidden.push(k);
+    fitStyle.textContent = fitHidden.map((x) => `#mtable .col-${x} { display: none; }`).join("\n");
+  }
 }
 let fitTimer = null;
 new ResizeObserver(() => { clearTimeout(fitTimer); fitTimer = setTimeout(() => { fitColumns(); }, 100); }).observe(document.querySelector(".table-wrap"));
@@ -280,12 +290,11 @@ function applyView() {
   const vis = savedCols || (cards ? CARD_DEFAULT : null);
   $("mtable").classList.toggle("cards", cards);
   $("mtable").classList.toggle("custom", !!vis);
-  fitColumns();
   colStyle.textContent = MCOLS.filter((k) => (vis ? !vis.includes(k.key) : k.off)).map((k) => `#mtable .col-${k.key} { display: none; }`).join("\n");
+  fitColumns();
   if (MCOLS.some((k) => k.key.startsWith("ma") && (vis ? vis.includes(k.key) : !k.off))) ensureScreener();
   document.querySelectorAll("#view-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === (cards ? "cards" : "table"))));
-  const t = $("mtable");
-  const shown = (k) => (vis ? vis.includes(k.key) : !k.off && !(k.cls === "opt-wide" && t.classList.contains("fit-wide")) && !(k.cls === "opt-mid" && t.classList.contains("fit-mid")));
+  const shown = (k) => (vis ? vis.includes(k.key) : !k.off && !fitHidden.includes(k.key));
   $("col-pop").innerHTML = MCOLS.map((k) => `<label><input type="checkbox" value="${k.key}"${shown(k) ? " checked" : ""}>${esc(k.label)}</label>`).join("")
     + `<button type="button" class="reset">${L("Standard", "Default")}</button>`;
 }
@@ -679,7 +688,7 @@ async function load() {
     maxPage = p.max_page;
     renderPager();
     renderRows(p.coins);
-    renderMarketBrief(p.coins, page === 1 ? L("Top 100", "Top 100") : L(`Platz ${(page - 1) * p.per_page + 1}–${(page - 1) * p.per_page + p.coins.length}`, `Rank ${(page - 1) * p.per_page + 1}–${(page - 1) * p.per_page + p.coins.length}`));
+    renderMarketBrief(p.coins, page === 1 ? `Top ${p.coins.length}` : L(`Platz ${(page - 1) * p.per_page + 1}–${(page - 1) * p.per_page + p.coins.length}`, `Rank ${(page - 1) * p.per_page + 1}–${(page - 1) * p.per_page + p.coins.length}`));
     const from = (page - 1) * p.per_page + 1;
     $("updated").textContent = `Top ${p.max_page * p.per_page} ${L("nach Marktkapitalisierung · Platz", "by market cap · rank")} ${from}–${from + p.coins.length - 1} · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
   } catch (e) {

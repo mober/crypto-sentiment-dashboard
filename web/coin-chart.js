@@ -268,7 +268,8 @@ function initChart() {
   });
   rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
   rsiLines = RSI_LEVELS.map((level) => rsiSeries.createPriceLine({
-    price: level, color: t.rsiLevel[level], lineWidth: 1, lineStyle: LC.LineStyle.Dashed, axisLabelVisible: true, title: "",
+    // ohne Achsen-Label: sonst steht die 30 doppelt neben dem aktuellen RSI (Linien nennt die Legende)
+    price: level, color: t.rsiLevel[level], lineWidth: 1, lineStyle: LC.LineStyle.Dashed, axisLabelVisible: false, title: "",
   }));
   const macdFormat = { type: "custom", formatter: fmtMacd, minMove: 1e-12 };
   macdHistSeries = rsiChart.addHistogramSeries({ priceFormat: macdFormat, priceLineVisible: false, lastValueVisible: false });
@@ -448,14 +449,16 @@ function renderLowerLegend(time) {
   }
   const v = indAt("rsi", t);
   const cls = v == null ? "" : v >= RSI_LEVELS[0] ? "hot" : v <= RSI_LEVELS[1] ? "cold" : "";
-  const note = v == null ? "" : v >= RSI_LEVELS[0] ? L(" überkauft", " overbought") : v <= RSI_LEVELS[1] ? L(" überverkauft", " oversold") : "";
+  // wie rsi_zone in sentiment.py: am gerundeten Wert, überkauft erst über 70, überverkauft erst unter 30
+  const note = v == null ? "" : Math.round(v) > RSI_LEVELS[0] ? L(" überkauft", " overbought") : Math.round(v) < RSI_LEVELS[1] ? L(" überverkauft", " oversold") : "";
   el.innerHTML = `<span class="${cls}">RSI (${RSI_PERIOD}) <b>${v != null ? v.toFixed(1).replace(".", DEC) : "–"}</b>${note}</span>`
     + `<span>${L("Linien bei", "Lines at")} ${RSI_LEVELS.join(" / ")}</span>`;
 }
 
 function setPrecision(price) {
   // genug Nachkommastellen auch für Coins unter 1 $
-  precision = price >= 1 ? 2 : Math.min(10, Math.max(4, Math.ceil(-Math.log10(price)) + 3));
+  // ab 1.000 $ ohne Cent (die Achse wäre sonst „92.000,00“), ab 1 $ mit Cent, darunter genug Stellen
+  precision = price >= 1000 ? 0 : price >= 1 ? 2 : Math.min(10, Math.max(4, Math.ceil(-Math.log10(price)) + 3));
   candleSeries.applyOptions({ priceFormat: { type: "price", precision, minMove: 10 ** -precision } });
 }
 

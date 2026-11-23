@@ -14,8 +14,11 @@ const LIQ_BINS = 140;       // Preisstufen über den gesamten Bereich (Ansicht �
 const LIQ_BINS_FINE = 320;  // feinere Stufen für die Ansicht „Farbverlauf“
 const LIQ_PCTL = 0.98;      // dieses Perzentil aller Zellen = volle Farbe (sonst dominiert ein Ausreißer)
 const LIQ_VIEW_KEY = "liqView";
+const LIQ_STD_GAMMA = 1.2;    // Standard: Wert^γ → Deckkraft (früher Wurzel = 0,5, zu flächig)
+const LIQ_STD_MIN = 0.15;     // Standard: schwächere Zellen gar nicht zeichnen
 const LIQ_DARK_GAMMA = 0.85;  // Farbverlauf: Wert^γ → Farbstufe (0,5 = Wurzel wie „Standard“, 1 = linear)
 
+let liqPrec = 2;   // Nachkommastellen der Preisachse, gesetzt beim Laden
 let liqChart = null, liqSeries = null, liqModel = null, liqCandles = [], liqDrawPending = false;
 let liqModels = {};          // Ansicht → Modell (gleiche Rechnung, andere Auflösung)
 let liqView = "standard";    // "standard" | "dark"
@@ -87,7 +90,8 @@ function initLiqChart() {
     crosshair: { ...t.chart.crosshair, mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { ...t.chart.rightPriceScale, minimumWidth: PRICE_SCALE_WIDTH },
     timeScale: { ...t.chart.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 3, tickMarkFormatter: tickLabel },
-    localization: { locale: LOCALE, priceFormatter: fmtPrice, timeFormatter: (ts) => fmtDate(ts, {
+    // eigene Stellenzahl (liqPrec): fmtPrice hängt am Kurs-Chart und ist beim Zeichnen oft noch nicht gesetzt
+    localization: { locale: LOCALE, priceFormatter: (v) => v.toLocaleString(LOCALE, { minimumFractionDigits: liqPrec, maximumFractionDigits: liqPrec }), timeFormatter: (ts) => fmtDate(ts, {
       weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) },
     // Preisachse nicht von Hand ziehen: die Heatmap folgt nur automatischen Skalierungen
     handleScale: { axisPressedMouseMove: { time: true, price: false } },
@@ -155,6 +159,7 @@ function scheduleLiqDraw() {
 
 function drawLiq() {
   const cv = $("liq-canvas"), box = $("liq-chart");
+  if (!cv || !box) return;   // Karte durch Hinweis ersetzt (keine Futures)
   const dpr = window.devicePixelRatio || 1;
   const w = box.clientWidth, h = box.clientHeight;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
@@ -183,8 +188,8 @@ function drawLiq() {
       if (!v || ys[b] == null || ys[b + 1] == null) continue;
       const top = ys[b + 1], bottom = ys[b];
       if (bottom < 0 || top > paneH) continue;
-      // Wurzel-Skala: auch mittlere Cluster bleiben sichtbar
-      const s = Math.min(1, Math.sqrt(v / liqModel.scaleMax));
+      // steiler als die Wurzel und schwache Zellen weglassen: sonst ist fast die ganze Fläche gleich gefärbt
+      const s = Math.min(1, (v / liqModel.scaleMax) ** LIQ_STD_GAMMA);
       if (dark) {
         // deckend aus der Farbskala, steiler als die Wurzel: die Fläche bleibt lila, nur große Cluster leuchten;
         // ganz schwache Zellen bleiben schwarz
@@ -192,8 +197,8 @@ function drawLiq() {
         if (d < 0.04) continue;
         ctx.fillStyle = LIQ_LUT[Math.round(d * 255)];
       } else {
-        const a = s * 0.9;
-        if (a < 0.03) continue;
+        if (s < LIQ_STD_MIN) continue;
+        const a = 0.08 + s * 0.8;
         ctx.fillStyle = `rgba(${rgb}, ${a.toFixed(3)})`;
       }
       ctx.fillRect(x - spacing / 2, top, spacing + 0.6, bottom - top + 0.6);
@@ -274,7 +279,8 @@ async function loadLiquidations() {
       dark: buildLiqModel(p.candles, p.open_interest, LIQ_BINS_FINE) };
     liqModel = liqView === "dark" ? liqModels.dark : liqModels.standard;
     const last = liqCandles[liqCandles.length - 1].close;
-    const prec = last >= 1 ? 2 : Math.min(10, Math.max(4, Math.ceil(-Math.log10(last)) + 3));
+    const prec = last >= 1000 ? 0 : last >= 1 ? 2 : Math.min(10, Math.max(4, Math.ceil(-Math.log10(last)) + 3));
+    liqPrec = prec;
     liqSeries.applyOptions({ priceFormat: { type: "price", precision: prec, minMove: 10 ** -prec } });
     liqSeries.setData(liqCandles);
     liqChart.timeScale().fitContent();

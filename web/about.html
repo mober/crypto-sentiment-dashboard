@@ -110,7 +110,7 @@ const query = "symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encode
 $("back").href = "coin.html?" + query;
 // Breadcrumbs: Märkte → Coin → Profil (setBreadcrumb in nav.js)
 const setAboutCrumbs = (name) => setBreadcrumb([
-  { label: L("Märkte", "Markets"), href: "markets.html" },
+  { label: navOrigin().label(), href: navOrigin().href },
   ...(symbol ? [{ label: name || symbol, href: "coin.html?" + query }] : []),
   { label: L("Profil", "Profile") },
 ]);

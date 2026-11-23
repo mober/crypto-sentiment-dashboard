@@ -407,7 +407,7 @@ function renderCoin(c, id = null) {
         <div class="gauge-scale"><span>${L("Angst", "Fear")} −100</span><span>0</span><span>+100 ${L("Gier", "Greed")}</span></div>
       </div>
 
-      <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
+      <div class="verdict ${tone(c.score)}" title="${esc(c.verdict)}">${zoneName(c.score)}</div>
 
       <div class="metrics">
         <div><div class="label"><span${tipAttr("ma200")}>MA200</span></div><div class="val">${ma ? usd(ma.ma200) : na}</div></div>
@@ -426,7 +426,7 @@ function renderCoin(c, id = null) {
       ${d.momentum ? `<div class="coin-note">${L("Binance-Daten unvollständig – Score ergänzt um Kursdaten von CoinGecko (Momentum, Umschlag).", "Binance data incomplete – score supplemented with CoinGecko price data (momentum, turnover).")}</div>`
         : noData ? `<div class="coin-note">${L("Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.", "No Binance data for this coin – score from Fear &amp; Greed only.")}</div>` : ""}
       <ul class="signals">${signals}</ul>
-      <div class="ds-line">${dataStatus({ src: L("Score und Kurs: Server", "Score and price: server"), kind: "poll", at: c.fetched_at || watchUpdated, every: 300, small: true })}</div>
+      <div class="ds-line">${dataStatus({ src: L("Score und Kurs: Server", "Score and price: server"), kind: "poll", at: c.fetched_at || watchUpdated, every: 300, small: true, quiet: true })}</div>
     </article>`;
 }
 
@@ -455,10 +455,8 @@ function renderDashBrief() {
     : L(`keiner der ${coins.length} Watchlist-Coins überhitzt`, `none of the ${coins.length} watchlist coins overheated`);
   const title = [mood ? L("Markt: ", "Market: ") + mood : "", watch].filter(Boolean).join(" · ");
   const parts = [];
-  if (hot.length) parts.push(L("Überhitzt (Score ab +40): ", "Overheated (score ≥ +40): ") + names(hot));
-  if (warm.length) parts.push(L("Warm: ", "Warm: ") + names(warm));
-  if (cold.length) parts.push(L("Ängstlich: ", "Fearful: ") + names([...cold].sort((a, b) => a.score - b.score)));
-  if (dom) parts.push(L("BTC-Dominanz ", "BTC dominance ") + `<b>${dom.btc.toFixed(1).replace(".", DEC)}${PCT}</b>`);
+  if (hot.length) parts.push(L("Überhitzt: ", "Overheated: ") + names(hot));   // nur die Ausreißer nennen, alle Scores stehen darunter
+  // BTC-Dominanz steht direkt darunter in der Marktkarte, hier nicht wiederholen
   // Einordnung: Empfehlung aus dem Lagebild von BTC (Leitwährung), sonst des ersten Coins
   const lead = coins.find((c) => c.symbol === "BTC") || coins[0];
   const s = lead && lead.situation;

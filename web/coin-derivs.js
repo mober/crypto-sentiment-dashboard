@@ -67,7 +67,8 @@ function initDerivCharts() {
   oiSeries = oiChart.addAreaSeries({ lineColor: c.cold, topColor: alpha(c.cold, 0.25), bottomColor: alpha(c.cold, 0.02),
     lineWidth: 2, priceLineVisible: false, priceFormat: { type: "custom", formatter: (v) => "$" + compact(v), minMove: 1 } });
   oiPrice = oiChart.addLineSeries({ priceScaleId: "left", color: c.muted, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
-    priceLineVisible: false, crosshairMarkerVisible: false, title: L("Kurs", "Price"),
+    // Kurs nur als Linie, ohne Label an der Achse (der Wert steht in der Legende)
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: { type: "custom", formatter: (v) => usd(v), minMove: 1e-10 },
     priceFormat: { type: "custom", formatter: (v) => usd(v), minMove: 1e-8 } });
 
   fundChart.subscribeCrosshairMove((p) => renderFundLegend(p && p.time != null ? p.time : null));
