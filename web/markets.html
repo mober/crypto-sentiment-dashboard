@@ -606,10 +606,16 @@ let loadToken = 0;   // verwirft veraltete Antworten (Seite gewechselt oder Such
 // Sparte (aus sectors.html): die größten Coins einer CoinGecko-Kategorie, eine Seite ohne Blättern
 let category = null, categoryName = "";
 
+// aus den Sparten gekommen: Breadcrumbs Sparten → Name der Sparte (nur solange die Sparte angezeigt wird, nicht bei Suche)
+function catCrumbs() {
+  setBreadcrumb(category && !query ? [{ label: L("Sparten", "Sectors"), href: "sectors.html" }, { label: categoryName || category }] : []);
+}
+
 function setCategoryMode() {
   const on = !!category && !query;
   $("cat-chip").hidden = !on;
   $("cat-name").textContent = categoryName || category || "";
+  catCrumbs();
   if (on || watchMode) { $("pager-top").hidden = true; $("pager-bottom").hidden = true; }
   $("watch-toggle").setAttribute("aria-pressed", watchMode && !query);
 }
@@ -726,6 +732,7 @@ function setSearchMode(on) {
   $("pager-bottom").hidden = on || !!category || watchMode || filterActive();
   if (typeof renderFilterUi === "function" && $("flt-pop").childElementCount) renderFilterUi();
   $("cat-chip").hidden = on || !category;
+  catCrumbs();
   $("search-clear").hidden = !$("search").value;
   $("search-kbd").hidden = !!$("search").value || document.activeElement === $("search");
   if (!on) $("search-info").textContent = "";

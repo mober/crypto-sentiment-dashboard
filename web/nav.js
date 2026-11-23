@@ -62,12 +62,17 @@ function buildNav() {
 }
 
 // --- Breadcrumbs (Detailseiten) ---------------------------------------------
-// setBreadcrumb([{ label, href }, …]): letzter Eintrag ist die aktuelle Stelle (ohne Link).
+// setBreadcrumb([{ label, href }, …]): letzter Eintrag ist die aktuelle Stelle (ohne Link); [] entfernt die Leiste.
+// Genutzt auf Coin-Detailseite, Profil und in der Marktübersicht, wenn sie eine Sparte zeigt (Sparten → Layer 1).
 // Kann vor oder nach buildNav laufen; erneuter Aufruf ersetzt die Leiste.
 let crumbItems = [];
 
 function setBreadcrumb(items) {
-  crumbItems = items;
+  crumbItems = items || [];
+  if (!crumbItems.length) {   // leere Liste: Leiste entfernen (z. B. Marktübersicht ohne Sparte)
+    document.querySelector("main .crumbs")?.remove();
+    return;
+  }
   renderCrumbs();
 }
 

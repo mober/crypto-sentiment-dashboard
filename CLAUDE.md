@@ -63,7 +63,8 @@ Stimmungs-Score je Coin berechnet. Nur Python-Standardbibliothek, kein Build-Sch
   `aria-current="true"` – `coin.html`/`about.html` gehören zu „Märkte“; die `<h1>` jeder Hauptseite heißt wie ihr Menüpunkt, Sprachumschalter); bis 640 px klappen die Seiten in ein Menü „☰“.
   Seitenlinks gehören dorthin, nicht in den `<header>` der Seiten (dort nur seitenspezifische Knöpfe).
   Detailseiten setzen darunter Breadcrumbs über `setBreadcrumb(items)` (`.crumbs`): `coin.html` Märkte → Coin → Reiter
-  (`setCoinCrumbs` in `coin-tabs.js`), `about.html` Märkte → Coin → Profil.
+  (`setCoinCrumbs` in `coin-tabs.js`), `about.html` Märkte → Coin → Profil, `markets.html?category=…` Sparten → Sparte
+  (`setCategoryMode`). `setBreadcrumb([])` entfernt die Leiste.
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
   Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten
