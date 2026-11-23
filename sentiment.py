@@ -1317,7 +1317,8 @@ def match_news(items: List[Dict[str, Any]], symbol: str, name: Optional[str]) ->
     hit = lambda text: any(t.search(text) for t in terms)
     in_title = [i for i in items if hit(i["title"])]
     in_teaser = [i for i in items if not hit(i["title"]) and hit(i["teaser"])]
-    found = (in_title + in_teaser)[:NEWS_PER_COIN]
+    # Titel-Treffer haben Vorrang bei der Auswahl, angezeigt wird neueste zuerst
+    found = sorted((in_title + in_teaser)[:NEWS_PER_COIN], key=lambda i: -i["time"])
     return {"general": not found, "items": found or items[:NEWS_PER_COIN]}
 
 
@@ -1739,7 +1740,7 @@ def situation(d: Dict[str, Any], signals: List[Dict[str, Any]], total: int, lang
                if v < 1 else (L(f"MVRV {mvs}: Halter leicht im Gewinn, Kurs nahe am durchschnittlichen Einstand – "
                                 "historisch eine eher günstige Zone",
                                 f"MVRV {mvs}: holders slightly in profit, price near their average cost basis – historically a rather cheap zone"),
-                              L("nahe am Einstand", "near cost basis")),
+                              L("Halter nahe am Einstand", "holders near cost basis")),
                (L(f"MVRV {mvs}: Halter weit im Gewinn – bei Bitcoin lagen frühere Hochs hier",
                   f"MVRV {mvs}: holders deep in profit – earlier Bitcoin tops were here"),
                 L("Halter weit im Gewinn", "holders deep in profit"))

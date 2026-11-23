@@ -119,6 +119,9 @@
   @media (max-width: 900px) {
     .top { grid-template-columns: 1fr; }
     .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Long und Short untereinander, sonst laufen die Beträge in schmalen Kacheln ineinander */
+    .lsrow { flex-direction: column; gap: 2px; }
+    .tot .big { font-size: 21px; }
     .grid3, .hist-grid { grid-template-columns: 1fr; }
     .tree { aspect-ratio: 4 / 5; }
   }
@@ -230,6 +233,19 @@ addStatic({
 let cryptoOnly = true;
 try { cryptoOnly = localStorage.getItem("liqCryptoOnly") !== "0"; } catch (e) { /* ignorieren */ }
 const cq = () => (cryptoOnly ? "&crypto=1" : "");
+// Breite der Diagramme in echten Pixeln (viewBox = Bildschirm), damit Beschriftungen nicht verzerrt werden;
+// bei geänderter Breite neu zeichnen
+const svgWidth = (id) => Math.max(320, Math.round($(id).clientWidth || 1000));
+let lastHist = null, svgW = {};
+const svgObserver = new ResizeObserver((entries) => {
+  for (const e of entries) {
+    const id = e.target.id, w = Math.round(e.contentRect.width);
+    if (!w || Math.abs((svgW[id] || 0) - w) < 8) continue;
+    svgW[id] = w;
+    if (id === "hours" && ov) renderHours();
+    if (id === "hist" && lastHist) renderHistory(lastHist);
+  }
+});
 // Satzende: kein zweiter Punkt nach Abkürzungen wie „Mio.“
 const dot = (s) => (s.endsWith(".") ? s : s + ".");
 let win = "24h", group = "coin", ov = null, coinFilter = "", seenIds = new Set(), firstFeed = true;
@@ -385,7 +401,7 @@ async function loadBtc() {
 }
 
 function renderHours() {
-  const hs = ov.hours, W = 1000, H = 240, pad = { l: 64, r: 64, t: 14, b: 26 }, mid = pad.t + (H - pad.t - pad.b) / 2;
+  const hs = ov.hours, W = svgWidth("hours"), H = 240, pad = { l: 64, r: 64, t: 14, b: 26 }, mid = pad.t + (H - pad.t - pad.b) / 2;
   const max = Math.max(1, ...hs.map((h) => Math.max(h.long, h.short)));
   const bw = (W - pad.l - pad.r) / hs.length, half = (H - pad.t - pad.b) / 2;
   let svg = `<line x1="${pad.l}" x2="${W - pad.r}" y1="${mid}" y2="${mid}" stroke="var(--border)"/>`;
@@ -495,6 +511,7 @@ function bucketStart(t, hours) {
 }
 
 function renderHistory(h) {
+  lastHist = h;
   const size = histDays <= 7 ? 4 : 24;   // 7 T in 4-Stunden-Balken, sonst je Tag
   const now = Date.now() / 1000, from = Math.max(now - histDays * 86400, h.since);
   const buckets = new Map();
@@ -517,7 +534,7 @@ function renderHistory(h) {
     <div class="s">Shorts<b>${money(short)}</b></div><div>${L("Positionen", "Positions")}<b>${count.toLocaleString(LOCALE)}</b></div>
     <div>${L("Ø pro Tag", "Avg per day")}<b>${money((long + short) / days)}</b></div>`;
 
-  const W = 1000, H = 260, pad = { l: 64, r: 10, t: 14, b: 26 }, half = (H - pad.t - pad.b) / 2, mid = pad.t + half;
+  const W = svgWidth("hist"), H = 260, pad = { l: 64, r: 10, t: 14, b: 26 }, half = (H - pad.t - pad.b) / 2, mid = pad.t + half;
   const max = Math.max(1, ...bs.map((b) => Math.max(b.long, b.short)));
   const bw = (W - pad.l - pad.r) / Math.max(1, bs.length), gap = bw > 6 ? 2 : bw > 3 ? 1 : 0;
   const every = Math.ceil(bs.length / 12);
@@ -605,6 +622,7 @@ $("fEx").addEventListener("change", () => { firstFeed = true; seenIds.clear(); l
 $("fMin").addEventListener("change", () => { firstFeed = true; seenIds.clear(); loadFeed(); });
 window.addEventListener("resize", () => { if (ov) renderTree(); });
 
+document.querySelectorAll("#hours, #hist").forEach((el) => svgObserver.observe(el));
 const cachedOv = restore("liq-ov" + cq());
 if (cachedOv && cachedOv.window === win) { ov = cachedOv; renderOverview(); }
 const cachedFeed = restore(feedKey(new URLSearchParams({ coin: coinFilter, exchange: $("fEx").value, min: $("fMin").value, limit: 60 })));

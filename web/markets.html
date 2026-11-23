@@ -106,7 +106,9 @@
     border-bottom: 1px solid var(--border); }
   #mtable.cards tbody tr:last-child { border-bottom: 0; }
   #mtable.cards td { border: 0; padding: 0; }
-  #mtable.cards td.left { flex: 1 1 55%; min-width: 0; }
+  #mtable.cards td.star-col, #mtable.cards td.rank { flex: none; width: auto; padding: 0; }
+  #mtable.cards td.rank { min-width: 22px; font-size: 12px; }
+  #mtable.cards td.left { flex: 1 1 50%; min-width: 0; }
   #mtable.cards td.left .name { white-space: normal; }
   #mtable.cards td.price { font-weight: 600; }
   #mtable.cards td.m { flex: 1 1 28%; text-align: left; font-size: 13px; }
@@ -204,7 +206,8 @@ const REFRESH_MS = 5 * 60 * 1000;
 const price = (v) => {
   if (v == null) return dash;
   // unter 1 $ immer 4 signifikante Stellen, auch bei 0,99995 („$1,000“ statt „$1“)
-  const opts = v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { minimumSignificantDigits: 4, maximumSignificantDigits: 4 };
+  const opts = v >= 1000 ? { maximumFractionDigits: 0 } : v >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+    : { minimumSignificantDigits: 4, maximumSignificantDigits: 4 };
   return "$" + v.toLocaleString(LOCALE, opts);
 };
 

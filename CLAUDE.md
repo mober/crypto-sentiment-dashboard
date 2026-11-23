@@ -103,8 +103,8 @@ Stimmungs-Score je Coin berechnet. Nur Python-Standardbibliothek, kein Build-Sch
   gegen Layer 1), Liquidationen (`renderSummary`: Long-/Short-Anteil, Tempo gegen 24-h-Schnitt), Detailseite
   (`renderCoinBrief` aus `situation`, über den Reitern). „Warum wichtig?“-Knöpfe: `whyTip(key)` mit Texten `WHY`/`WHY_EN`
   in `tips.js` (Tooltip-Schlüssel `why:<key>`); in statischem HTML als `<span class="why-slot" data-why="…">`, ersetzt beim
-  Start. **Nichts ist eingeklappt**: alle Karten und Details sind immer offen (ausdrücklicher Wunsch; kein Einklappen
-  wieder einbauen).
+  Start. **Sonst nichts eingeklappt**: alle Karten und Details sind offen (ausdrücklicher Wunsch). Einzige Ausnahme, ebenfalls
+  auf Wunsch: Dashboard-Karten ab Funding (`details.more`, offener Zustand je Karte in `localStorage.openCards`).
 - `web/methodology.html` (Navigation „Methodik“): Ziel und Grenzen, Berechnung, Signale mit Skalen und Gewichten,
   fehlende/veraltete Daten, Datenquellen und Intervalle, Börsen-Einschränkungen, Rückblick, Änderungsprotokoll. Zahlen
   kommen aus `/api/methodology` (`api_methodology` in `server.py`: `SIGNAL_SCALES`, `SIGNAL_WEIGHTS`, Schwellen,

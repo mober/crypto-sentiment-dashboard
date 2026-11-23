@@ -116,6 +116,15 @@
   .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
   .metrics .val { font-weight: 600; }
 
+  /* Ab Funding eingeklappt; offener Zustand je Karte gemerkt (openCards) */
+  .more { border-top: 1px solid var(--border); padding-top: 10px; }
+  .more summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; user-select: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .more summary::-webkit-details-marker { display: none; }
+  .more summary::before { content: "▸"; display: inline-block; width: 14px; transition: transform .15s; }
+  .more[open] summary::before { transform: rotate(90deg); }
+  .more summary:hover { color: var(--text); }
+  .more > :not(summary) { margin-top: 14px; }
   .signals { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
   .signals li { display: grid; grid-template-columns: 40px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .signals li:last-child { border-bottom: 0; }
@@ -414,6 +423,8 @@ function renderCoin(c, id = null) {
         <div><div class="label"><span${tipAttr("distance")}>${L("Abstand", "Distance")}</span></div><div class="val">${ma ? pct(ma.distance) : na}</div></div>
       </div>
 
+      <details class="more" data-more="${esc(id || c.symbol)}"${openCards.has(id || c.symbol) ? " open" : ""}>
+      <summary>${L("Funding, OI, RSI und Signale", "Funding, OI, RSI and signals")}</summary>
       <div class="metrics">
         <div><div class="label"><span${tipAttr("funding")}>${L("Funding Ø 7T", "Funding avg 7D")}</span></div><div class="val">${fr ? pct(fr.avg_7d, 4) : na}</div></div>
         <div><div class="label"><span${tipAttr("longShort")}>Long/Short</span></div><div class="val">${ls ? ls.ratio.toFixed(2).replace(".", DEC) : na}</div></div>
@@ -426,6 +437,7 @@ function renderCoin(c, id = null) {
       ${d.momentum ? `<div class="coin-note">${L("Binance-Daten unvollständig – Score ergänzt um Kursdaten von CoinGecko (Momentum, Umschlag).", "Binance data incomplete – score supplemented with CoinGecko price data (momentum, turnover).")}</div>`
         : noData ? `<div class="coin-note">${L("Keine Binance-Daten für diesen Coin – Score nur aus Fear &amp; Greed.", "No Binance data for this coin – score from Fear &amp; Greed only.")}</div>` : ""}
       <ul class="signals">${signals}</ul>
+      </details>
       <div class="ds-line">${dataStatus({ src: L("Score und Kurs: Server", "Score and price: server"), kind: "poll", at: c.fetched_at || watchUpdated, every: 300, small: true, quiet: true })}</div>
     </article>`;
 }
@@ -467,6 +479,17 @@ function renderDashBrief() {
     tone: (s && s.action_tone) || "neutral",
   });
 }
+
+// Aufgeklappte Karten merken, damit sie beim Aktualisieren (alle 5 Min. neu gezeichnet) offen bleiben
+const OPEN_KEY = "openCards";
+let openCards = new Set();
+try { openCards = new Set(JSON.parse(localStorage.getItem(OPEN_KEY)) || []); } catch (e) { /* ignorieren */ }
+$("coins").addEventListener("toggle", (e) => {
+  const key = e.target.dataset && e.target.dataset.more;
+  if (!key) return;
+  if (e.target.open) openCards.add(key); else openCards.delete(key);
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify([...openCards])); } catch (err) { /* ignorieren */ }
+}, true);   // "toggle" steigt nicht auf, daher Capture-Phase
 
 function renderCoins() {
   hideTip();
