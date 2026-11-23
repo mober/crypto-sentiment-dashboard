@@ -129,8 +129,8 @@
   </section>
 
   <section class="card">
-    <details class="fold" id="all-fold"><summary>Alle Sparten als Tabelle</summary>
     <div class="card-head">
+      <div class="label">Alle Sparten</div>
       <div class="note">Sparten überschneiden sich: ein Coin steht oft in mehreren</div>
     </div>
     <div class="tools">
@@ -158,7 +158,6 @@
         <tbody id="rows"><tr><td colspan="8" class="status">Lade Daten …</td></tr></tbody>
       </table>
     </div>
-    </details>
   </section>
 
   <footer>Daten: CoinGecko (Kategorien), DefiLlama (TVL) · Aktualisiert sich alle 5 Minuten.</footer>
@@ -174,7 +173,7 @@ addStatic({
   "Rotation: Hauptsparten in 24 h": "Rotation: main sectors in 24 h", "Veränderung der Marktkap. · Klick zeigt die Coins der Sparte": "Change in market cap · click shows the sector's coins",
   "Lade …": "Loading …", "DeFi-Kapital (TVL)": "DeFi capital (TVL)",
   "Total Value Locked nach DefiLlama · wo echtes Kapital liegt, nicht nur Marktkap.": "Total value locked per DefiLlama · where real capital sits, not just market cap",
-  "Gliederung": "Grouping", "Kategorien": "Categories", "Zeitraum": "Period", "7 T": "7 d", "Alle Sparten": "All sectors", "Alle Sparten als Tabelle": "All sectors as a table",
+  "Gliederung": "Grouping", "Kategorien": "Categories", "Zeitraum": "Period", "7 T": "7 d", "Alle Sparten": "All sectors",
   "Sparten überschneiden sich: ein Coin steht oft in mehreren": "Sectors overlap: a coin is often in several",
   "Sparte filtern …": "Filter sectors …", "Sparte filtern": "Filter sectors", "Auswahl": "Selection", "Hauptsparten": "Main sectors",
   "Alle": "All", "Sparte": "Sector", "Marktkap.": "Market cap", "Volumen 24h": "Volume 24h", "Umschlag": "Turnover", "TVL · 7 T": "TVL · 7 d",
@@ -358,12 +357,8 @@ async function load() {
   }
 }
 
-// „Warum wichtig?“-Knöpfe; Tabelle aller Sparten eingeklappt, Zustand gemerkt
+// „Warum wichtig?“-Knöpfe
 document.querySelectorAll(".why-slot").forEach((el) => { el.outerHTML = whyTip(el.dataset.why); });
-try { $("all-fold").open = localStorage.getItem("sectorTableOpen") === "1"; } catch (e) { /* ignorieren */ }
-$("all-fold").addEventListener("toggle", () => {
-  try { localStorage.setItem("sectorTableOpen", $("all-fold").open ? "1" : "0"); } catch (e) { /* ignorieren */ }
-});
 
 document.querySelector("thead").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-sort]");

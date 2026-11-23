@@ -1,4 +1,4 @@
-// Detailseite: Kopf (Kurs, Lagebild, News), Kennzahlen, Zusammensetzung des Scores, Ein-/Ausklappen der Karten.
+// Detailseite: Kopf (Kurs, Lagebild, News), Kennzahlen, Zusammensetzung des Scores. Alle Karten sind immer offen.
 // Gemeinsame Helfer in coin-base.js.
 
 // --- Kopfbereich ---------------------------------------------------------
@@ -55,7 +55,6 @@ function renderNews() {
     ${dataStatus({ src: L("RSS-Feeds", "RSS feeds"), kind: "poll", at: newsData.fetched_at || newsData.updated, every: NEWS_REFRESH_MS / 1000, small: true })}
     <ul>${items.map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="${esc(i.teaser)}">${esc(i.title)}</a>`
       + `<span class="meta">${esc(i.source)} · ${ago(i.time)}</span></li>`).join("")}</ul>`;
-  setupCollapse(el);
 }
 
 async function loadNews(name) {
@@ -105,7 +104,6 @@ function renderHero(c) {
     </div>
     ${lageBlock(c)}
     <div class="news" id="hero-news" hidden></div>`;
-  if ($("hero-lage")) setupCollapse($("hero-lage"));
   setDataStatus("ds-score", { src: L("Score: Server (mehrere Quellen)", "Score: server (several sources)"), kind: "poll", at: scoreAt, every: 300,
     note: L("Quellen je Signal stehen in der Score-Zusammensetzung", "Sources per signal are listed in the score breakdown") });
   if (typeof chartStatus === "function") chartStatus();
@@ -157,7 +155,7 @@ function bdRow(name, reason, points, share, total = false, n = 1, weight = 1, ra
       `Now: ${reason} → ${signed(points)} points, weight ${weight.toLocaleString(LOCALE)}. That accounts for ${num1(share)} of the score.`);
   const tip = key && TIPS[key] ? ` data-tip="${key}" data-tip-now="${esc(now)}" tabindex="0"` : "";
   return `
-    <div class="bd-row${total ? " total" : ""}${reason && !total ? " has-reason" : ""}">
+    <div class="bd-row${total ? " total" : ""}">
       <div class="bd-label"><div class="bd-name"><span${tip}>${esc(name)}</span></div>${reason ? `<div class="bd-reason">${esc(reason)}</div>` : ""}${rawName ? `<div class="bd-src">${signalStatus(rawName)}</div>` : ""}</div>
       <div class="bd-track" role="img" aria-label="${esc(name)}: ${signed(points)} ${L("von −100 bis +100", "from −100 to +100")}">${bar}</div>
       <div class="bd-val">${signed(points)}${share != null ? `<span class="share">${num1(share)} ${L("im Score", "in score")}</span>` : ""}</div>
@@ -179,16 +177,8 @@ function renderBreakdown(c) {
     </div>
     ${c.signals.map((s) => bdRow(signalName(s.name) + (w(s) !== 1 ? ` ×${w(s).toLocaleString(LOCALE)}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s), s.name)).join("")}
     ${bdRow(L("Überhitzungs-Score", "Overheating score"), c.verdict, c.score, null, true, n)}
-    <div class="bd-tap-hint">${L("Zeile antippen für die Begründung", "Tap a row for the reasoning")}</div>
     <div class="bd-axis"><span></span><div class="ticks"><span>−100 ${L("Angst", "Fear")}</span><span>0</span><span>${L("Gier", "Greed")} +100</span></div><span></span></div>`;
-  setupCollapse($("breakdown"));  // Kopfzeile wurde neu geschrieben
 }
-
-// Handy: Begründungen der Signale eingeklappt, Antippen einer Zeile klappt sie auf
-$("breakdown").addEventListener("click", (e) => {
-  const row = e.target.closest(".bd-row.has-reason");
-  if (row && !e.target.closest("[data-tip]")) row.classList.toggle("open");
-});
 
 // Kennzahlen aus den CoinGecko-Marktdaten (kommen mit dem Score, keine eigene Abfrage)
 const big = (v) => v.toLocaleString(LOCALE, { notation: "compact", compactDisplay: EN ? "short" : "long", maximumSignificantDigits: 4 })
@@ -367,75 +357,8 @@ function drawStats() {
     + (dailyCandles ? dataStatus({ src: L("Kerzen-Kennzahlen: Binance", "Candle figures: Binance"), kind: "daily", day: new Date(dailyCandles[dailyCandles.length - 1].time * 1000).toISOString().slice(0, 10), lag: 0 }) : "")
     + `</div>`;
   $("stats").hidden = !tiles.length;
-  applyStatsOpen();
   if (typeof updateLevels === "function") updateLevels();  // Kursmarken im Chart (coin-chart.js)
 }
-
-// Kennzahlen ein- und ausklappen, gemerkt im Browser
-const STATS_KEY = "statsOpen";
-let statsOpen = true;
-try { statsOpen = localStorage.getItem(STATS_KEY) !== "0"; } catch (e) { /* ignorieren */ }
-
-function applyStatsOpen() {
-  $("stats-grid").hidden = !statsOpen;
-  $("stats-toggle").setAttribute("aria-expanded", String(statsOpen));
-  const n = $("stats-grid").children.length;
-  $("stats-hint").textContent = statsOpen ? "" : L(`${n} Kennzahlen ausgeblendet`, `${n} key figures hidden`);
-}
-
-$("stats-toggle").addEventListener("click", () => {
-  statsOpen = !statsOpen;
-  try { localStorage.setItem(STATS_KEY, statsOpen ? "1" : "0"); } catch (e) { /* ignorieren */ }
-  hideTip();
-  applyStatsOpen();
-});
-
-// Übrige Karten ein- und ausklappen; eingeklappte Karten (IDs) werden im Browser gemerkt
-const COLLAPSED_KEY = "collapsedCards";
-let collapsedCards = new Set();
-try { collapsedCards = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]")); } catch (e) { /* ignorieren */ }
-// Lage und News sind bei jedem Öffnen der Seite erst einmal zu; Aufklappen gilt nur bis zum Neuladen (nicht gemerkt)
-const START_COLLAPSED = new Set(["hero-lage", "hero-news"]);
-const expandedNow = new Set();
-const isCollapsed = (id) => (START_COLLAPSED.has(id) ? !expandedNow.has(id) : collapsedCards.has(id));
-// Kopfzeilen: Karten, dazu Lage und News im Kopf (dort bleiben Kurs und Score immer sichtbar)
-const CARD_HEAD = ":scope > .breakdown-head, :scope > .chart-head, :scope > .lage-head, :scope > .news-head";
-
-// Pfeil in die Kopfzeile setzen (falls noch nicht da) und gemerkten Zustand anwenden
-function setupCollapse(sec) {
-  const head = sec.querySelector(CARD_HEAD);
-  if (!head) { sec.classList.remove("collapsible", "collapsed"); return; }  // z. B. nur Statuszeile
-  sec.classList.add("collapsible");
-  head.classList.add("card-head");
-  let btn = head.querySelector(".collapse-btn");
-  if (!btn) {
-    // Pfeil vor den Titel; ist die Kopfzeile selbst das Label (News), direkt hinein
-    (head.classList.contains("label") ? head : head.firstElementChild).insertAdjacentHTML("afterbegin",
-      `<button class="collapse-btn" type="button" title="${L("Karte ein- oder ausklappen", "Expand or collapse card")}"><span class="chev" aria-hidden="true">▼</span></button>`);
-    btn = head.querySelector(".collapse-btn");
-  }
-  const open = !isCollapsed(sec.id);
-  sec.classList.toggle("collapsed", !open);
-  btn.setAttribute("aria-expanded", String(open));
-}
-
-// Klick auf Pfeil oder freie Fläche der Kopfzeile; Schalter, Links und Tooltips behalten ihre Funktion
-document.addEventListener("click", (e) => {
-  const head = e.target.closest(".collapsible > .card-head");
-  if (!head) return;
-  if (!e.target.closest(".collapse-btn") && e.target.closest("button, a, select, label, details, [data-tip]")) return;
-  const sec = head.parentElement;
-  if (START_COLLAPSED.has(sec.id)) {
-    if (expandedNow.has(sec.id)) expandedNow.delete(sec.id); else expandedNow.add(sec.id);
-  } else {
-    if (collapsedCards.has(sec.id)) collapsedCards.delete(sec.id); else collapsedCards.add(sec.id);
-    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedCards])); } catch (e) { /* ignorieren */ }
-  }
-  hideTip();
-  setupCollapse(sec);
-});
-
-["chart-card", "book", "fees", "derivs", "onchain", "liq", "history"].forEach((id) => setupCollapse($(id)));
 
 async function loadDailyStats() {
   try {

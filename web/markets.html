@@ -74,6 +74,29 @@
   .col-pop label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 14px; cursor: pointer; border-radius: 6px; }
   .col-pop label:hover { background: var(--row-hover); }
   .col-pop .reset { width: 100%; margin-top: 6px; font-size: 12px; }
+  /* Filter */
+  .flt-count:not(:empty) { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px;
+    background: var(--accent); color: var(--accent-text); font-size: 11px; font-weight: 700; text-align: center; }
+  .flt-pop { width: min(360px, calc(100vw - 32px)); padding: 12px; display: grid; gap: 12px; }
+  .flt-pop .grp > .lbl { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .flt-pop .cls { display: flex; flex-wrap: wrap; gap: 6px; }
+  .flt-pop .cls button { padding: 3px 10px; font-size: 13px; border-radius: 14px; }
+  .flt-pop .cls button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .flt-pop select { width: 100%; font: inherit; font-size: 14px; color: var(--text); background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 8px; }
+  .flt-pop .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .flt-pop label.chk { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 2px 0; cursor: pointer; }
+  .flt-pop .note { color: var(--muted); font-size: 12px; }
+  .flt-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; font-size: 13px; }
+  .flt-chips[hidden] { display: none; }
+  .flt-chips .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 14px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--card)); }
+  .flt-chips .chip button { border: 0; background: none; padding: 0 5px; font-size: 15px; line-height: 1; color: var(--muted); }
+  .flt-chips .clear-all { border: 0; background: none; color: var(--muted); text-decoration: underline; font-size: 13px; padding: 2px 4px; }
+  .more-rows { display: block; margin: 10px auto 14px; }
+  .more-rows[hidden] { display: none; }
+  /* Liquiditätswarnung am Coin */
+  .warn { color: var(--hot); font-size: 13px; margin-left: 6px; cursor: help; }
 
   /* Kartenansicht (Standard auf dem Handy): Kopfzeile Coin | Preis, darunter die gewählten Kennzahlen */
   #mtable.cards, #mtable.cards tbody { display: block; }
@@ -117,11 +140,13 @@
         <button type="button" data-view="table" aria-pressed="true">Tabelle</button>
         <button type="button" data-view="cards" aria-pressed="false">Karten</button>
       </div>
+      <details class="col-menu flt-menu" id="flt-menu"><summary>Filter <span class="flt-count" id="flt-count"></span></summary><div class="col-pop flt-pop" id="flt-pop"></div></details>
       <details class="col-menu" id="col-menu"><summary>Spalten</summary><div class="col-pop" id="col-pop"></div></details>
     </div>
     <span class="cat-chip" id="cat-chip" hidden><span>Sparte: <b id="cat-name"></b> · <a href="sectors.html">alle Sparten</a></span>
       <button type="button" id="cat-clear" aria-label="Sparte verlassen" title="Zurück zur Gesamt-Rangliste">×</button></span>
   </div>
+  <div class="flt-chips" id="flt-chips" hidden></div>
   <nav class="pager" id="pager-top"></nav>
   <section class="card table-wrap">
     <table id="mtable">
@@ -138,10 +163,14 @@
           <th class="opt-wide col-1y">1J</th>
           <th class="opt-mid col-mcap">Marktkap.</th>
           <th class="opt-wide col-vol">Volumen 24h</th>
+          <th class="opt-wide col-turn">Vol./MK</th>
+          <th class="opt-wide col-ma50">MA50</th>
+          <th class="opt-wide col-ma200">MA200</th>
         </tr>
       </thead>
-      <tbody id="rows"><tr><td colspan="11" class="status">Lade Daten …</td></tr></tbody>
+      <tbody id="rows"><tr><td colspan="14" class="status">Lade Daten …</td></tr></tbody>
     </table>
+    <button type="button" class="more-rows" id="more-rows" hidden></button>
   </section>
   <nav class="pager" id="pager-bottom"></nav>
 
@@ -211,7 +240,17 @@ const MCOLS = [
   { key: "1y", label: L("1J", "1Y"), cls: "opt-wide", val: (c) => change(c.change["1y"]) },
   { key: "mcap", label: L("Marktkap.", "Market cap"), cls: "opt-mid", val: (c) => usd6(c.market_cap) },
   { key: "vol", label: L("Volumen 24h", "Volume 24h"), cls: "opt-wide", val: (c) => usd6(c.volume) },
+  // standardmäßig aus (off): über „Spalten“ einschalten; MA-Werte kommen aus dem Screener (Binance-Tageskerzen)
+  { key: "turn", label: L("Vol./MK", "Vol./MC"), cls: "opt-wide", off: true, val: (c) => turnover(c) == null ? dash : pct(turnover(c)).replace("+", "") },
+  { key: "ma50", label: L("Abst. MA50", "vs. MA50"), cls: "opt-wide", off: true, val: (c) => maCell(c, "ma50") },
+  { key: "ma200", label: L("Abst. MA200", "vs. MA200"), cls: "opt-wide", off: true, val: (c) => maCell(c, "ma200") },
 ];
+const turnover = (c) => (c.volume && c.market_cap ? c.volume / c.market_cap : null);
+function maCell(c, key) {
+  const r = screenerRow(c);
+  if (!r) return `<span class="muted">${screener ? "–" : "…"}</span>`;
+  return r[key] == null ? `<span class="muted" title="${L("kein Binance-Paar oder zu kurze Historie", "no Binance pair or history too short")}">–</span>` : change(r[key]);
+}
 const CARD_DEFAULT = ["24h", "7d", "mcap"];
 const COLS_KEY = "marketCols", VIEW_KEY = "marketView";
 const store = {
@@ -230,9 +269,10 @@ function applyView() {
   const vis = savedCols || (cards ? CARD_DEFAULT : null);
   $("mtable").classList.toggle("cards", cards);
   $("mtable").classList.toggle("custom", !!vis);
-  colStyle.textContent = vis ? MCOLS.filter((k) => !vis.includes(k.key)).map((k) => `#mtable .col-${k.key} { display: none; }`).join("\n") : "";
+  colStyle.textContent = MCOLS.filter((k) => (vis ? !vis.includes(k.key) : k.off)).map((k) => `#mtable .col-${k.key} { display: none; }`).join("\n");
+  if (MCOLS.some((k) => k.key.startsWith("ma") && (vis ? vis.includes(k.key) : !k.off))) ensureScreener();
   document.querySelectorAll("#view-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === (cards ? "cards" : "table"))));
-  const shown = (k) => (vis ? vis.includes(k.key) : !(k.cls === "opt-wide" && matchMedia("(max-width: 960px)").matches) && !(k.cls === "opt-mid" && narrow.matches));
+  const shown = (k) => (vis ? vis.includes(k.key) : !k.off && !(k.cls === "opt-wide" && matchMedia("(max-width: 960px)").matches) && !(k.cls === "opt-mid" && narrow.matches));
   $("col-pop").innerHTML = MCOLS.map((k) => `<label><input type="checkbox" value="${k.key}"${shown(k) ? " checked" : ""}>${esc(k.label)}</label>`).join("")
     + `<button type="button" class="reset">${L("Standard", "Default")}</button>`;
 }
@@ -258,7 +298,6 @@ $("col-pop").addEventListener("click", (e) => {
 document.addEventListener("click", (e) => { if (!e.target.closest("#col-menu")) $("col-menu").open = false; });
 narrow.addEventListener("change", applyView);
 matchMedia("(max-width: 960px)").addEventListener("change", applyView);
-applyView();
 
 // --- Kurzfassung: Breite des Marktes über die angezeigten Coins ---------------------------------
 const median = (xs) => { const a = xs.filter((v) => v != null).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
@@ -289,20 +328,226 @@ function renderMarketBrief(coins, scope) {
   renderBrief($("brief"), { title: title + whyTip("markets"), text, action, tone });
 }
 
+// --- Screener: Top 1000 mit Assetklasse, MA-Abständen und Score-Vollständigkeit (/api/screener) ------------------
+// Wird nur geladen, wenn ein Filter oder eine MA-Spalte aktiv ist (4 CoinGecko-Abfragen beim Server, 5 Min. gecacht).
+let screener = null, screenerById = new Map(), screenerLoading = null, screenerAt = 0;
+const screenerRow = (c) => screenerById.get(c.id) || null;
+function ensureScreener(force = false) {
+  if (screenerLoading || (!force && screener && Date.now() - screenerAt < REFRESH_MS)) return screenerLoading;
+  screenerLoading = (async () => {
+    try {
+      const res = await fetch("api/screener");
+      const p = await res.json();
+      if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
+      screener = p;
+      screenerAt = Date.now();
+      screenerById = new Map(p.coins.map((c) => [c.id, c]));
+      // Assetklassen und MA rechnet der Server im Hintergrund nach: bis dahin alle 20 s nachfragen
+      if (!p.classes_ready || !p.ma_ready) setTimeout(() => ensureScreener(true).then(rerender), 20000);
+    } catch (e) {
+      if (!screener) throw e;
+    } finally {
+      screenerLoading = null;
+    }
+  })();
+  screenerLoading.then(rerender).catch(() => {});
+  return screenerLoading;
+}
+
+// --- Filter --------------------------------------------------------------------------------------------
+const CLASSES = [
+  ["crypto", L("Krypto", "Crypto")], ["stable", "Stablecoin"], ["defi", "DeFi"], ["l1", "Layer 1"], ["l2", "Layer 2"],
+  ["meme", "Meme"], ["privacy", "Privacy"], ["rwa", "RWA"], ["fund", L("Fonds", "Funds")], ["gold", L("Gold", "Gold")],
+  ["wrapped", L("Wrapped", "Wrapped")],
+];
+const CAP_STEPS = [0, 10e6, 100e6, 1e9, 10e9];
+const VOL_STEPS = [0, 100e3, 1e6, 10e6, 100e6];
+const SORTS = [
+  ["mcap", L("Marktkapitalisierung", "Market cap"), (a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9)],
+  ["gain24", L("Gewinner 24 h", "Top gainers 24 h"), (a, b) => nz(b.change["24h"]) - nz(a.change["24h"])],
+  ["lose24", L("Verlierer 24 h", "Top losers 24 h"), (a, b) => pz(a.change["24h"]) - pz(b.change["24h"])],
+  ["gain7", L("Gewinner 7 Tage", "Top gainers 7 d"), (a, b) => nz(b.change["7d"]) - nz(a.change["7d"])],
+  ["lose7", L("Verlierer 7 Tage", "Top losers 7 d"), (a, b) => pz(a.change["7d"]) - pz(b.change["7d"])],
+  ["vol", L("Volumen 24 h", "Volume 24 h"), (a, b) => (b.volume || 0) - (a.volume || 0)],
+  ["turn", L("Umschlag (Vol./MK)", "Turnover (vol./MC)"), (a, b) => nz(turnover(b)) - nz(turnover(a))],
+  ["ma200hi", L("Am weitesten über MA200", "Furthest above MA200"), (a, b) => nz(b.ma200) - nz(a.ma200)],
+  ["ma200lo", L("Am weitesten unter MA200", "Furthest below MA200"), (a, b) => pz(a.ma200) - pz(b.ma200)],
+];
+const nz = (v) => (v == null ? -Infinity : v), pz = (v) => (v == null ? Infinity : v);
+const TRENDS = [
+  ["", L("egal", "any")], ["above200", L("über MA200", "above MA200")], ["below200", L("unter MA200", "below MA200")],
+  ["above50", L("über MA50", "above MA50")], ["below50", L("unter MA50", "below MA50")],
+];
+const FILTER_KEY = "marketFilter";
+const FLT_DEFAULT = { classes: [], minCap: 0, minVol: 0, hideStable: false, complete: false, watch: false, noWarn: false, trend: "", sort: "mcap" };
+let flt = { ...FLT_DEFAULT, ...(store.get(FILTER_KEY) || {}) };
+if (!Array.isArray(flt.classes)) flt.classes = [];
+let shownRows = 100;
+const filterCount = () => flt.classes.length + (flt.minCap > 0) + (flt.minVol > 0) + flt.hideStable + flt.complete + flt.watch + flt.noWarn + !!flt.trend + (flt.sort !== "mcap");
+const filterActive = () => filterCount() > 0;
+const isStable = (c) => (c.classes ? c.classes.includes("stable")
+  : c.price >= 0.97 && c.price <= 1.03 && Math.abs(c.change["24h"] || 0) < 0.01 && Math.abs(c.change["7d"] || 0) < 0.02);
+
+function applyFilter(coins) {
+  const watchIds = new Set(watchList().map((w) => w.id));
+  const list = coins.filter((c) =>
+    (!flt.classes.length || (c.classes && c.classes.some((x) => flt.classes.includes(x))))
+    && (!flt.minCap || (c.market_cap || 0) >= flt.minCap)
+    && (!flt.minVol || (c.volume || 0) >= flt.minVol)
+    && (!flt.hideStable || !isStable(c))
+    && (!flt.complete || c.complete === true)
+    && (!flt.watch || watchIds.has(c.id))
+    && (!flt.noWarn || !liqWarnText(c))
+    && (!flt.trend || (() => {
+      const v = flt.trend.endsWith("200") ? c.ma200 : c.ma50;
+      return v != null && (flt.trend.startsWith("above") ? v > 0 : v < 0);
+    })()));
+  return list.sort((SORTS.find((x) => x[0] === flt.sort) || SORTS[0])[2]);
+}
+
+const fmtStep = (v) => (v >= 1e9 ? `${n0(v / 1e9)} ${L("Mrd.", "B")}` : v >= 1e6 ? `${n0(v / 1e6)} ${L("Mio.", "M")}` : `${n0(v / 1e3)} ${L("Tsd.", "K")}`);
+const n0 = (v) => v.toLocaleString(LOCALE, { maximumFractionDigits: 0 });
+
+function renderFilterUi() {
+  const opt = (steps, cur) => steps.map((v) => `<option value="${v}"${v === cur ? " selected" : ""}>${v ? L("ab $", "from $") + fmtStep(v) : L("alle", "any")}</option>`).join("");
+  const sel = (list, cur) => list.map(([k, label]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(label)}</option>`).join("");
+  const chk = (key, label, note = "") => `<label class="chk"><input type="checkbox" data-k="${key}"${flt[key] ? " checked" : ""}>${label}${note ? ` <span class="note">${note}</span>` : ""}</label>`;
+  const waiting = screener && (!screener.classes_ready || !screener.ma_ready)
+    ? `<div class="note">${L("Assetklassen und MA-Werte werden beim Server noch berechnet (einmalig 1–4 Min.) …", "Asset classes and MA values are still being calculated on the server (once, 1–4 min) …")}</div>` : "";
+  $("flt-pop").innerHTML = `
+    <div class="grp"><div class="lbl">${L("Sortierung", "Sort by")}</div><select data-k="sort">${sel(SORTS, flt.sort)}</select></div>
+    <div class="grp"><div class="lbl">${L("Assetklasse", "Asset class")} <span${tipAttr("assetClass")}>ⓘ</span></div><div class="cls">${CLASSES.map(([k, label]) =>
+      `<button type="button" data-cls="${k}" aria-pressed="${flt.classes.includes(k)}">${esc(label)}</button>`).join("")}</div></div>
+    <div class="grp two">
+      <div><div class="lbl">${L("Min. Marktkap.", "Min. market cap")}</div><select data-k="minCap">${opt(CAP_STEPS, flt.minCap)}</select></div>
+      <div><div class="lbl">${L("Min. Volumen 24 h", "Min. volume 24 h")}</div><select data-k="minVol">${opt(VOL_STEPS, flt.minVol)}</select></div>
+    </div>
+    <div class="grp"><div class="lbl">${L("Trend", "Trend")}</div><select data-k="trend">${sel(TRENDS, flt.trend)}</select></div>
+    <div class="grp">
+      ${chk("hideStable", L("Stablecoins ausblenden", "Hide stablecoins"))}
+      ${chk("complete", L("Nur vollständiger Score", "Complete score only"), L("(Binance-Futures + 200 Tageskerzen)", "(Binance futures + 200 daily candles)"))}
+      ${chk("watch", L("Nur Watchlist", "Watchlist only"), L("(innerhalb der Top 1000)", "(within the top 1000)"))}
+      ${chk("noWarn", L("Liquiditätswarnungen ausblenden", "Hide liquidity warnings"))}
+    </div>
+    ${waiting}
+    <button type="button" class="reset">${L("Alle Filter zurücksetzen", "Reset all filters")}</button>`;
+  $("flt-count").textContent = filterCount() || "";
+  // aktive Filter als entfernbare Chips über der Tabelle
+  const chips = [];
+  if (flt.sort !== "mcap") chips.push(["sort", (SORTS.find((x) => x[0] === flt.sort) || [])[1]]);
+  flt.classes.forEach((k) => chips.push(["cls:" + k, (CLASSES.find((x) => x[0] === k) || [k, k])[1]]));
+  if (flt.minCap) chips.push(["minCap", L("Marktkap. ab $", "Market cap from $") + fmtStep(flt.minCap)]);
+  if (flt.minVol) chips.push(["minVol", L("Volumen ab $", "Volume from $") + fmtStep(flt.minVol)]);
+  if (flt.trend) chips.push(["trend", (TRENDS.find((x) => x[0] === flt.trend) || [])[1]]);
+  if (flt.hideStable) chips.push(["hideStable", L("ohne Stablecoins", "no stablecoins")]);
+  if (flt.complete) chips.push(["complete", L("vollständiger Score", "complete score")]);
+  if (flt.watch) chips.push(["watch", L("nur Watchlist", "watchlist only")]);
+  if (flt.noWarn) chips.push(["noWarn", L("ohne Liquiditätswarnung", "no liquidity warning")]);
+  const on = chips.length && !query && !category && !watchMode;
+  $("flt-chips").hidden = !on;
+  $("flt-chips").innerHTML = on ? chips.map(([k, label]) => `<span class="chip">${esc(label)}<button type="button" data-rm="${k}" aria-label="${L("Filter entfernen", "Remove filter")}">×</button></span>`).join("")
+    + `<button type="button" class="clear-all">${L("alle zurücksetzen", "reset all")}</button>` : "";
+}
+
+function setFilter(patch) {
+  flt = { ...flt, ...patch };
+  store.set(FILTER_KEY, flt);
+  shownRows = 100;
+  renderFilterUi();
+  if (!query && !category && !watchMode) {
+    if (filterActive()) loadScreenerView(); else { loadToken++; load(); }
+  }
+}
+$("flt-pop").addEventListener("change", (e) => {
+  const k = e.target.dataset.k;
+  if (!k) return;
+  const v = e.target.type === "checkbox" ? e.target.checked : ["minCap", "minVol"].includes(k) ? Number(e.target.value) : e.target.value;
+  setFilter({ [k]: v });
+});
+$("flt-pop").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-cls]");
+  if (b) {
+    const k = b.dataset.cls;
+    setFilter({ classes: flt.classes.includes(k) ? flt.classes.filter((x) => x !== k) : [...flt.classes, k] });
+  } else if (e.target.closest(".reset")) setFilter({ ...FLT_DEFAULT });
+});
+$("flt-chips").addEventListener("click", (e) => {
+  if (e.target.closest(".clear-all")) { setFilter({ ...FLT_DEFAULT }); return; }
+  const k = e.target.closest("button[data-rm]")?.dataset.rm;
+  if (!k) return;
+  if (k.startsWith("cls:")) setFilter({ classes: flt.classes.filter((x) => x !== k.slice(4)) });
+  else setFilter({ [k]: FLT_DEFAULT[k] });
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#flt-menu")) $("flt-menu").open = false; });
+$("more-rows").addEventListener("click", () => { shownRows += 100; renderScreenerView(); });
+
+// Gefilterte Ansicht: alle Top 1000 im Browser gefiltert und sortiert, 100 Zeilen je „Mehr anzeigen“
+async function loadScreenerView() {
+  const token = ++loadToken;
+  $("pager-top").hidden = $("pager-bottom").hidden = true;
+  if (!screener) $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Lade die Top 1000 für die Filter …", "Loading the top 1000 for the filters …")}</td></tr>`;
+  try {
+    await ensureScreener();
+    if (token !== loadToken) return;
+    renderScreenerView();
+  } catch (e) {
+    if (token !== loadToken) return;
+    if (e.retryIn) { showRateLimit(e, loadScreenerView, token); return; }
+    $("rows").innerHTML = `<tr><td colspan="14" class="status error">${L("Daten konnten nicht geladen werden", "Data could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
+  }
+}
+function renderScreenerView() {
+  if (!screener) return;
+  const list = applyFilter(screener.coins);
+  const missing = (flt.classes.length && !screener.classes_ready) || ((flt.complete || flt.trend || flt.sort.startsWith("ma")) && !screener.ma_ready);
+  renderRows(list.slice(0, shownRows));
+  if (!list.length) $("rows").innerHTML = `<tr><td colspan="14" class="status">${missing ? L("Die Daten für diesen Filter berechnet der Server gerade (einmalig 1–4 Min.) …", "The server is still calculating the data for this filter (once, 1–4 min) …") : L("Kein Coin passt zu diesen Filtern.", "No coin matches these filters.")}</td></tr>`;
+  const rest = list.length - shownRows;
+  $("more-rows").hidden = rest <= 0;
+  $("more-rows").textContent = L(`Mehr anzeigen (${Math.min(100, rest)} von ${rest} weiteren)`, `Show more (${Math.min(100, rest)} of ${rest} more)`);
+  $("updated").textContent = L(`${list.length} von ${screener.coins.length} Coins (Top 1000) passen zu den Filtern`, `${list.length} of ${screener.coins.length} coins (top 1000) match the filters`)
+    + ` · ${STAND} ${new Date(screener.updated).toLocaleString(LOCALE)}`;
+  marketStatus(screener);
+  renderMarketBrief(list, L("Gefilterte Auswahl", "Filtered selection"));
+  renderFilterUi();
+}
+// nach dem Laden des Screeners: gefilterte Ansicht bzw. MA-Spalten der aktuellen Zeilen neu zeichnen
+let lastRows = [];
+function rerender() {
+  if (filterActive() && !query && !category && !watchMode) renderScreenerView();
+  else if (lastRows.length) renderRows(lastRows);
+  renderFilterUi();
+}
+
 // Nur Symbole, die Detailseite und API verarbeiten können (Binance-/API-taugliche Zeichen)
 const linkable = (c) => /^[A-Z0-9]{1,15}$/.test(c.symbol);
+
+// --- Liquiditätswarnung: wenig Volumen oder auffälliges Verhältnis Volumen / Marktkapitalisierung -------------
+const LIQ_MIN_VOLUME = 250e3;   // unter 250.000 $ am Tag lassen sich schon kleine Beträge schwer handeln
+const TURN_LOW = 0.002;         // unter 0,2 % der Marktkap. am Tag: kaum Handel, Kurs wenig aussagekräftig
+const TURN_HIGH = 1;            // über 100 % am Tag: Pump, Wash Trading oder sehr kleine frei handelbare Menge
+function liqWarnText(c) {
+  const t = turnover(c);
+  if (c.volume != null && c.volume < LIQ_MIN_VOLUME) return L(`Geringe Liquidität: nur ${usd(c.volume)} Volumen in 24 h.`, `Low liquidity: only ${usd(c.volume)} volume in 24 h.`);
+  if (t != null && t < TURN_LOW) return L(`Kaum Handel: Tagesvolumen nur ${pct(t, 2).replace("+", "")} der Marktkapitalisierung.`, `Hardly traded: daily volume only ${pct(t, 2).replace("+", "")} of market cap.`);
+  if (t != null && t > TURN_HIGH) return L(`Auffällig hoher Umschlag: Tagesvolumen ${pct(t, 0).replace("+", "")} der Marktkapitalisierung (Pump, Wash Trading oder kleine frei handelbare Menge möglich).`, `Unusually high turnover: daily volume ${pct(t, 0).replace("+", "")} of market cap (pump, wash trading or small free float possible).`);
+  return "";
+}
+const liqWarn = (c) => { const w = liqWarnText(c); return w ? `<span class="warn" data-tip="liqWarn" data-tip-now="${esc(w)}" tabindex="0" aria-label="${esc(w)}">⚠</span>` : ""; };
 
 // Datenstatus: Abrufzeit beim Server (CoinGecko, 5 Min. gecacht)
 const marketStatus = (p) => setDataStatus("ds-markets", { src: "CoinGecko", kind: "poll", at: p.fetched_at || p.updated, every: 300 });
 
 function renderRows(coins) {
+  lastRows = coins;
+  if (!filterActive() || query || category || watchMode) $("more-rows").hidden = true;
   $("rows").innerHTML = coins.map((c) => `
     <tr${linkable(c) ? ` data-symbol="${esc(c.symbol)}" data-id="${esc(c.id)}" title="${L("Detailseite für", "Open details for")} ${esc(c.name)}${L(" öffnen", "")}"` : ""}>
       <td class="star-col">${watchStar(c)}</td>
       <td class="rank">${c.rank ?? "–"}</td>
       <td class="left"><div class="coin">
         ${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : ""}
-        <span><span class="name">${esc(c.name)}</span><span class="sym">${esc(c.symbol)}</span></span>
+        <span><span class="name">${esc(c.name)}</span><span class="sym">${esc(c.symbol)}</span>${liqWarn(c)}</span>
       </div></td>
       <td class="price">${price(c.price)}</td>
       ${MCOLS.map((k) => `<td class="m ${k.cls} col-${k.key}" data-l="${k.label}">${k.val(c)}</td>`).join("")}
@@ -315,7 +560,7 @@ function showRateLimit(e, fn, token) {
   clearInterval(retryTimer);
   let left = e.retryIn;
   const draw = () => {
-    $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("CoinGecko-Limit erreicht (kostenlose API ohne Key). ", "CoinGecko limit reached (free API without key). ")}`
+    $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("CoinGecko-Limit erreicht (kostenlose API ohne Key). ", "CoinGecko limit reached (free API without key). ")}`
       + `${L("Neuer Versuch in", "Retrying in")} ${left} s …</td></tr>`;
   };
   draw();
@@ -324,7 +569,7 @@ function showRateLimit(e, fn, token) {
     left -= 1;
     if (left > 0) { draw(); return; }
     clearInterval(retryTimer);
-    $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
     fn();
   }, 1000);
 }
@@ -355,7 +600,7 @@ async function loadWatch() {
   $("updated").textContent = `Watchlist · ${watchList().length} Coins, ${L("nur in diesem Browser gespeichert", "stored only in this browser")}`;
   if (!ids) {
     watchRows = [];
-    $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Noch keine Coins in der Watchlist. Stern ☆ vor einem Coin antippen, um ihn zu merken.", "No coins in the watchlist yet. Tap the star ☆ in front of a coin to save it.")}</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Noch keine Coins in der Watchlist. Stern ☆ vor einem Coin antippen, um ihn zu merken.", "No coins in the watchlist yet. Tap the star ☆ in front of a coin to save it.")}</td></tr>`;
     return;
   }
   const res = await fetch("api/watchlist?ids=" + encodeURIComponent(ids));
@@ -386,7 +631,7 @@ function setWatchMode(on) {
   $("search").value = "";
   query = "";
   history.pushState(null, "", on ? "markets.html?watch=1" : page === 1 ? "markets.html" : `markets.html?page=${page}`);
-  $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
+  $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
   setSearchMode(false);
   loadToken++;
   load();
@@ -399,10 +644,11 @@ async function load() {
     try { await loadWatch(); } catch (e) {
       if (token !== loadToken) return;
       if (e.retryIn) { showRateLimit(e, load, token); return; }
-      $("rows").innerHTML = `<tr><td colspan="11" class="status error">${L("Watchlist konnte nicht geladen werden", "Watchlist could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
+      $("rows").innerHTML = `<tr><td colspan="14" class="status error">${L("Watchlist konnte nicht geladen werden", "Watchlist could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
     }
     return;
   }
+  if (!category && filterActive()) { loadToken--; loadScreenerView(); return; }
   if (!category) renderPager();
   try {
     const res = await fetch(category ? "api/markets?category=" + encodeURIComponent(category) : "api/markets?page=" + page);
@@ -413,7 +659,7 @@ async function load() {
     if (category) {
       renderRows(p.coins);
       renderMarketBrief(p.coins, L(`Sparte „${esc(categoryName || category)}“`, `Sector “${esc(categoryName || category)}”`));
-      if (!p.coins.length) $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Keine Coins in dieser Sparte.", "No coins in this sector.")}</td></tr>`;
+      if (!p.coins.length) $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Keine Coins in dieser Sparte.", "No coins in this sector.")}</td></tr>`;
       $("updated").textContent = L(`Sparte „${categoryName || category}“ · die ${p.coins.length} größten Coins nach Marktkapitalisierung`, `Sector “${categoryName || category}” · the ${p.coins.length} largest coins by market cap`) + ` · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
       return;
     }
@@ -426,7 +672,7 @@ async function load() {
   } catch (e) {
     if (token !== loadToken) return;
     if (e.retryIn) { showRateLimit(e, load, token); return; }
-    $("rows").innerHTML = `<tr><td colspan="11" class="status error">${L("Daten konnten nicht geladen werden", "Data could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="14" class="status error">${L("Daten konnten nicht geladen werden", "Data could not be loaded")} (${esc(e.message)}). ${RUNNING}</td></tr>`;
   }
 }
 
@@ -434,7 +680,7 @@ function goTo(p) {
   if (p < 1 || p > maxPage || p === page) return;
   page = p;
   history.pushState(null, "", p === 1 ? "markets.html" : `markets.html?page=${p}`);
-  $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
+  $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
   window.scrollTo({ top: 0 });
   load();
 }
@@ -451,8 +697,9 @@ let searchTimer = null;
 const normQuery = (q) => q.trim().replace(/\s+/g, " ");
 
 function setSearchMode(on) {
-  $("pager-top").hidden = on || !!category || watchMode;
-  $("pager-bottom").hidden = on || !!category || watchMode;
+  $("pager-top").hidden = on || !!category || watchMode || filterActive();
+  $("pager-bottom").hidden = on || !!category || watchMode || filterActive();
+  if (typeof renderFilterUi === "function" && $("flt-pop").childElementCount) renderFilterUi();
   $("cat-chip").hidden = on || !category;
   $("search-clear").hidden = !$("search").value;
   $("search-kbd").hidden = !!$("search").value || document.activeElement === $("search");
@@ -472,7 +719,7 @@ async function runSearch() {
     if (!res.ok) throw Object.assign(new Error(p.error || "HTTP " + res.status), { retryIn: p.retry_in });
     if (token !== loadToken) return;
     if (!p.coins.length) {
-      $("rows").innerHTML = `<tr><td colspan="11" class="status">${L(`Kein Coin gefunden für „${esc(q)}“.`, `No coin found for “${esc(q)}”.`)}</td></tr>`;
+      $("rows").innerHTML = `<tr><td colspan="14" class="status">${L(`Kein Coin gefunden für „${esc(q)}“.`, `No coin found for “${esc(q)}”.`)}</td></tr>`;
       $("search-info").textContent = "";
     } else {
       renderRows(p.coins);
@@ -484,7 +731,7 @@ async function runSearch() {
     if (token !== loadToken) return;
     $("search-info").textContent = "";
     if (e.retryIn) { showRateLimit(e, runSearch, token); return; }
-    $("rows").innerHTML = `<tr><td colspan="11" class="status error">${L("Suche fehlgeschlagen", "Search failed")} (${esc(e.message)}). ${L("CoinGecko ist ohne API-Key stark limitiert – kurz warten und erneut versuchen.", "CoinGecko is heavily rate-limited without an API key – wait a moment and try again.")}</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="14" class="status error">${L("Suche fehlgeschlagen", "Search failed")} (${esc(e.message)}). ${L("CoinGecko ist ohne API-Key stark limitiert – kurz warten und erneut versuchen.", "CoinGecko is heavily rate-limited without an API key – wait a moment and try again.")}</td></tr>`;
   }
 }
 
@@ -536,7 +783,7 @@ $("cat-clear").addEventListener("click", () => {
   page = 1;
   history.pushState(null, "", "markets.html");
   document.title = PAGE_TITLE;
-  $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
+  $("rows").innerHTML = `<tr><td colspan="14" class="status">${L("Lade Daten …", "Loading data …")}</td></tr>`;
   setSearchMode(false);
   load();
 });
@@ -574,6 +821,8 @@ function fromUrl() {
 }
 window.addEventListener("popstate", fromUrl);
 
+applyView();   // erst hier: braucht den Screener-Teil weiter oben (MA-Spalten)
+renderFilterUi();
 fromUrl();
 setInterval(() => (query ? runSearch() : load()), REFRESH_MS);
 </script>

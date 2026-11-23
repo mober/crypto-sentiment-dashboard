@@ -158,9 +158,8 @@ main { position: relative; }
 .hero .ds-line { margin-top: 6px; }
 .news .ds { margin: 2px 0 4px; }
 .ds-line:has(.ds:empty:only-child) { display: none; }
-.bd-tap-hint { display: none; }
 @media (max-width: 640px) {
-  /* Name | Wert in einer Zeile, Balken darunter; Begründung erst nach Antippen */
+  /* Name | Wert in einer Zeile, Balken darunter, Begründung und Quelle unter dem Namen */
   .bd-row { grid-template-columns: 1fr auto; grid-template-areas: "label val" "track track"; gap: 4px 12px; padding: 8px 0; }
   .bd-row .bd-label { grid-area: label; }
   .bd-row .bd-val { grid-area: val; }
@@ -168,11 +167,6 @@ main { position: relative; }
   .bd-row .bd-bar { top: 3px; }
   .bd-row.total .bd-bar { top: 1px; }
   .bd-row .bd-val .share { display: inline; margin-left: 6px; }
-  .bd-row.has-reason { cursor: pointer; }
-  .bd-row.has-reason .bd-name::after { content: " ▸"; color: var(--muted); font-weight: 400; }
-  .bd-row.has-reason.open .bd-name::after { content: " ▾"; }
-  .bd-row.has-reason:not(.open) .bd-reason, .bd-row.has-reason:not(.open) .bd-src { display: none; }
-  .bd-tap-hint { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; }
   .bd-axis { grid-template-columns: 1fr; }
   .bd-axis > :first-child, .bd-axis > :last-child { display: none; }
 }
@@ -204,29 +198,11 @@ main { position: relative; }
 /* Kennzahlen */
 .stats-card { padding: 0; overflow: hidden; margin-bottom: 20px; }
 .stats-card[hidden] { display: none; }
-/* Kopfzeile = Schalter zum Ein- und Ausklappen */
-.stats-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;
-  border: 0; border-radius: 0; background: none; padding: 11px 16px; text-align: left; }
-.stats-toggle:hover .label, .stats-toggle:hover .chev { color: var(--text); }
-.stats-toggle .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
-.stats-toggle .chev { color: var(--muted); font-size: 12px; margin-right: -4px; }
-.stats-toggle[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.stats-head { padding: 11px 16px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px;
   background: var(--border); border-top: 1px solid var(--border); }
 .stats[hidden] { display: none; }
 
-/* Übrige Karten ein- und ausklappen: Klick auf die Kopfzeile oder den Pfeil */
-.collapse-btn { border: 0; border-radius: 0; background: none; padding: 0 8px 0 0; color: var(--muted); font-size: 12px;
-  line-height: 1; vertical-align: baseline; }
-.collapse-btn .chev, .stats-toggle .chev { display: inline-block; transition: transform .15s; }
-.collapsible.collapsed .collapse-btn .chev { transform: rotate(-90deg); }
-.collapsible > .card-head { cursor: pointer; }
-.collapsible > .card-head:hover > .label, .collapsible > .card-head.label:hover, .collapsible > .card-head:hover .pair,
-.collapsible > .card-head:hover .collapse-btn { color: var(--text); }
-.collapsible.collapsed > :not(.card-head) { display: none; }
-.collapsible.collapsed > .card-head { margin-bottom: 0; }
-.collapsible.collapsed .chart-tools, .collapsible.collapsed .mini-legend { display: none; }
-.chart-card.collapsed { padding-bottom: 14px; }
 .stat { background: var(--card); padding: 14px 16px; min-width: 0; }
 .stat .val { font-size: 17px; font-weight: 700; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat .det { color: var(--muted); font-size: 12px; margin-top: 3px; }
@@ -335,10 +311,9 @@ main { position: relative; }
 .book-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .book-note:empty { display: none; }
 @media (max-width: 900px) { .book-grid { grid-template-columns: 1fr; } .book-depth { min-height: 280px; } }
-/* Handy: Orderbuch-Tabelle nur die 5 Stufen je Seite nächst am Kurs, Tiefenchart flacher */
+/* Handy: Tiefenchart flacher */
 @media (max-width: 640px) {
   .book-depth { min-height: 220px; }
-  #book-asks tr:nth-child(-n+5), #book-bids tr:nth-child(n+6) { display: none; }
   .book-tools { width: 100%; }
 }
 

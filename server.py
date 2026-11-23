@@ -315,6 +315,134 @@ def get_markets(page: int, category: Optional[str] = None) -> Optional[Dict[str,
     return _markets_cache.get(f"{category}:1" if category else str(page), load)
 
 
+# --- Screener für die Marktübersicht: Top 1000 mit Assetklasse, MA50/MA200 und Futures-Paar ----------------
+# Die Liste kommt in SCREENER_PAGES CoinGecko-Abfragen à 250 (statt 20 Seiten à 50). Assetklassen aus CoinGecko-
+# Kategorien (je Kategorie die größten 250, einmal am Tag im Hintergrund), MA-Abstände und Futures aus Binance
+# (stündlich im Hintergrund, nur Coins mit USDT-Paar). Klassen und MA werden bei jeder Anfrage frisch dazugemischt,
+# damit sie erscheinen, sobald sie fertig sind.
+SCREENER_PAGES = 4
+SCREENER_PER_PAGE = 250
+ASSET_CLASSES = {   # Klasse → CoinGecko-Kategorien; "crypto" = alles, was keine der NON_CRYPTO-Klassen ist
+    "stable": ["stablecoins"], "defi": ["decentralized-finance-defi"], "l1": ["layer-1"], "l2": ["layer-2"],
+    "meme": ["meme-token"], "privacy": ["privacy-coins"], "rwa": ["real-world-assets-rwa"],
+    "fund": ["tokenized-treasuries", "tokenized-money-market-fund-mmfs", "tokenized-exchange-traded-funds-etfs"],
+    "gold": ["tokenized-gold"], "wrapped": ["wrapped-tokens", "bridged-tokens"],
+}
+NON_CRYPTO = {"stable", "fund", "gold", "wrapped"}
+MA_FAST, MA_SLOW = 50, sentiment.MA_PERIOD
+MA_PRICE_TOLERANCE = 0.15   # Binance-Kurs weicht mehr ab → anderes Projekt mit gleichem Kürzel, nicht verwenden
+SCREENER_MA_WORKERS = 8
+CLASSES_PAUSE = 15          # s zusätzlich zwischen den Kategorie-Abfragen (15 Stück, einmal am Tag, ~5 Min.)
+_screener_cache = TTLCache("screener", CACHE_SECONDS, max_entries=1, stale=True)
+_classes_cache = TTLCache("asset-classes", 24 * 3600, max_entries=1, stale=True)
+_ma_cache = TTLCache("screener-ma", 3600, max_entries=1, stale=True)
+
+
+def _in_background(cache: TTLCache, key: str, loader: Callable[[Any], Any]) -> None:
+    """Laden im eigenen Thread, wenn der Wert fehlt oder abgelaufen ist (höchstens ein Thread je Schlüssel)."""
+    if not cache.fresh(key):
+        threading.Thread(target=cache.refresh, args=(key, loader), daemon=True, name=f"bg-{cache.name}").start()
+
+
+def load_asset_classes(_: Any) -> Optional[Dict[str, Any]]:
+    ids: Dict[str, List[str]] = {}
+    ok = 0
+    for cls, cats in ASSET_CLASSES.items():
+        for cat in cats:
+            coins = None
+            for _attempt in range(3):
+                time.sleep(CLASSES_PAUSE)   # läuft im Hintergrund: CoinGecko Luft für die Seitenabfragen lassen
+                coins = sentiment.safe(sentiment.get_markets, 1, SCREENER_PER_PAGE, cat)
+                wait = sentiment.coingecko_retry_in()
+                if coins is not None or wait <= sentiment.COINGECKO_MIN_INTERVAL:
+                    break
+                time.sleep(wait + 1)   # Limit-Pause abwarten, dann dieselbe Kategorie erneut
+            if coins is None:
+                continue
+            ok += 1
+            for c in coins:
+                ids.setdefault(c["id"], [])
+                if cls not in ids[c["id"]]:
+                    ids[c["id"]].append(cls)
+    total = sum(len(c) for c in ASSET_CLASSES.values())
+    if not ok:
+        return None
+    result = {"ids": ids, "complete": ok == total}
+    return result if ok == total else Expires(result, 600)   # Lücken: in 10 Min. erneut versuchen
+
+
+def _binance_symbols(url: str) -> set:
+    data = sentiment.safe(sentiment.fetch_json, url) or []
+    return {d["symbol"] for d in data if isinstance(d, dict) and d.get("symbol", "").endswith("USDT")}
+
+
+def load_screener_ma(symbols: List[str]) -> Callable[[Any], Any]:
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        spot = _binance_symbols("https://api.binance.com/api/v3/ticker/price")
+        fut = _binance_symbols("https://fapi.binance.com/fapi/v1/ticker/price")
+        if not spot and not fut:
+            return None
+
+        def one(sym: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+            pair = sym + "USDT"
+            base = ("https://api.binance.com/api/v3/klines" if pair in spot
+                    else "https://fapi.binance.com/fapi/v1/klines" if pair in fut else None)
+            if not base:
+                return None
+            rows = sentiment.safe(sentiment.fetch_json, f"{base}?symbol={pair}&interval=1d&limit={MA_SLOW + 1}")
+            if not rows:
+                return None
+            closes = [float(r[4]) for r in rows]
+            last = closes[-1]
+            dist = lambda n: (last / (sum(closes[-n:]) / n) - 1) if len(closes) >= n else None
+            return sym, {"close": last, "days": len(closes), "ma50": dist(MA_FAST), "ma200": dist(MA_SLOW),
+                         "futures": pair in fut}
+
+        with ThreadPoolExecutor(max_workers=SCREENER_MA_WORKERS) as pool:
+            got = [r for r in pool.map(one, symbols) if r]
+        return {"symbols": dict(got)}
+    return load
+
+
+def get_screener() -> Optional[Dict[str, Any]]:
+    def load(_: Any) -> Optional[Dict[str, Any]]:
+        coins: List[Dict[str, Any]] = []
+        for page in range(1, SCREENER_PAGES + 1):
+            part = sentiment.safe(sentiment.get_markets, page, SCREENER_PER_PAGE)
+            if part is None:
+                return None if not coins else Expires({"coins": coins, "partial": True}, RETRY_SECONDS)
+            coins += part
+        return {"coins": coins, "updated": datetime.now().astimezone().isoformat(timespec="seconds")}
+
+    base = _screener_cache.get("top", load)
+    if not base:
+        return None
+    _in_background(_classes_cache, "all", load_asset_classes)
+    symbols = sorted({c["symbol"] for c in base["coins"] if SYMBOL_RE.match(c["symbol"])})
+    _in_background(_ma_cache, "all", load_screener_ma(symbols))
+    classes, ma = _classes_cache.peek("all"), _ma_cache.peek("all")
+    cls_ids = classes["ids"] if classes else {}
+    ma_sym = ma["symbols"] if ma else {}
+    rows = []
+    for c in base["coins"]:
+        row = dict(c)
+        if classes:
+            cl = list(cls_ids.get(c["id"], []))
+            row["classes"] = (["crypto"] if not NON_CRYPTO.intersection(cl) else []) + cl
+        m = ma_sym.get(c["symbol"])
+        if m and c.get("price") and abs(m["close"] / c["price"] - 1) > MA_PRICE_TOLERANCE:
+            m = None   # gleiches Kürzel, anderer Coin
+        if ma:
+            row["ma50"] = m["ma50"] if m else None
+            row["ma200"] = m["ma200"] if m else None
+            # vollständiger Score = alle Binance-Signale möglich: USDT-Perpetual und mindestens 200 Tageskerzen
+            row["complete"] = bool(m and m["futures"] and m["days"] >= MA_SLOW)
+        rows.append(row)
+    return {"updated": base.get("updated"), "fetched_at": base.get("fetched_at"), "partial": bool(base.get("partial")),
+            "coins": rows, "classes_ready": bool(classes), "classes_at": classes and classes.get("fetched_at"),
+            "ma_ready": bool(ma), "ma_at": ma and ma.get("fetched_at")}
+
+
 def get_categories() -> Optional[Dict[str, Any]]:
     """Alle Sparten; eine CoinGecko-Abfrage, 5 Min. gecacht."""
     def load(_: Any) -> Optional[Dict[str, Any]]:
@@ -567,6 +695,10 @@ def api_markets(q: Query) -> Dict[str, Any]:
     return from_coingecko(get_markets(int(page), category))
 
 
+def api_screener(q: Query) -> Dict[str, Any]:
+    return from_coingecko(get_screener())
+
+
 def api_categories(q: Query) -> Dict[str, Any]:
     return from_coingecko(get_categories())
 
@@ -810,6 +942,7 @@ ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
     "/api/coin": api_coin,
     "/api/coin-info": api_coin_info,
     "/api/methodology": api_methodology,
+    "/api/screener": api_screener,
     "/api/klines": api_klines,
     "/api/score-history": api_score_history,
     "/api/onchain": api_onchain,

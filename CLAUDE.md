@@ -103,13 +103,24 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   gegen Layer 1), Liquidationen (`renderSummary`: Long-/Short-Anteil, Tempo gegen 24-h-Schnitt), Detailseite
   (`renderCoinBrief` aus `situation`, über den Reitern). „Warum wichtig?“-Knöpfe: `whyTip(key)` mit Texten `WHY`/`WHY_EN`
   in `tips.js` (Tooltip-Schlüssel `why:<key>`); in statischem HTML als `<span class="why-slot" data-why="…">`, ersetzt beim
-  Start. Detailbereiche eingeklappt mit `<details class="fold">` (Styles in `base.css`).
+  Start. **Nichts ist eingeklappt**: alle Karten und Details sind immer offen (ausdrücklicher Wunsch; kein Einklappen
+  wieder einbauen).
 - `web/methodology.html` (Navigation „Methodik“): Ziel und Grenzen, Berechnung, Signale mit Skalen und Gewichten,
   fehlende/veraltete Daten, Datenquellen und Intervalle, Börsen-Einschränkungen, Rückblick, Änderungsprotokoll. Zahlen
   kommen aus `/api/methodology` (`api_methodology` in `server.py`: `SIGNAL_SCALES`, `SIGNAL_WEIGHTS`, Schwellen,
   Cache-Intervalle), Texte je Signal in `SIG` auf der Seite. **Score-Methodik geändert (Signale, Skalen, Gewichte,
   Schwellen, Einordnung) → `METHODOLOGY_VERSION` erhöhen und Eintrag oben in `METHODOLOGY_CHANGES` (`sentiment.py`)**;
   neues Signal auch in `SIGNAL_SCALES` und `SIG` eintragen.
+- Filter der Marktübersicht (`markets.html`, Menü „Filter“, `localStorage.marketFilter`, Chips über der Tabelle): Sortierung
+  (Gewinner/Verlierer 24 h/7 T, Volumen, Umschlag, Abstand MA200), Assetklassen, Mindest-Marktkap./-Volumen, Trend zu MA50/MA200,
+  Stablecoins ausblenden, nur vollständiger Score, nur Watchlist, Liquiditätswarnungen ausblenden. Aktiver Filter → alle Top 1000
+  von `/api/screener` im Browser gefiltert (100 Zeilen je „Mehr anzeigen“, keine Seiten). `get_screener` in `server.py`:
+  Top 1000 in `SCREENER_PAGES` × 250 (CoinGecko, 5 Min.), Assetklassen aus CoinGecko-Kategorien `ASSET_CLASSES` (je die 250
+  größten, einmal am Tag im Hintergrund, `CLASSES_PAUSE` zwischen den Abfragen, wartet Limit-Pausen ab), MA50/MA200 und
+  USDT-Perpetual aus Binance (stündlich im Hintergrund, Kürzel → `<SYMBOL>USDT`, verworfen bei Kursabweichung über
+  `MA_PRICE_TOLERANCE`); beides wird je Anfrage frisch dazugemischt (`classes_ready`, `ma_ready`). „Vollständiger Score“ =
+  USDT-Perpetual + 200 Tageskerzen. Spalten Vol./MK, Abst. MA50/MA200 (aus, über „Spalten“). Liquiditätswarnung ⚠ im Browser
+  (`liqWarnText`: Volumen < 250.000 $, Umschlag < 0,2 % oder > 100 %), Tooltips `liqWarn`, `assetClass`.
 - Datenstatus je Karte/Kennzahl (`web/datastatus.js`, nach `format.js` laden): `dataStatus({src, kind, at|day, every, lag,
   connected, note})` bzw. `setDataStatus(id, …)` zeigt „Quelle · Zustand · Stand“; alle `.ds` werden jede Sekunde neu bewertet.
   Zustände live/aktuell/verzögert/veraltet/nicht verfügbar; Arten `live` (WebSocket, `at` = letzte Meldung), `poll`
@@ -120,8 +131,8 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Alle `updated`-Zeitstempel des Servers tragen die Zeitzone (sonst rechnet der Browser bei anderer Zeitzone falsch).
 - Mobil (bis 640 px): Märkte als Karten (`#mtable.cards`, Umschalter Tabelle/Karten `localStorage.marketView`, ohne Wahl
   automatisch nach Breite) und Spaltenauswahl (`MCOLS`, `localStorage.marketCols`, gilt für beide Ansichten; ohne Auswahl
-  Tabelle wie bisher über `opt-wide`/`opt-mid`, Karten `CARD_DEFAULT`). Liquidations-Feed als Karten, erst 15 Einträge.
-  Score-Zusammensetzung: Begründung erst nach Antippen der Zeile. Orderbuch-Tabelle nur die 5 Stufen nächst am Kurs.
+  Tabelle wie bisher über `opt-wide`/`opt-mid`, Karten `CARD_DEFAULT`; Spalten mit `off: true` sind ohne Auswahl aus).
+  Liquidations-Feed als Karten. Score-Zusammensetzung: Name | Wert, Balken darunter.
 - Live-Kurs im Chart der Detailseite: `coin-chart.js` verbindet sich direkt per WebSocket mit Binance
   (`connectLive`, Spot oder Futures je nach Quelle der Kerzen) und zieht die laufende Kerze samt
   MA/RSI und Kurs im Kopf nach; der Server ist nicht beteiligt. Rückfall ist `refreshChart` (60 s).

@@ -99,9 +99,8 @@
   .src b.ok { color: var(--up); } .src b.err { color: var(--down); }
 
   .sources-ds { margin: -14px 0 16px; }
-  .feed-more { display: none; margin: 10px auto 0; font-size: 13px; }
   .card-head h2 .why-tip { vertical-align: 2px; }
-  /* Handy: Live-Feed als Karten (Coin, Seite, Betrag; darunter Zeit, Börse, Preis), erst 15 Einträge */
+  /* Handy: Live-Feed als Karten (Coin, Seite, Betrag; darunter Zeit, Börse, Preis) */
   @media (max-width: 640px) {
     #feedTable thead { display: none; }
     #feedTable, #feedTable tbody { display: block; }
@@ -115,9 +114,6 @@
     #feedTable .f-time { grid-column: 1; }
     #feedTable .f-ex { grid-column: 2; }
     #feedTable .f-price { grid-column: 3; text-align: right; }
-    #feedTable:not(.all) tbody tr:nth-child(n+16) { display: none; }
-    .feed-more { display: block; }
-    .feed-more[hidden] { display: none; }
   }
   @media (max-width: 900px) {
     .top { grid-template-columns: 1fr; }
@@ -175,14 +171,12 @@
     <div class="hist-sum" id="histSum"></div>
     <div id="hist"><div class="status">Lade Verlauf …</div></div>
     <div class="legend"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span id="histBucket"></span></div>
-    <details class="fold" id="histMore"><summary>Coins und größte Liquidationen im Zeitraum</summary>
     <div class="hist-grid">
       <div><h3>Am stärksten betroffen</h3><div class="table-wrap"><table>
         <thead><tr><th class="left">Coin</th><th>Long</th><th>Short</th><th>Summe</th></tr></thead><tbody id="histCoins"></tbody></table></div></div>
       <div><h3>Größte Liquidationen</h3><div class="table-wrap"><table>
         <thead><tr><th class="left">Datum</th><th class="left">Börse</th><th class="left">Coin</th><th class="left">Seite</th><th>Betrag</th></tr></thead><tbody id="histLargest"></tbody></table></div></div>
     </div>
-    </details>
     <div class="hist-note" id="histNote"></div>
     <div class="ds-line"><span class="ds" id="ds-hist"></span></div>
   </section>
@@ -199,7 +193,6 @@
       <thead><tr><th class="left">Zeit</th><th class="left">Börse</th><th class="left">Coin</th><th class="left">Seite</th><th>Preis</th><th>Betrag</th></tr></thead>
       <tbody id="feed"><tr><td colspan="6" class="status">Lade …</td></tr></tbody>
     </table></div>
-    <button type="button" class="feed-more" id="feedMore">Alle anzeigen</button>
     <div class="ds-line"><span class="ds" id="ds-feed"></span></div>
   </section>
 
@@ -226,7 +219,6 @@ addStatic({
   "Am stärksten betroffen": "Hit hardest", "Summe": "Total", "Größte Liquidationen": "Largest liquidations", "Datum": "Date",
   "Seite": "Side", "Betrag": "Amount", "Coin, z. B. BTC": "Coin, e.g. BTC", "Coin filtern": "Filter coin", "Börse filtern": "Filter exchange",
   "Alle Börsen": "All exchanges", "Mindestbetrag": "Minimum amount", "ab $0": "from $0", "ab $10.000": "from $10,000",
-  "Coins und größte Liquidationen im Zeitraum": "Coins and largest liquidations in the period", "Alle anzeigen": "Show all",
   "ab $100.000": "from $100,000", "ab $1 Mio.": "from $1M", "Zeit": "Time", "Preis": "Price", "Lade …": "Loading …",
   "Long = Long-Position zwangsgeschlossen (Kurs fiel), Short = Short-Position zwangsgeschlossen (Kurs stieg). Binance meldet je Coin höchstens die größte Liquidation pro Sekunde; Hyperliquid und kleinere Börsen fehlen. Die Summen liegen deshalb unter denen von Aggregatoren wie CoinGlass.":
     "Long = long position force-closed (price fell), short = short position force-closed (price rose). Binance reports at most the largest liquidation per coin and second; Hyperliquid and smaller exchanges are missing. The totals are therefore below those of aggregators such as CoinGlass.",
@@ -370,7 +362,6 @@ function renderSummary() {
 
 // „Warum wichtig?“-Knöpfe an den Überschriften
 document.querySelectorAll(".why-slot").forEach((el) => { el.outerHTML = whyTip(el.dataset.why); });
-$("feedMore").addEventListener("click", () => { $("feedTable").classList.add("all"); $("feedMore").hidden = true; });
 
 let btc = null;
 async function loadBtc() {
