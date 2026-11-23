@@ -59,6 +59,29 @@ deploy/deploy.sh root@203.0.113.5
 
 Passwort, Domain oder Anmeldung ändern: `setup.sh` einfach erneut ausführen (mit oder ohne Benutzername).
 
+## Unter einem Unterpfad (z. B. `/trading/`)
+
+Auf maxheadroom23.org läuft das Dashboard neben anderen Seiten unter `/trading/`. Dieser Teil steht
+nicht in `Caddyfile.template`, sondern ist von Hand in `/etc/caddy/Caddyfile` eingetragen (das
+Frontend nutzt relative Pfade, deshalb reicht `handle_path`):
+
+```
+redir /trading /trading/ 308
+handle_path /trading/* {
+	reverse_proxy 127.0.0.1:8000
+}
+
+# Alte Adressen ohne /trading/ weiterleiten
+@altdashboard path /coin.html /markets.html /sectors.html /about.html /methodology.html /liquidations.html /alerts.html
+redir @altdashboard /trading{uri} 308
+handle /api/* {
+	reverse_proxy 127.0.0.1:8000
+}
+```
+
+**Neue Seite in `web/` → auch in `@altdashboard` eintragen**, sonst gibt die alte Adresse 404.
+Danach `caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && systemctl reload caddy`.
+
 ## Nützliche Befehle auf dem Server
 
 ```bash
@@ -71,8 +94,8 @@ journalctl -u caddy -f                    # Log von Caddy (Zertifikat, Zugriffe)
 
 - **CoinGecko:** Von Rechenzentrums-IPs ist das kostenlose Limit oft noch knapper als zu Hause.
   Häufen sich die Hinweise „CoinGecko-Limit erreicht“, hilft ein kostenloser Demo-Key.
-- Die App speichert nichts auf der Platte. Nach einem Neustart sind die Caches leer, und die
-  ersten Aufrufe dauern etwas länger.
+- Dauerhaft gespeichert werden nur Liquidationen und Alarme in `data/` (wird von `deploy.sh` nicht
+  überschrieben). Nach einem Neustart sind die Caches leer, und die ersten Aufrufe dauern etwas länger.
 - Die App selbst hat keine Benutzerverwaltung; eine Anmeldung gibt es nur über Caddy. Öffentlich
   erreichbar teilen sich alle Besucher das CoinGecko-Limit des Servers. Die App nicht ohne Caddy
   davor ins Netz stellen; sie lauscht ohnehin nur auf `127.0.0.1`.
