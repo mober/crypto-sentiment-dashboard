@@ -96,6 +96,18 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Leiste zum Hinzufügen/Entfernen. Stern auch in der Rangliste und auf der Detailseite; Tabelle `markets.html?watch=1`. Die Coin-ID kommt dafür als `data.coin_id` aus der ohnehin laufenden CoinGecko-Abfrage mit; `web/format.js` – gemeinsame Hilfsfunktionen
   (`$`, `esc`, Zahlenformate `pct`, `change`, `usd`, `usd6` …) für alle Seiten; Formate dort ändern,
   nicht in den Seiten
+- Seitenaufbau für Übersicht: oben je Seite eine Kurzfassung „Auf einen Blick“ (`<section class="card brief">`,
+  `renderBrief(el, {title, text, action, tone})` in `format.js`, Ton buy/hold/sell/wait/neutral), im Browser aus den ohnehin
+  geladenen Daten regelbasiert formuliert: Dashboard (`renderDashBrief`: Fear & Greed, Watchlist-Scores, Empfehlung aus dem
+  Lagebild von BTC), Märkte (`renderMarketBrief`: Breite der angezeigten Coins), Sparten (`renderSectorBrief`: Rotation
+  gegen Layer 1), Liquidationen (`renderSummary`: Long-/Short-Anteil, Tempo gegen 24-h-Schnitt), Detailseite
+  (`renderCoinBrief` aus `situation`, über den Reitern). „Warum wichtig?“-Knöpfe: `whyTip(key)` mit Texten `WHY`/`WHY_EN`
+  in `tips.js` (Tooltip-Schlüssel `why:<key>`); in statischem HTML als `<span class="why-slot" data-why="…">`, ersetzt beim
+  Start. Detailbereiche eingeklappt mit `<details class="fold">` (Styles in `base.css`).
+- Mobil (bis 640 px): Märkte als Karten (`#mtable.cards`, Umschalter Tabelle/Karten `localStorage.marketView`, ohne Wahl
+  automatisch nach Breite) und Spaltenauswahl (`MCOLS`, `localStorage.marketCols`, gilt für beide Ansichten; ohne Auswahl
+  Tabelle wie bisher über `opt-wide`/`opt-mid`, Karten `CARD_DEFAULT`). Liquidations-Feed als Karten, erst 15 Einträge.
+  Score-Zusammensetzung: Begründung erst nach Antippen der Zeile. Orderbuch-Tabelle nur die 5 Stufen nächst am Kurs.
 - Live-Kurs im Chart der Detailseite: `coin-chart.js` verbindet sich direkt per WebSocket mit Binance
   (`connectLive`, Spot oder Futures je nach Quelle der Kerzen) und zieht die laufende Kerze samt
   MA/RSI und Kurs im Kopf nach; der Server ist nicht beteiligt. Rückfall ist `refreshChart` (60 s).

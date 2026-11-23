@@ -214,7 +214,9 @@ function descriptionCard(p) {
       <h2>${L("Was ist", "What is")} ${esc(p.name)}?</h2>
       ${d.lang === "en" && !EN ? `<div class="lang-note">Die Projektbeschreibung gibt es bei CoinGecko nur auf Englisch.
         <a href="${esc(translate)}" target="_blank" rel="noopener noreferrer">Im Google Übersetzer auf Deutsch lesen →</a></div>` : ""}
-      ${d.paragraphs.map((x) => `<p lang="${esc(d.lang)}">${esc(x)}</p>`).join("")}
+      ${d.paragraphs.slice(0, 1).map((x) => `<p lang="${esc(d.lang)}">${esc(x)}</p>`).join("")}
+      ${d.paragraphs.length > 1 ? `<details class="fold"><summary>${L(`Weiterlesen (${d.paragraphs.length - 1} weitere Absätze)`, `Read more (${d.paragraphs.length - 1} more paragraphs)`)}</summary>
+        ${d.paragraphs.slice(1).map((x) => `<p lang="${esc(d.lang)}">${esc(x)}</p>`).join("")}</details>` : ""}
     </section>`;
 }
 

@@ -55,9 +55,40 @@
   .status { padding: 32px; text-align: center; color: var(--muted); }
   .status.error { color: var(--down); }
 
-  /* Schmale Bildschirme: weniger wichtige Spalten ausblenden */
-  @media (max-width: 960px) { .opt-wide { display: none; } }
-  @media (max-width: 640px) { .opt-mid { display: none; } }
+  /* Schmale Bildschirme: weniger wichtige Spalten ausblenden, solange keine eigene Auswahl gespeichert ist */
+  @media (max-width: 960px) { #mtable:not(.custom) .opt-wide { display: none; } }
+  @media (max-width: 640px) { #mtable:not(.custom) .opt-mid { display: none; } }
+
+  /* Ansicht (Tabelle/Karten) und Spaltenauswahl */
+  .view-tools { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 11px; font-size: 13px; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--text); color: var(--card); }
+  .col-menu { position: relative; }
+  .col-menu > summary { list-style: none; cursor: pointer; padding: 6px 11px; font-size: 13px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card); }
+  .col-menu > summary::-webkit-details-marker { display: none; }
+  .col-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; min-width: 190px; padding: 8px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow), 0 8px 24px rgba(0, 0, 0, .15); }
+  .col-pop label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 14px; cursor: pointer; border-radius: 6px; }
+  .col-pop label:hover { background: var(--row-hover); }
+  .col-pop .reset { width: 100%; margin-top: 6px; font-size: 12px; }
+
+  /* Kartenansicht (Standard auf dem Handy): Kopfzeile Coin | Preis, darunter die gewählten Kennzahlen */
+  #mtable.cards, #mtable.cards tbody { display: block; }
+  #mtable.cards thead { display: none; }
+  #mtable.cards tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); }
+  #mtable.cards tbody tr:last-child { border-bottom: 0; }
+  #mtable.cards td { border: 0; padding: 0; }
+  #mtable.cards td.left { flex: 1 1 55%; min-width: 0; }
+  #mtable.cards td.left .name { white-space: normal; }
+  #mtable.cards td.price { font-weight: 600; }
+  #mtable.cards td.m { flex: 1 1 28%; text-align: left; font-size: 13px; }
+  #mtable.cards td.m::before { content: attr(data-l); display: block; color: var(--muted); font-size: 11px; }
+  #mtable.cards td.status { flex: 1 1 100%; }
+
 </style>
 </head>
 <body>
@@ -69,6 +100,8 @@
     </div>
   </header>
 
+  <section class="card brief" id="brief" hidden></section>
+
   <div class="toolbar">
     <div class="search">
       <input type="search" id="search" placeholder="Coin suchen (Name oder Symbol) …" autocomplete="off" spellcheck="false"
@@ -78,25 +111,32 @@
     </div>
     <button type="button" id="watch-toggle" aria-pressed="false" title="Nur die Coins deiner Watchlist zeigen">★ Watchlist</button>
     <div class="search-info" id="search-info"></div>
+    <div class="view-tools">
+      <div class="seg" id="view-seg" role="group" aria-label="Ansicht">
+        <button type="button" data-view="table" aria-pressed="true">Tabelle</button>
+        <button type="button" data-view="cards" aria-pressed="false">Karten</button>
+      </div>
+      <details class="col-menu" id="col-menu"><summary>Spalten</summary><div class="col-pop" id="col-pop"></div></details>
+    </div>
     <span class="cat-chip" id="cat-chip" hidden><span>Sparte: <b id="cat-name"></b> · <a href="sectors.html">alle Sparten</a></span>
       <button type="button" id="cat-clear" aria-label="Sparte verlassen" title="Zurück zur Gesamt-Rangliste">×</button></span>
   </div>
   <nav class="pager" id="pager-top"></nav>
   <section class="card table-wrap">
-    <table>
+    <table id="mtable">
       <thead>
         <tr>
           <th class="star-col" aria-label="Watchlist"></th>
           <th>#</th>
           <th class="left">Coin</th>
           <th>Preis</th>
-          <th class="opt-wide">1h</th>
-          <th>24h</th>
-          <th class="opt-mid">7T</th>
-          <th class="opt-wide">30T</th>
-          <th class="opt-wide">1J</th>
-          <th class="opt-mid">Marktkap.</th>
-          <th class="opt-wide">Volumen 24h</th>
+          <th class="opt-wide col-1h">1h</th>
+          <th class="col-24h">24h</th>
+          <th class="opt-mid col-7d">7T</th>
+          <th class="opt-wide col-30d">30T</th>
+          <th class="opt-wide col-1y">1J</th>
+          <th class="opt-mid col-mcap">Marktkap.</th>
+          <th class="opt-wide col-vol">Volumen 24h</th>
         </tr>
       </thead>
       <tbody id="rows"><tr><td colspan="11" class="status">Lade Daten …</td></tr></tbody>
@@ -109,6 +149,7 @@
 </main>
 
 <script src="format.js"></script>
+<script src="tips.js"></script>
 <script src="watchlist.js"></script>
 <script>
 const PAGE_TITLE = L("Marktübersicht", "Markets");
@@ -121,7 +162,7 @@ addStatic({
   "Nur die Coins deiner Watchlist zeigen": "Show only the coins in your watchlist", "Sparte:": "Sector:",
   "alle Sparten": "all sectors", "Sparte verlassen": "Leave sector", "Zurück zur Gesamt-Rangliste": "Back to the full ranking",
   "Preis": "Price", "7T": "7D", "30T": "30D", "1J": "1Y", "Marktkap.": "Market cap", "Volumen 24h": "Volume 24h",
-  "Lade Daten …": "Loading data …",
+  "Lade Daten …": "Loading data …", "Ansicht": "View", "Tabelle": "Table", "Karten": "Cards", "Spalten": "Columns",
   "Klick auf einen Coin öffnet seine Detailseite (Chart und Score), der Stern ☆ merkt ihn in der Watchlist (nur in diesem Browser). Die Suche durchsucht alle Coins auf CoinGecko, nicht nur die Top 1000.":
     "Clicking a coin opens its detail page (chart and score), the star ☆ saves it to the watchlist (only in this browser). The search covers all coins on CoinGecko, not just the top 1000.",
   "Daten: CoinGecko · Aktualisiert sich alle 5 Minuten.": "Data: CoinGecko · Refreshes every 5 minutes.",
@@ -157,6 +198,95 @@ function renderPager() {
   $("pager-bottom").innerHTML = html;
 }
 
+// --- Spalten und Ansicht -------------------------------------------------------
+// Kennzahl-Spalten (Reihenfolge wie im Tabellenkopf). Ohne gespeicherte Auswahl blendet die Tabelle je nach Breite
+// opt-wide/opt-mid aus; die Kartenansicht zeigt dann CARD_DEFAULT. Eine eigene Auswahl gilt für beide Ansichten.
+const MCOLS = [
+  { key: "1h", label: "1h", cls: "opt-wide", val: (c) => change(c.change["1h"]) },
+  { key: "24h", label: "24h", cls: "", val: (c) => change(c.change["24h"]) },
+  { key: "7d", label: L("7T", "7D"), cls: "opt-mid", val: (c) => change(c.change["7d"]) },
+  { key: "30d", label: L("30T", "30D"), cls: "opt-wide", val: (c) => change(c.change["30d"]) },
+  { key: "1y", label: L("1J", "1Y"), cls: "opt-wide", val: (c) => change(c.change["1y"]) },
+  { key: "mcap", label: L("Marktkap.", "Market cap"), cls: "opt-mid", val: (c) => usd6(c.market_cap) },
+  { key: "vol", label: L("Volumen 24h", "Volume 24h"), cls: "opt-wide", val: (c) => usd6(c.volume) },
+];
+const CARD_DEFAULT = ["24h", "7d", "mcap"];
+const COLS_KEY = "marketCols", VIEW_KEY = "marketView";
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignorieren */ } },
+};
+let savedCols = store.get(COLS_KEY);
+if (!Array.isArray(savedCols)) savedCols = null;
+let savedView = store.get(VIEW_KEY);   // "table" | "cards" | null (automatisch: Karten bis 640 px)
+const narrow = matchMedia("(max-width: 640px)");
+const isCards = () => (savedView || (narrow.matches ? "cards" : "table")) === "cards";
+const colStyle = document.head.appendChild(document.createElement("style"));
+
+function applyView() {
+  const cards = isCards();
+  const vis = savedCols || (cards ? CARD_DEFAULT : null);
+  $("mtable").classList.toggle("cards", cards);
+  $("mtable").classList.toggle("custom", !!vis);
+  colStyle.textContent = vis ? MCOLS.filter((k) => !vis.includes(k.key)).map((k) => `#mtable .col-${k.key} { display: none; }`).join("\n") : "";
+  document.querySelectorAll("#view-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === (cards ? "cards" : "table"))));
+  const shown = (k) => (vis ? vis.includes(k.key) : !(k.cls === "opt-wide" && matchMedia("(max-width: 960px)").matches) && !(k.cls === "opt-mid" && narrow.matches));
+  $("col-pop").innerHTML = MCOLS.map((k) => `<label><input type="checkbox" value="${k.key}"${shown(k) ? " checked" : ""}>${esc(k.label)}</label>`).join("")
+    + `<button type="button" class="reset">${L("Standard", "Default")}</button>`;
+}
+$("view-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (!b) return;
+  // Wahl, die der Automatik entspricht, nicht speichern (folgt dann wieder der Bildschirmbreite)
+  savedView = b.dataset.view === (narrow.matches ? "cards" : "table") ? null : b.dataset.view;
+  store.set(VIEW_KEY, savedView);
+  applyView();
+});
+$("col-pop").addEventListener("change", () => {
+  savedCols = [...$("col-pop").querySelectorAll("input:checked")].map((i) => i.value);
+  store.set(COLS_KEY, savedCols);
+  applyView();
+});
+$("col-pop").addEventListener("click", (e) => {
+  if (!e.target.closest(".reset")) return;
+  savedCols = null;
+  store.set(COLS_KEY, null);
+  applyView();
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#col-menu")) $("col-menu").open = false; });
+narrow.addEventListener("change", applyView);
+matchMedia("(max-width: 960px)").addEventListener("change", applyView);
+applyView();
+
+// --- Kurzfassung: Breite des Marktes über die angezeigten Coins ---------------------------------
+const median = (xs) => { const a = xs.filter((v) => v != null).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
+function renderMarketBrief(coins, scope) {
+  const list = coins.filter((c) => c.change && c.change["24h"] != null);
+  if (list.length < 5) { renderBrief($("brief"), null); return; }
+  const n = list.length, up = list.filter((c) => c.change["24h"] > 0).length, share = up / n;
+  const m24 = median(list.map((c) => c.change["24h"])), m7 = median(list.map((c) => c.change["7d"]));
+  const sorted = [...list].sort((a, b) => b.change["24h"] - a.change["24h"]);
+  const best = sorted[0], worst = sorted[n - 1];
+  let title, action, tone;
+  if (share >= 0.7) {
+    title = L(`Breiter Anstieg: ${up} von ${n} Coins im Plus (24 h)`, `Broad rally: ${up} of ${n} coins up (24 h)`);
+    [action, tone] = m7 != null && m7 > 0.1
+      ? [L("Rückenwind für fast alles – nach starken Wochen steigt aber das Rücksetzerrisiko. Nicht hinterherjagen, eher Gewinne absichern.", "Tailwind for almost everything – but after strong weeks the risk of a pullback rises. Don't chase; consider securing profits."), "hold"]
+      : [L("Rückenwind für den Gesamtmarkt – bestehende Positionen eher halten als gegen den Trend handeln.", "Tailwind for the whole market – rather hold existing positions than trade against the trend."), "hold"];
+  } else if (share <= 0.3) {
+    title = L(`Breiter Rückgang: nur ${up} von ${n} Coins im Plus (24 h)`, `Broad decline: only ${up} of ${n} coins up (24 h)`);
+    [action, tone] = m7 != null && m7 < -0.1
+      ? [L("Ausverkauf über viele Tage – oft eine Phase extremer Angst. Käufe höchstens gestaffelt und erst bei Stabilisierung.", "Sell-off over many days – often a phase of extreme fear. Buy only in steps and once things stabilise."), "wait"]
+      : [L("Gegenwind für den Gesamtmarkt – bei neuen Käufen vorsichtig sein.", "Headwind for the whole market – be careful with new buys."), "wait"];
+  } else {
+    title = L(`Gemischtes Bild: ${up} von ${n} Coins im Plus (24 h)`, `Mixed picture: ${up} of ${n} coins up (24 h)`);
+    [action, tone] = [L("Kein klarer Markttrend – die Lage des einzelnen Coins (Detailseite) zählt mehr als der Gesamtmarkt.", "No clear market trend – the individual coin's situation (detail page) matters more than the overall market."), "neutral"];
+  }
+  const text = `${scope} · ${L("Median", "Median")} 24 h <b>${change(m24)}</b>${m7 != null ? `, 7 ${L("Tage", "days")} <b>${change(m7)}</b>` : ""}`
+    + ` · ${L("stärkster", "best")} <b>${esc(best.symbol)}</b> ${change(best.change["24h"])}, ${L("schwächster", "worst")} <b>${esc(worst.symbol)}</b> ${change(worst.change["24h"])}`;
+  renderBrief($("brief"), { title: title + whyTip("markets"), text, action, tone });
+}
+
 // Nur Symbole, die Detailseite und API verarbeiten können (Binance-/API-taugliche Zeichen)
 const linkable = (c) => /^[A-Z0-9]{1,15}$/.test(c.symbol);
 
@@ -169,14 +299,8 @@ function renderRows(coins) {
         ${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : ""}
         <span><span class="name">${esc(c.name)}</span><span class="sym">${esc(c.symbol)}</span></span>
       </div></td>
-      <td>${price(c.price)}</td>
-      <td class="opt-wide">${change(c.change["1h"])}</td>
-      <td>${change(c.change["24h"])}</td>
-      <td class="opt-mid">${change(c.change["7d"])}</td>
-      <td class="opt-wide">${change(c.change["30d"])}</td>
-      <td class="opt-wide">${change(c.change["1y"])}</td>
-      <td class="opt-mid">${usd6(c.market_cap)}</td>
-      <td class="opt-wide">${usd6(c.volume)}</td>
+      <td class="price">${price(c.price)}</td>
+      ${MCOLS.map((k) => `<td class="m ${k.cls} col-${k.key}" data-l="${k.label}">${k.val(c)}</td>`).join("")}
     </tr>`).join("");
 }
 
@@ -235,6 +359,7 @@ async function loadWatch() {
   if (token !== loadToken) return;
   watchRows = p.coins;
   renderRows(p.coins);
+  renderMarketBrief(p.coins, "Watchlist");
   const missing = watchList().length - p.coins.length;
   $("updated").textContent = `Watchlist · ${p.coins.length} ${L("Coins nach Marktkapitalisierung", "coins by market cap")}`
     + (missing > 0 ? ` (${missing} ${L("ohne Marktdaten bei CoinGecko", "without market data on CoinGecko")})` : "") + ` · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
@@ -280,6 +405,7 @@ async function load() {
     if (token !== loadToken || (!category && p.page !== page)) return;  // inzwischen andere Seite oder Suche
     if (category) {
       renderRows(p.coins);
+      renderMarketBrief(p.coins, L(`Sparte „${esc(categoryName || category)}“`, `Sector “${esc(categoryName || category)}”`));
       if (!p.coins.length) $("rows").innerHTML = `<tr><td colspan="11" class="status">${L("Keine Coins in dieser Sparte.", "No coins in this sector.")}</td></tr>`;
       $("updated").textContent = L(`Sparte „${categoryName || category}“ · die ${p.coins.length} größten Coins nach Marktkapitalisierung`, `Sector “${categoryName || category}” · the ${p.coins.length} largest coins by market cap`) + ` · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
       return;
@@ -287,6 +413,7 @@ async function load() {
     maxPage = p.max_page;
     renderPager();
     renderRows(p.coins);
+    renderMarketBrief(p.coins, page === 1 ? L("Top 100", "Top 100") : L(`Platz ${(page - 1) * p.per_page + 1}–${(page - 1) * p.per_page + p.coins.length}`, `Rank ${(page - 1) * p.per_page + 1}–${(page - 1) * p.per_page + p.coins.length}`));
     const from = (page - 1) * p.per_page + 1;
     $("updated").textContent = `Top ${p.max_page * p.per_page} ${L("nach Marktkapitalisierung · Platz", "by market cap · rank")} ${from}–${from + p.coins.length - 1} · ${STAND} ${new Date(p.updated).toLocaleString(LOCALE)}`;
   } catch (e) {
@@ -330,6 +457,7 @@ async function runSearch() {
   const token = ++loadToken;
   const q = query;
   setSearchMode(true);
+  renderBrief($("brief"), null);   // Suchtreffer sind kein Marktquerschnitt
   $("search-info").textContent = L("Suche …", "Searching …");
   try {
     const res = await fetch("api/search?q=" + encodeURIComponent(q));

@@ -161,6 +161,7 @@
   </header>
 
   <div id="error" class="card error" hidden></div>
+  <section class="card brief" id="brief" hidden></section>
   <section class="card market" id="market"></section>
   <section class="card trending" id="trending"></section>
   <section class="overview" id="overview" aria-label="Übersicht der Watchlist"></section>
@@ -257,6 +258,7 @@ function renderMarket(g) {
       <div class="note">${dom ? (dom.btc >= 55 ? L("Risk-off / BTC-Phase", "Risk-off / BTC phase") : L("Altcoins gewinnen Anteile", "Altcoins gaining share")) : NA}</div>
     </div>`;
   renderChips();
+  renderDashBrief();
 }
 
 // --- Chip-Leiste: Trending oder Top 20 nach Marktkapitalisierung; Klick merkt den Coin in der Watchlist ---
@@ -341,7 +343,7 @@ function renderChips() {
           <button data-list="trending" aria-pressed="${!isTop}">Trending</button>
           <button data-list="top" aria-pressed="${isTop}">Top 20</button>
         </div>
-        <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? L("Nach Marktkap. (CoinGecko)", "By market cap (CoinGecko)") : L("Meistgesucht (CoinGecko)", "Most searched (CoinGecko)")}</span></div>
+        <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? L("Nach Marktkap. (CoinGecko)", "By market cap (CoinGecko)") : L("Meistgesucht (CoinGecko)", "Most searched (CoinGecko)")}</span>${isTop ? "" : whyTip("trending")}</div>
       </div>
       <div class="note">${isTop ? L("ohne Stablecoins · Zahl = Marktkap.-Rang", "without stablecoins · number = market cap rank") : L("Rang 1 = meistgesucht", "rank 1 = most searched")} · ${L("rechts: Kurs 24 h · Klick = zur Watchlist (dunkel = schon dabei)", "right: price 24 h · click = add to watchlist (dark = already in)")}</div>
     </div>
@@ -444,6 +446,37 @@ $("coins").addEventListener("toggle", (e) => {
   try { localStorage.setItem(OPEN_KEY, JSON.stringify([...openCards])); } catch (err) { /* ignorieren */ }
 }, true);   // "toggle" steigt nicht auf, daher Capture-Phase
 
+// Kurzfassung oben: Marktstimmung, Lage der Watchlist und Einordnung von BTC (Lagebild vom Server)
+function renderDashBrief() {
+  const g = payload && payload.global;
+  const coins = watchList().map((w) => watchCoins.get(w.id)).filter(Boolean);
+  if (!g && !coins.length) return;
+  const fng = g && g.fear_greed, dom = g && g.btc_dominance;
+  const hot = coins.filter((c) => c.score >= 40), warm = coins.filter((c) => c.score >= 15 && c.score < 40);
+  const cold = coins.filter((c) => c.score <= -15);
+  const names = (xs) => xs.slice(0, 4).map((c) => `<b>${esc(c.symbol)}</b> ${signed(c.score)}`).join(", ") + (xs.length > 4 ? " …" : "");
+  const mood = fng ? `${fngZone(fng.value).name} (Fear &amp; Greed ${fng.value})` : "";
+  const watch = !coins.length ? ""
+    : hot.length ? L(`${hot.length} von ${coins.length} Watchlist-Coins überhitzt`, `${hot.length} of ${coins.length} watchlist coins overheated`)
+    : cold.length > coins.length / 2 ? L(`${cold.length} von ${coins.length} Watchlist-Coins im Angst-Bereich, keiner überhitzt`, `${cold.length} of ${coins.length} watchlist coins in fear territory, none overheated`)
+    : L(`keiner der ${coins.length} Watchlist-Coins überhitzt`, `none of the ${coins.length} watchlist coins overheated`);
+  const title = [mood ? L("Markt: ", "Market: ") + mood : "", watch].filter(Boolean).join(" · ");
+  const parts = [];
+  if (hot.length) parts.push(L("Überhitzt (Score ab +40): ", "Overheated (score ≥ +40): ") + names(hot));
+  if (warm.length) parts.push(L("Warm: ", "Warm: ") + names(warm));
+  if (cold.length) parts.push(L("Ängstlich: ", "Fearful: ") + names([...cold].sort((a, b) => a.score - b.score)));
+  if (dom) parts.push(L("BTC-Dominanz ", "BTC dominance ") + `<b>${dom.btc.toFixed(1).replace(".", DEC)}${PCT}</b>`);
+  // Einordnung: Empfehlung aus dem Lagebild von BTC (Leitwährung), sonst des ersten Coins
+  const lead = coins.find((c) => c.symbol === "BTC") || coins[0];
+  const s = lead && lead.situation;
+  renderBrief($("brief"), {
+    title: title + whyTip("market"),
+    text: parts.join(" · "),
+    action: s && s.action ? `${esc(lead.symbol)}: <b>${esc(s.action)}</b> – ${esc(s.action_text)}` : "",
+    tone: (s && s.action_tone) || "neutral",
+  });
+}
+
 function renderCoins() {
   hideTip();
   $("coins").innerHTML = watchList().map((w) => {
@@ -453,6 +486,7 @@ function renderCoins() {
     return `<article class="card coin coin-loading" id="card-${esc(w.id)}">${esc(w.symbol)} ${err ? L(`konnte nicht geladen werden (${esc(err)}) – neuer Versuch beim nächsten Aktualisieren.`, `could not be loaded (${esc(err)}) – retrying on next refresh.`) : L("wird geladen …", "loading …")}</article>`;
   }).join("");
   renderOverview();
+  renderDashBrief();
 }
 
 // Kompakte Übersicht: alle Coins auf einen Blick (Kurs, 24 h, Score); Klick springt zur Karte

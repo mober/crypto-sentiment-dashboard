@@ -20,6 +20,8 @@
     </div>
   </header>
 
+  <section class="card brief" id="brief" hidden></section>
+
   <div class="tabs" id="tabs" role="tablist" aria-label="Bereiche"></div>
 
   <div class="tab-panel" id="tab-overview" data-tab="overview" role="tabpanel">
@@ -66,7 +68,7 @@
     </section>
     <section class="card book" id="book">
       <div class="breakdown-head">
-        <div class="label"><span data-tip="orderbook" tabindex="0">Orderbuch</span> <span class="book-src" id="book-src">Binance</span>
+        <div class="label"><span data-tip="orderbook" tabindex="0">Orderbuch</span><span class="why-slot" data-why="orderbook"></span> <span class="book-src" id="book-src">Binance</span>
           <span class="book-live" id="book-live" title="Live über WebSocket von Binance"><i></i>live</span></div>
         <div class="book-tools">
           <div class="seg" id="book-market" role="group" aria-label="Markt">
@@ -99,7 +101,7 @@
   <div class="tab-panel" id="tab-derivs" data-tab="derivs" role="tabpanel">
     <section class="card derivs" id="derivs">
       <div class="breakdown-head">
-        <div class="label">Derivate auf Binance Futures (USDT-Perpetual)</div>
+        <div class="label">Derivate auf Binance Futures (USDT-Perpetual)<span class="why-slot" data-why="derivs"></span></div>
         <div class="note">Funding: 90 Tage, pro 8 h · Open Interest: 30 Tage in 4-h-Schritten (mehr liefert Binance nicht)</div>
       </div>
       <div class="derivs-grid">
@@ -119,7 +121,7 @@
   <div class="tab-panel" id="tab-onchain" data-tab="onchain" role="tabpanel">
     <section class="card onchain" id="onchain">
       <div class="breakdown-head">
-        <div class="label"><span data-tip="onchain" tabindex="0">On-Chain</span> (Coin Metrics, Tageswerte bis gestern)</div>
+        <div class="label"><span data-tip="onchain" tabindex="0">On-Chain</span> (Coin Metrics, Tageswerte bis gestern)<span class="why-slot" data-why="onchain"></span></div>
         <div class="note" id="oc-note"></div>
       </div>
       <div class="stats oc-stats" id="oc-stats"></div>
@@ -144,7 +146,7 @@
   <div class="tab-panel" id="tab-liq" data-tab="liq" role="tabpanel">
     <section class="card liq" id="liq">
       <div class="breakdown-head">
-        <div class="label"><span data-tip="liqMap" tabindex="0">Liquidations-Heatmap</span> (Modell, Binance Futures, 1 h, ~21 Tage)</div>
+        <div class="label"><span data-tip="liqMap" tabindex="0">Liquidations-Heatmap</span> (Modell, Binance Futures, 1 h, ~21 Tage)<span class="why-slot" data-why="liqMap"></span></div>
         <div class="mini-legend" id="liq-legend"></div>
         <div class="seg" id="liq-view" role="group" aria-label="Darstellung der Heatmap">
           <button data-view="standard" aria-pressed="true" title="Halbtransparente Einfärbung über dem Kurs">Standard</button>
@@ -170,7 +172,7 @@
     </section>
     <section class="card fees" id="fees" hidden>
       <div class="breakdown-head">
-        <div class="label"><span data-tip="fees" tabindex="0">Gebühren &amp; Einnahmen</span></div>
+        <div class="label"><span data-tip="fees" tabindex="0">Gebühren &amp; Einnahmen</span><span class="why-slot" data-why="fees"></span></div>
         <div class="note" id="fee-source"></div>
       </div>
       <div class="fee-tiles" id="fee-tiles"></div>
@@ -186,7 +188,7 @@
     </section>
     <section class="card history" id="history">
       <div class="breakdown-head">
-        <div class="label"><span data-tip="scoreHist" tabindex="0">Score-Verlauf</span> (rückwirkend berechnet, 1 Jahr)</div>
+        <div class="label"><span data-tip="scoreHist" tabindex="0">Score-Verlauf</span> (rückwirkend berechnet, 1 Jahr)<span class="why-slot" data-why="scoreHist"></span></div>
         <div class="mini-legend" id="hist-legend"></div>
       </div>
       <div class="mini-wrap"><div class="mini-chart" id="hist-chart"></div><div class="mini-msg" id="hist-msg">Lade …</div></div>

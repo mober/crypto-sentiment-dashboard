@@ -104,11 +104,24 @@ function renderHero(c) {
     ${lageBlock(c)}
     <div class="news" id="hero-news" hidden></div>`;
   if ($("hero-lage")) setupCollapse($("hero-lage"));
+  renderCoinBrief(c);
   renderNews();
   fillHeroPrice();  // falls das Chart schon vor dem Kopf geladen war
   renderStats(c);
   renderBreakdown(c);
   renderTrack();   // Trefferquote, falls der Score-Verlauf schon geladen ist
+}
+
+// Kurzfassung über den Reitern (in jedem Reiter sichtbar): Lage in einem Satz und Empfehlung aus dem Lagebild
+function renderCoinBrief(c) {
+  const s = c.situation;
+  if (!s) { renderBrief($("brief"), null); return; }
+  renderBrief($("brief"), {
+    title: `${esc(s.title)} · Score ${signed(c.score)}` + whyTip("situation"),
+    text: esc(s.summary),
+    action: s.action ? `<b>${esc(s.action)}</b> – ${esc(s.action_text)}` : "",
+    tone: s.action_tone || "neutral",
+  });
 }
 
 function bdRow(name, reason, points, share, total = false, n = 1, weight = 1) {
@@ -122,7 +135,7 @@ function bdRow(name, reason, points, share, total = false, n = 1, weight = 1) {
       `Now: ${reason} → ${signed(points)} points, weight ${weight.toLocaleString(LOCALE)}. That accounts for ${num1(share)} of the score.`);
   const tip = key && TIPS[key] ? ` data-tip="${key}" data-tip-now="${esc(now)}" tabindex="0"` : "";
   return `
-    <div class="bd-row${total ? " total" : ""}">
+    <div class="bd-row${total ? " total" : ""}${reason && !total ? " has-reason" : ""}">
       <div class="bd-label"><div class="bd-name"><span${tip}>${esc(name)}</span></div>${reason ? `<div class="bd-reason">${esc(reason)}</div>` : ""}</div>
       <div class="bd-track" role="img" aria-label="${esc(name)}: ${signed(points)} ${L("von −100 bis +100", "from −100 to +100")}">${bar}</div>
       <div class="bd-val">${signed(points)}${share != null ? `<span class="share">${num1(share)} ${L("im Score", "in score")}</span>` : ""}</div>
@@ -139,14 +152,21 @@ function renderBreakdown(c) {
   }
   $("breakdown").innerHTML = `
     <div class="breakdown-head">
-      <div class="label">${L("Zusammensetzung des Überhitzungs-Scores", "Breakdown of the overheating score")}</div>
+      <div class="label">${L("Zusammensetzung des Überhitzungs-Scores", "Breakdown of the overheating score")}${whyTip("breakdown")}</div>
       <div class="note">${n} ${L("Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)", "signals · score = weighted average (trend and options volatility count more, Fear &amp; Greed and RSI less)")}</div>
     </div>
     ${c.signals.map((s) => bdRow(signalName(s.name) + (w(s) !== 1 ? ` ×${w(s).toLocaleString(LOCALE)}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s))).join("")}
     ${bdRow(L("Überhitzungs-Score", "Overheating score"), c.verdict, c.score, null, true, n)}
+    <div class="bd-tap-hint">${L("Zeile antippen für die Begründung", "Tap a row for the reasoning")}</div>
     <div class="bd-axis"><span></span><div class="ticks"><span>−100 ${L("Angst", "Fear")}</span><span>0</span><span>${L("Gier", "Greed")} +100</span></div><span></span></div>`;
   setupCollapse($("breakdown"));  // Kopfzeile wurde neu geschrieben
 }
+
+// Handy: Begründungen der Signale eingeklappt, Antippen einer Zeile klappt sie auf
+$("breakdown").addEventListener("click", (e) => {
+  const row = e.target.closest(".bd-row.has-reason");
+  if (row && !e.target.closest("[data-tip]")) row.classList.toggle("open");
+});
 
 // Kennzahlen aus den CoinGecko-Marktdaten (kommen mit dem Score, keine eigene Abfrage)
 const big = (v) => v.toLocaleString(LOCALE, { notation: "compact", compactDisplay: EN ? "short" : "long", maximumSignificantDigits: 4 })

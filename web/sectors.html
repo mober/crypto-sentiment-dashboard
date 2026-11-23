@@ -96,9 +96,11 @@
     </div>
   </header>
 
+  <section class="card brief" id="brief" hidden></section>
+
   <section class="card">
     <div class="card-head">
-      <div class="label"><span data-tip="sectorChart" tabindex="0">Rotation: Hauptsparten in 24 h</span></div>
+      <div class="label"><span data-tip="sectorChart" tabindex="0">Rotation: Hauptsparten in 24 h</span><span class="why-slot" data-why="sectors"></span></div>
       <div class="note">Veränderung der Marktkap. · Klick zeigt die Coins der Sparte</div>
     </div>
     <div class="bars" id="bars"><div class="status">Lade …</div></div>
@@ -107,7 +109,7 @@
 
   <section class="card" id="defi">
     <div class="card-head">
-      <div class="label"><span data-tip="defiTvl" tabindex="0">DeFi-Kapital (TVL)</span></div>
+      <div class="label"><span data-tip="defiTvl" tabindex="0">DeFi-Kapital (TVL)</span><span class="why-slot" data-why="defi"></span></div>
       <div class="note">Total Value Locked nach DefiLlama · wo echtes Kapital liegt, nicht nur Marktkap.</div>
     </div>
     <div class="tvl-total" id="tvl-total"></div>
@@ -125,8 +127,8 @@
   </section>
 
   <section class="card">
+    <details class="fold" id="all-fold"><summary>Alle Sparten als Tabelle</summary>
     <div class="card-head">
-      <div class="label">Alle Sparten</div>
       <div class="note">Sparten überschneiden sich: ein Coin steht oft in mehreren</div>
     </div>
     <div class="tools">
@@ -154,6 +156,7 @@
         <tbody id="rows"><tr><td colspan="8" class="status">Lade Daten …</td></tr></tbody>
       </table>
     </div>
+    </details>
   </section>
 
   <footer>Daten: CoinGecko (Kategorien), DefiLlama (TVL) · Aktualisiert sich alle 5 Minuten.</footer>
@@ -168,7 +171,7 @@ addStatic({
   "Rotation: Hauptsparten in 24 h": "Rotation: main sectors in 24 h", "Veränderung der Marktkap. · Klick zeigt die Coins der Sparte": "Change in market cap · click shows the sector's coins",
   "Lade …": "Loading …", "DeFi-Kapital (TVL)": "DeFi capital (TVL)",
   "Total Value Locked nach DefiLlama · wo echtes Kapital liegt, nicht nur Marktkap.": "Total value locked per DefiLlama · where real capital sits, not just market cap",
-  "Gliederung": "Grouping", "Kategorien": "Categories", "Zeitraum": "Period", "7 T": "7 d", "Alle Sparten": "All sectors",
+  "Gliederung": "Grouping", "Kategorien": "Categories", "Zeitraum": "Period", "7 T": "7 d", "Alle Sparten": "All sectors", "Alle Sparten als Tabelle": "All sectors as a table",
   "Sparten überschneiden sich: ein Coin steht oft in mehreren": "Sectors overlap: a coin is often in several",
   "Sparte filtern …": "Filter sectors …", "Sparte filtern": "Filter sectors", "Auswahl": "Selection", "Hauptsparten": "Main sectors",
   "Alle": "All", "Sparte": "Sector", "Marktkap.": "Market cap", "Volumen 24h": "Volume 24h", "Umschlag": "Turnover", "TVL · 7 T": "TVL · 7 d",
@@ -262,6 +265,36 @@ function renderBars() {
   }
 }
 
+// Kurzfassung oben: wohin fließt Kapital, gemessen an Layer 1 (≈ Gesamtmarkt)
+const SPECULATIVE = new Set(["meme-token", "ai-agents", "gaming", "socialfi", "metaverse", "non-fungible-tokens-nft"]);
+function renderSectorBrief() {
+  const list = cats.filter((c) => MAIN_INFO.has(c.id) && !NOT_IN_CHART.has(c.id) && c.change_24h != null && c.id !== MARKET_REF)
+    .sort((a, b) => b.change_24h - a.change_24h);
+  const ref = cats.find((c) => c.id === MARKET_REF);
+  if (list.length < 4 || !ref || ref.change_24h == null) { renderBrief($("brief"), null); return; }
+  const best = list[0], worst = list[list.length - 1], lead = best.change_24h - ref.change_24h;
+  const names = (xs) => xs.map((c) => `<b>${esc(displayName(c))}</b> ${change(c.change_24h)}`).join(", ");
+  let title, action, tone;
+  if (lead >= 0.03 && SPECULATIVE.has(best.id)) {
+    title = L(`Spekulative Sparten führen: ${esc(displayName(best))} ${pct(best.change_24h)}`, `Speculative sectors lead: ${esc(displayName(best))} ${pct(best.change_24h)}`);
+    action = L("Kapital sucht Risiko – typisch für gierige Phasen. Einstiege nach starken Tagen sind riskant, Nachzügler holen selten auf.",
+      "Capital is chasing risk – typical of greedy phases. Entries after strong days are risky; laggards rarely catch up.");
+    tone = "wait";
+  } else if (lead >= 0.03) {
+    title = L(`Rotation in ${esc(displayName(best))}: ${pct(best.change_24h)} (Gesamtmarkt ${pct(ref.change_24h)})`, `Rotation into ${esc(displayName(best))}: ${pct(best.change_24h)} (overall market ${pct(ref.change_24h)})`);
+    action = L("Kapital fließt gezielt in diese Sparte. Solche Rotationen halten oft einige Tage – nach Tagesgewinnen über 10 % folgen aber häufig Gewinnmitnahmen.",
+      "Capital is flowing into this sector. Such rotations often last a few days – but gains of more than 10% in a day are frequently followed by profit-taking.");
+    tone = "hold";
+  } else {
+    title = L(`Keine klare Rotation: Sparten laufen mit dem Gesamtmarkt (${pct(ref.change_24h)})`, `No clear rotation: sectors move with the overall market (${pct(ref.change_24h)})`);
+    action = L("Die Richtung bestimmen gerade BTC und ETH, nicht einzelne Sparten.", "BTC and ETH set the direction right now, not individual sectors.");
+    tone = "neutral";
+  }
+  const tvl = defi && defi.total && defi.total.change_7d != null ? ` · DeFi-TVL 7 ${L("T", "d")} ${change(defi.total.change_7d)}` : "";
+  const text = `${L("Stärkste", "Strongest")}: ${names(list.slice(0, 2))} · ${L("Schwächste", "Weakest")}: ${names(list.slice(-2).reverse())}${tvl}`;
+  renderBrief($("brief"), { title, text, action, tone });
+}
+
 function renderTable() {
   const q = $("filter").value.trim().toLowerCase();
   let list = scope === "main" ? cats.filter((c) => MAIN_INFO.has(c.id)) : cats.slice();
@@ -306,6 +339,7 @@ async function load() {
     cats = p.categories.map((c) => ({ ...c, turnover: c.volume_24h && c.market_cap ? c.volume_24h / c.market_cap : null }));
     attachTvl();
     renderBars();
+    renderSectorBrief();
     renderTable();
     $("updated").textContent = `${cats.length} ${L("Sparten nach CoinGecko · Stand:", "sectors per CoinGecko · as of:")} ${new Date(p.updated).toLocaleString(LOCALE)}`;
   } catch (e) {
@@ -319,6 +353,13 @@ async function load() {
     if (!cats.length) $("rows").innerHTML = `<tr><td colspan="8" class="status error">${NO_DATA}</td></tr>`;
   }
 }
+
+// „Warum wichtig?“-Knöpfe; Tabelle aller Sparten eingeklappt, Zustand gemerkt
+document.querySelectorAll(".why-slot").forEach((el) => { el.outerHTML = whyTip(el.dataset.why); });
+try { $("all-fold").open = localStorage.getItem("sectorTableOpen") === "1"; } catch (e) { /* ignorieren */ }
+$("all-fold").addEventListener("toggle", () => {
+  try { localStorage.setItem("sectorTableOpen", $("all-fold").open ? "1" : "0"); } catch (e) { /* ignorieren */ }
+});
 
 document.querySelector("thead").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-sort]");
@@ -420,7 +461,7 @@ async function loadDefi() {
     defi = p;
     renderTvl();
     attachTvl();
-    if (cats.length) renderTable();
+    if (cats.length) { renderTable(); renderSectorBrief(); }
   } catch (e) {
     if (!defi) $("tvl-bars").innerHTML = `<div class="status error">${L("TVL nicht verfügbar", "TVL not available")} (${esc(e.message)}).</div>`;
   }

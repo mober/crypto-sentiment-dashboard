@@ -57,6 +57,8 @@ function updateEmptyTabs() {
 }
 
 function initTabs() {
+  // „Warum wichtig?“-Knöpfe an den statischen Kartenüberschriften
+  document.querySelectorAll(".why-slot").forEach((el) => { el.outerHTML = whyTip(el.dataset.why); });
   const bar = $("tabs");
   bar.innerHTML = TABS.map((t) =>
     `<button type="button" role="tab" id="tabbtn-${t.key}" data-tab="${t.key}" aria-controls="tab-${t.key}">${esc(t.label)}</button>`).join("");

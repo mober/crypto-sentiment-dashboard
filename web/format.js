@@ -49,3 +49,17 @@ const FNG_ZONES = [
   { to: 100, name: L("Extreme Gier", "Extreme greed"), color: "var(--up)" },
 ];
 const fngZone = (v) => FNG_ZONES.find((z) => v <= z.to) || FNG_ZONES[FNG_ZONES.length - 1];
+
+// Kurzfassung oben auf einer Seite („Auf einen Blick“): Überschrift, ein bis zwei Sätze und eine Einordnung.
+// tone: buy | hold | sell | wait | neutral (Farbe des Randes wie die Empfehlung im Lagebild der Detailseite).
+// el ist ein leerer <section class="card brief" hidden>; ohne Daten bleibt er verborgen.
+function renderBrief(el, b) {
+  if (!el) return;
+  if (!b) { el.hidden = true; return; }
+  el.className = "card brief t-" + (b.tone || "neutral");
+  el.innerHTML = `<div class="brief-k">${L("Auf einen Blick", "At a glance")}</div>`
+    + `<div class="brief-title">${b.title}</div>`
+    + (b.text ? `<div class="brief-text">${b.text}</div>` : "")
+    + (b.action ? `<div class="brief-act"><b>${L("Einordnung:", "Takeaway:")}</b> ${b.action}</div>` : "");
+  el.hidden = false;
+}

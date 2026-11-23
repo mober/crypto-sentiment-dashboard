@@ -51,8 +51,7 @@
   .lsrow { display: flex; justify-content: space-between; font-size: 13px; margin-top: 6px; }
   .lsrow .l { color: var(--long); } .lsrow .s { color: var(--short); }
 
-  .summary { margin: 16px 0; padding: 14px 18px; font-size: 15px; }
-  .summary b { font-weight: 650; }
+  .grid3 { margin-top: 16px; }
 
   .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .donut { display: flex; align-items: center; gap: 18px; }
@@ -99,6 +98,26 @@
   .src { font-size: 12px; color: var(--muted); }
   .src b.ok { color: var(--up); } .src b.err { color: var(--down); }
 
+  .feed-more { display: none; margin: 10px auto 0; font-size: 13px; }
+  .card-head h2 .why-tip { vertical-align: 2px; }
+  /* Handy: Live-Feed als Karten (Coin, Seite, Betrag; darunter Zeit, Börse, Preis), erst 15 Einträge */
+  @media (max-width: 640px) {
+    #feedTable thead { display: none; }
+    #feedTable, #feedTable tbody { display: block; }
+    #feedTable tr:not(:has(.status)) { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; align-items: center;
+      padding: 9px 2px; border-bottom: 1px solid var(--border); }
+    #feedTable td { border: 0; padding: 0; }
+    #feedTable .f-coin { grid-column: 1; grid-row: 1; }
+    #feedTable .f-side { grid-column: 2; grid-row: 1; }
+    #feedTable .f-amt { grid-column: 3; grid-row: 1; font-weight: 600; }
+    #feedTable .f-time, #feedTable .f-ex, #feedTable .f-price { grid-row: 2; font-size: 12px; color: var(--muted); text-align: left; }
+    #feedTable .f-time { grid-column: 1; }
+    #feedTable .f-ex { grid-column: 2; }
+    #feedTable .f-price { grid-column: 3; text-align: right; }
+    #feedTable:not(.all) tbody tr:nth-child(n+16) { display: none; }
+    .feed-more { display: block; }
+    .feed-more[hidden] { display: none; }
+  }
   @media (max-width: 900px) {
     .top { grid-template-columns: 1fr; }
     .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -117,11 +136,12 @@
   </header>
 
   <div class="notice" id="notice" hidden></div>
+  <section class="card brief" id="summary" hidden></section>
 
   <div class="top">
     <div class="card">
       <div class="card-head">
-        <h2>Liquidations-Heatmap</h2>
+        <h2>Liquidations-Heatmap<span class="why-slot" data-why="liqTotals"></span></h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <div class="seg" id="win"><button data-w="1h">1h</button><button data-w="4h">4h</button><button data-w="12h">12h</button><button data-w="24h" class="on">24h</button></div>
           <div class="seg" id="group"><button data-g="coin" class="on">Coin</button><button data-g="exchange">Börse</button></div>
@@ -133,8 +153,6 @@
     <div class="totals" id="totals"></div>
   </div>
 
-  <div class="card summary" id="summary"></div>
-
   <div class="grid3">
     <div class="card"><div class="card-head"><h2 id="bdTitle">Long/Short</h2></div><div class="donut" id="donut"></div></div>
     <div class="card"><div class="card-head"><h2>Anteil je Börse</h2></div><div id="exchanges"></div></div>
@@ -142,38 +160,41 @@
   </div>
 
   <section class="card hours">
-    <div class="card-head"><h2>Liquidationen je Stunde (24 h) und BTC-Kurs</h2>
+    <div class="card-head"><h2>Liquidationen je Stunde (24 h) und BTC-Kurs<span class="why-slot" data-why="liqHours"></span></h2>
       <div class="legend" style="margin:0"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span><i style="background:var(--cold)"></i>BTC</span></div></div>
     <div id="hours"></div>
   </section>
 
   <section class="card hist">
-    <div class="card-head"><h2>Verlauf <span id="histScope" style="font-weight:400;color:var(--muted)"></span></h2>
+    <div class="card-head"><h2>Verlauf <span id="histScope" style="font-weight:400;color:var(--muted)"></span><span class="why-slot" data-why="liqHist"></span></h2>
       <div class="seg" id="hwin"><button data-d="7">7 T</button><button data-d="30" class="on">30 T</button><button data-d="90">90 T</button><button data-d="365">1 J</button></div></div>
     <div class="hist-sum" id="histSum"></div>
     <div id="hist"><div class="status">Lade Verlauf …</div></div>
     <div class="legend"><span><i style="background:var(--short)"></i>Shorts</span><span><i style="background:var(--long)"></i>Longs</span><span id="histBucket"></span></div>
+    <details class="fold" id="histMore"><summary>Coins und größte Liquidationen im Zeitraum</summary>
     <div class="hist-grid">
       <div><h3>Am stärksten betroffen</h3><div class="table-wrap"><table>
         <thead><tr><th class="left">Coin</th><th>Long</th><th>Short</th><th>Summe</th></tr></thead><tbody id="histCoins"></tbody></table></div></div>
       <div><h3>Größte Liquidationen</h3><div class="table-wrap"><table>
         <thead><tr><th class="left">Datum</th><th class="left">Börse</th><th class="left">Coin</th><th class="left">Seite</th><th>Betrag</th></tr></thead><tbody id="histLargest"></tbody></table></div></div>
     </div>
+    </details>
     <div class="hist-note" id="histNote"></div>
   </section>
 
   <section class="card">
-    <div class="card-head"><h2>Live-Feed</h2>
+    <div class="card-head"><h2>Live-Feed<span class="why-slot" data-why="liqFeed"></span></h2>
       <div class="filters">
         <input id="fCoin" placeholder="Coin, z. B. BTC" maxlength="15" aria-label="Coin filtern">
         <select id="fEx" aria-label="Börse filtern"><option value="">Alle Börsen</option><option>Binance</option><option>Bybit</option><option>OKX</option></select>
         <select id="fMin" aria-label="Mindestbetrag"><option value="0">ab $0</option><option value="10000" selected>ab $10.000</option><option value="100000">ab $100.000</option><option value="1000000">ab $1 Mio.</option></select>
       </div>
     </div>
-    <div class="table-wrap"><table>
+    <div class="table-wrap"><table id="feedTable">
       <thead><tr><th class="left">Zeit</th><th class="left">Börse</th><th class="left">Coin</th><th class="left">Seite</th><th>Preis</th><th>Betrag</th></tr></thead>
       <tbody id="feed"><tr><td colspan="6" class="status">Lade …</td></tr></tbody>
     </table></div>
+    <button type="button" class="feed-more" id="feedMore">Alle anzeigen</button>
   </section>
 
   <footer>
@@ -185,6 +206,7 @@
 </main>
 
 <script src="format.js"></script>
+<script src="tips.js"></script>
 <script>
 addStatic({
   "Liquidationen": "Liquidations", "Echte Zwangsschließungen auf Binance, Bybit und OKX, live mitgeschnitten ·": "Real forced closures on Binance, Bybit and OKX, recorded live ·",
@@ -197,6 +219,7 @@ addStatic({
   "Am stärksten betroffen": "Hit hardest", "Summe": "Total", "Größte Liquidationen": "Largest liquidations", "Datum": "Date",
   "Seite": "Side", "Betrag": "Amount", "Coin, z. B. BTC": "Coin, e.g. BTC", "Coin filtern": "Filter coin", "Börse filtern": "Filter exchange",
   "Alle Börsen": "All exchanges", "Mindestbetrag": "Minimum amount", "ab $0": "from $0", "ab $10.000": "from $10,000",
+  "Coins und größte Liquidationen im Zeitraum": "Coins and largest liquidations in the period", "Alle anzeigen": "Show all",
   "ab $100.000": "from $100,000", "ab $1 Mio.": "from $1M", "Zeit": "Time", "Preis": "Price", "Lade …": "Loading …",
   "Long = Long-Position zwangsgeschlossen (Kurs fiel), Short = Short-Position zwangsgeschlossen (Kurs stieg). Binance meldet je Coin höchstens die größte Liquidation pro Sekunde; Hyperliquid und kleinere Börsen fehlen. Die Summen liegen deshalb unter denen von Aggregatoren wie CoinGlass.":
     "Long = long position force-closed (price fell), short = short position force-closed (price rose). Binance reports at most the largest liquidation per coin and second; Hyperliquid and smaller exchanges are missing. The totals are therefore below those of aggregators such as CoinGlass.",
@@ -298,19 +321,49 @@ function renderBreakdown() {
     : `<div class="status">${NO_DATA}</div>`;
 }
 
+// Kurzfassung oben: wer wird gerade ausgespült, wie heftig im Vergleich zum 24-h-Schnitt, und was das heißt
+const WIN_HOURS = { "1h": 1, "4h": 4, "12h": 12, "24h": 24 };
 function renderSummary() {
   const t = ov.totals[win], top = ov.coins[0], big = ov.largest;
-  if (!t.count) { $("summary").innerHTML = L(`In den letzten ${WIN_LABEL[win]} wurden noch keine Liquidationen erfasst.`, `No liquidations recorded in the last ${WIN_LABEL[win]} yet.`); return; }
-  $("summary").innerHTML = EN
-    ? `In the last <b>${WIN_LABEL[win]}</b>, <b>${t.count.toLocaleString(LOCALE)}</b> positions were liquidated,
-    totalling <b>${money(t.total)}</b> (long ${share(t.long, t.total)}, short ${share(t.short, t.total)}).
-    ${top ? `Hit hardest: <b>${esc(top.coin)}</b> with ${money(top.total)}.` : ""}
-    ${big ? `The largest single liquidation: <b>${money(big.usd)}</b> on ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "long" : "short"} at ${usd(big.price)}).` : ""}`
-    : `In den letzten <b>${WIN_LABEL[win]}</b> wurden <b>${t.count.toLocaleString(LOCALE)}</b> Positionen liquidiert,
-    zusammen <b>${money(t.total)}</b> (Long ${share(t.long, t.total)}, Short ${share(t.short, t.total)}).
-    ${top ? `Am stärksten betroffen: <b>${esc(top.coin)}</b> mit ${money(top.total)}.` : ""}
-    ${big ? `Die größte einzelne Liquidation: <b>${money(big.usd)}</b> auf ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "Long" : "Short"} bei ${usd(big.price)}).` : ""}`;
+  if (!t.count) {
+    renderBrief($("summary"), { title: L(`In den letzten ${WIN_LABEL[win]} noch keine Liquidationen erfasst.`, `No liquidations recorded in the last ${WIN_LABEL[win]} yet.`) });
+    return;
+  }
+  const longShare = t.long / t.total;
+  // Tempo im gewählten Fenster gegen den Stundenschnitt der letzten 24 h (bei 24 h selbst kein Vergleich)
+  const day = ov.totals["24h"], ratio = win !== "24h" && day.total > 0 ? (t.total / WIN_HOURS[win]) / (day.total / 24) : null;
+  const pace = ratio == null ? "" : ratio >= 1.5 ? L(" – deutlich mehr als im 24-h-Schnitt", " – well above the 24 h average")
+    : ratio <= 0.5 ? L(" – ruhiger als im 24-h-Schnitt", " – calmer than the 24 h average") : "";
+  let title, action, tone;
+  if (longShare >= 0.65) {
+    title = L(`Longs werden ausgespült (${share(t.long, t.total)} der Liquidationen)`, `Longs are being flushed (${share(t.long, t.total)} of liquidations)`);
+    action = L("Zwangsverkäufe drücken den Kurs. Nach großen Long-Wellen ist oft der Hebel raus und ein Boden möglich – aber erst eine Stabilisierung abwarten, nicht ins fallende Messer greifen.",
+      "Forced selling is pushing prices down. After big long waves leverage is often flushed and a bottom becomes possible – but wait for stabilisation rather than catching a falling knife.");
+    tone = "wait";
+  } else if (longShare <= 0.35) {
+    title = L(`Shorts werden ausgespült (${share(t.short, t.total)} der Liquidationen)`, `Shorts are being squeezed (${share(t.short, t.total)} of liquidations)`);
+    action = L("Steigende Kurse zwingen Shorts zum Rückkauf (Short Squeeze). Solche Sprünge laufen oft schnell aus – nach dem Anstieg hinterherzukaufen ist riskant.",
+      "Rising prices force shorts to buy back (short squeeze). Such jumps often fade quickly – chasing after the rise is risky.");
+    tone = "wait";
+  } else {
+    title = L("Longs und Shorts etwa gleich betroffen", "Longs and shorts hit about equally");
+    action = L("Kein klarer Druck in eine Richtung – die Liquidationen sagen gerade wenig über die nächste Bewegung.",
+      "No clear pressure in either direction – liquidations say little about the next move right now.");
+    tone = "neutral";
+  }
+  const text = EN
+    ? `<b>${money(t.total)}</b> liquidated in the last ${WIN_LABEL[win]} (${t.count.toLocaleString(LOCALE)} positions)${pace}.
+      ${top ? `Hit hardest: <b>${esc(top.coin)}</b> with ${money(top.total)}.` : ""}
+      ${big ? `Largest single liquidation: <b>${money(big.usd)}</b> on ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "long" : "short"} at ${usd(big.price)}).` : ""}`
+    : `<b>${money(t.total)}</b> liquidiert in den letzten ${WIN_LABEL[win]} (${t.count.toLocaleString(LOCALE)} Positionen)${pace}.
+      ${top ? `Am stärksten betroffen: <b>${esc(top.coin)}</b> mit ${money(top.total)}.` : ""}
+      ${big ? `Größte einzelne Liquidation: <b>${money(big.usd)}</b> auf ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "Long" : "Short"} bei ${usd(big.price)}).` : ""}`;
+  renderBrief($("summary"), { title, text, action, tone });
 }
+
+// „Warum wichtig?“-Knöpfe an den Überschriften
+document.querySelectorAll(".why-slot").forEach((el) => { el.outerHTML = whyTip(el.dataset.why); });
+$("feedMore").addEventListener("click", () => { $("feedTable").classList.add("all"); $("feedMore").hidden = true; });
 
 let btc = null;
 async function loadBtc() {
@@ -404,9 +457,9 @@ function renderFeed(d) {
     const rows = d.orders.map((o) => {
       const id = `${o.time}|${o.exchange}|${o.symbol}|${o.usd}`, isNew = !firstFeed && !seenIds.has(id);
       seenIds.add(id);
-      return `<tr class="${isNew ? "new" : ""}"><td class="left">${clock(o.time)}</td><td class="left">${esc(o.exchange)}</td>
-        <td class="left"><b>${esc(o.coin)}</b> <span class="muted">${esc(o.symbol)}</span></td><td class="left">${sideTag(o.side)}</td>
-        <td>${usd(o.price)}</td><td class="${o.usd >= 1e6 ? "whale" : ""}">${money(o.usd)}</td></tr>`;
+      return `<tr class="${isNew ? "new" : ""}"><td class="left f-time">${clock(o.time)}</td><td class="left f-ex">${esc(o.exchange)}</td>
+        <td class="left f-coin"><b>${esc(o.coin)}</b> <span class="muted">${esc(o.symbol)}</span></td><td class="left f-side">${sideTag(o.side)}</td>
+        <td class="f-price">${usd(o.price)}</td><td class="f-amt${o.usd >= 1e6 ? " whale" : ""}">${money(o.usd)}</td></tr>`;
     });
     firstFeed = false;
     if (seenIds.size > 5000) seenIds = new Set([...seenIds].slice(-1000));

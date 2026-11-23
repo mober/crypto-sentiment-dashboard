@@ -92,6 +92,36 @@ button.star:hover:not(:disabled) { color: #e8a317; }
 button.star.on { color: #e8a317; }
 button.star:disabled { opacity: 1; cursor: default; }
 
+/* „Warum wichtig?“-Knopf neben Überschriften (whyTip in tips.js) */
+.why-tip { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 8px 1px 3px; border-radius: 10px;
+  font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); background: var(--track);
+  cursor: help; vertical-align: 1px; white-space: nowrap; }
+.why-tip > span[aria-hidden] { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--muted); color: var(--card); font-size: 10px; font-weight: 700; }
+.why-tip:hover, .why-tip:focus { color: var(--text); outline: none; }
+@media (max-width: 640px) { .why-tip { padding: 1px 3px; } .why-l { display: none; } }
+
+/* Kurzfassung oben auf der Seite (renderBrief in format.js) */
+.brief { padding: 14px 18px; margin-bottom: 20px; border-left: 4px solid var(--neutral); }
+.brief[hidden] { display: none; }
+.brief-k { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.brief-title { font-size: 17px; font-weight: 650; margin-top: 2px; }
+.brief-text { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.brief-text b { color: var(--text); font-weight: 600; }
+.brief-act { margin-top: 8px; font-size: 14px; }
+.brief.t-buy { border-left-color: var(--up); }
+.brief.t-sell { border-left-color: var(--down); }
+.brief.t-hold { border-left-color: var(--cold); }
+.brief.t-wait { border-left-color: var(--hot); }
+
+/* Einklappbare Detailbereiche (<details class="fold">), standardmäßig zu */
+details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 0; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: "▸"; transition: transform .15s; }
+details.fold[open] > summary::before { transform: rotate(90deg); }
+details.fold > summary:hover { color: var(--text); }
+
 /* Gemeinsame Navigationsleiste (nav.js) */
 .topbar { position: relative; display: flex; align-items: center; gap: 8px; margin: -12px 0 22px;
   padding-bottom: 12px; border-bottom: 1px solid var(--border); }

@@ -148,6 +148,61 @@ const signalName = (name) => (EN && SIGNAL_NAMES_EN[name]) || name;
 
 const tipAttr = (key) => (key && TIPS[key] ? ` data-tip="${key}" tabindex="0"` : "");
 
+// „Warum ist das wichtig?“: kurze Einordnung je Abschnitt, was man aus ihm für Entscheidungen mitnimmt.
+// Sichtbar als kleiner Knopf neben Überschriften (whyTip), Text im selben Tooltip wie TIPS (Schlüssel „why:…“).
+const WHY = {
+  market: "Die Gesamtstimmung entscheidet oft mehr als der einzelne Coin: In extremer Angst fallen fast alle Kurse gemeinsam, in Gier steigen auch schwache Projekte. Sie sagt dir, ob Rückenwind oder Gegenwind herrscht.",
+  trending: "Was gerade viel gesucht wird, ist oft schon gut gelaufen. Aufmerksamkeit ist ein Stimmungsmaß, kein Qualitätsmerkmal – nützlich, um Übertreibungen früh zu erkennen.",
+  score: "Fasst viele Einzelsignale zu einer Zahl zusammen. Im Rückblick folgten auf Werte ab +40 deutlich schwächere Kurse in den Wochen danach; sehr negative Werte allein waren dagegen kein verlässliches Kaufsignal.",
+  situation: "Verbindet Stimmung und Trend zu einer Handlungsidee. Dieselbe Angst bedeutet im Aufwärtstrend eher Kaufgelegenheit, im Abwärtstrend eher Vorsicht.",
+  chart: "Der Trend (Kurs über oder unter MA200) ist das stärkste Einzelsignal im Score. Indikatoren zeigen, ob eine Bewegung gestreckt ist oder gerade erst beginnt.",
+  orderbook: "Zeigt, wo größere Kauf- und Verkaufsaufträge liegen. Dünne Bücher bewegen sich bei großen Orders stark; Wände wirken oft kurzfristig als Bremse.",
+  derivs: "Futures zeigen, wie viel gehebeltes Geld im Markt steckt. Hohe Funding Rates und schnell steigendes Open Interest gingen oft starken Rücksetzern voraus, weil Hebelpositionen zwangsweise schließen.",
+  onchain: "Blockchain-Daten zeigen, was Halter wirklich tun: Coins an Börsen schicken (Verkaufsbereitschaft) oder abziehen. MVRV sagt, ob der Markt im Schnitt im Gewinn oder Verlust ist.",
+  liqMap: "Wo sich viele Liquidationen ballen, wird der Kurs oft hingezogen: Erreicht er so eine Zone, schließen Zwangsverkäufe oder -käufe und verstärken die Bewegung.",
+  fundamentals: "Angebot, Bewertung und Einnahmen zeigen, ob hinter dem Kurs ein Geschäft steckt und wie viele Coins noch auf den Markt kommen (Verwässerung).",
+  fees: "Gebühren und Einnahmen sind das „Geschäft“ eines Protokolls. Fließt davon etwas an die Token-Halter, hat der Token einen messbaren Wert jenseits von Spekulation.",
+  scoreHist: "Zeigt, wie der Score in früheren Hochs und Tiefs stand. So siehst du, ob der aktuelle Wert für diesen Coin wirklich extrem ist.",
+  breakdown: "Zeigt, welche Signale den Score treiben. Wird er von einem einzelnen Ausreißer bestimmt, ist er weniger belastbar als bei breiter Übereinstimmung.",
+  sectors: "Kapital wandert zwischen Sparten (Rotation). Wer früh sieht, wohin es fließt, erkennt Trends, bevor sie in den großen Ranglisten auftauchen.",
+  defi: "TVL zeigt, wo Nutzer tatsächlich Geld einsetzen. Steigt der Kurs einer Sparte ohne wachsendes TVL, ist die Bewegung eher spekulativ.",
+  markets: "Die Breite des Marktes zeigt, ob eine Bewegung von vielen Coins getragen wird oder nur von wenigen. Breite Anstiege sind meist stabiler.",
+  liqTotals: "Liquidationen sind Zwangsverkäufe (Longs) oder Zwangskäufe (Shorts). Große Wellen markieren oft Wendepunkte, weil danach der Hebel aus dem Markt ist.",
+  liqHours: "Zeigt, wann es geknallt hat und wie der Kurs dabei lief. Hohe Balken ohne große Kursbewegung deuten auf einen überhebelten Markt.",
+  liqHist: "Im Wochen- und Monatsvergleich siehst du, ob die aktuellen Liquidationen außergewöhnlich sind oder normales Rauschen.",
+  liqFeed: "Einzelne sehr große Liquidationen (ab 1 Mio. $) können kurzfristig den Kurs verschieben und zeigen, wo große Positionen gescheitert sind.",
+};
+const WHY_EN = {
+  market: "Overall sentiment often matters more than the single coin: in extreme fear almost everything falls together, in greed even weak projects rise. It tells you whether you have a tailwind or a headwind.",
+  trending: "What is searched a lot has often already run. Attention measures sentiment, not quality – useful to spot excesses early.",
+  score: "Combines many signals into one number. Historically, readings of +40 and above were followed by clearly weaker prices in the following weeks; very negative readings alone were not a reliable buy signal.",
+  situation: "Combines sentiment and trend into an idea for action. The same fear means more of an opportunity in an uptrend and more caution in a downtrend.",
+  chart: "The trend (price above or below the MA200) is the strongest single signal in the score. Indicators show whether a move is stretched or just beginning.",
+  orderbook: "Shows where larger buy and sell orders sit. Thin books move a lot on big orders; walls often act as a short-term brake.",
+  derivs: "Futures show how much leveraged money is in the market. High funding and quickly rising open interest often preceded sharp pullbacks as leveraged positions were forced to close.",
+  onchain: "Blockchain data shows what holders actually do: send coins to exchanges (readiness to sell) or withdraw them. MVRV tells whether the market is on average in profit or loss.",
+  liqMap: "Price is often pulled towards clusters of liquidations: when it reaches such a zone, forced selling or buying kicks in and amplifies the move.",
+  fundamentals: "Supply, valuation and revenue show whether there is a business behind the price and how many coins are still coming to market (dilution).",
+  fees: "Fees and revenue are a protocol's “business”. If some of it flows to token holders, the token has measurable value beyond speculation.",
+  scoreHist: "Shows where the score stood at earlier highs and lows, so you can see whether today's value is really extreme for this coin.",
+  breakdown: "Shows which signals drive the score. If a single outlier dominates, the score is less robust than when signals broadly agree.",
+  sectors: "Capital moves between sectors (rotation). Seeing early where it flows reveals trends before they show up in the big rankings.",
+  defi: "TVL shows where users actually deploy money. If a sector's price rises without growing TVL, the move is more speculative.",
+  markets: "Market breadth shows whether a move is carried by many coins or just a few. Broad rallies are usually more durable.",
+  liqTotals: "Liquidations are forced sells (longs) or forced buys (shorts). Big waves often mark turning points because leverage has been flushed out afterwards.",
+  liqHours: "Shows when things blew up and how the price moved. Tall bars without a big price move point to an over-leveraged market.",
+  liqHist: "Comparing weeks and months shows whether current liquidations are unusual or just normal noise.",
+  liqFeed: "Single very large liquidations (from $1M) can move the price short term and show where big positions failed.",
+};
+if (EN) Object.assign(WHY, WHY_EN);
+const whyTip = (key) => (WHY[key]
+  ? `<span class="why-tip" data-tip="why:${key}" tabindex="0" role="button" aria-label="${L("Warum ist das wichtig?", "Why does this matter?")}">`
+    + `<span aria-hidden="true">?</span><span class="why-l">${L("Warum wichtig?", "Why it matters")}</span></span>`
+  : "");
+const tipText = (key) => key && key.startsWith("why:")
+  ? (WHY[key.slice(4)] ? L("Warum ist das wichtig?", "Why does this matter?") + "\n" + WHY[key.slice(4)] : "")
+  : TIPS[key];
+
 // --- Tooltips: Maus (Hover), Tastatur und Touch (beide über den Fokus) ---
 let tipTarget = null;
 
@@ -168,7 +223,7 @@ function showTip(el) {
   const tip = tipEl();
   tipTarget = el;
   // Ohne Eintrag in TIPS (z. B. Zeilen in Ranglisten) nur die Zusatzzeile zeigen
-  tip.textContent = [TIPS[el.dataset.tip], el.dataset.tipNow].filter(Boolean).join("\n\n");
+  tip.textContent = [tipText(el.dataset.tip), el.dataset.tipNow].filter(Boolean).join("\n\n");
   tip.hidden = false;
   const r = el.getBoundingClientRect();
   const t = tip.getBoundingClientRect();
