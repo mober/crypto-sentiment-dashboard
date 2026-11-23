@@ -72,7 +72,8 @@
   .coins-head a { color: inherit; }
   .coin-loading { padding: 20px; color: var(--muted); }
   .coin { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-  .coin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .coin-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .coin-head .head-r { margin-left: auto; }
   .coin-head h2 { margin: 0; font-size: 20px; }
   .coin-title { display: flex; align-items: center; gap: 10px; }
   .detail-link { font-size: 12px; padding: 3px 10px; }
@@ -83,15 +84,16 @@
   .head-r { text-align: right; }
   .trend { font-size: 13px; font-weight: 600; white-space: nowrap; }
   .mcap .val { white-space: nowrap; }
-  /* Vier schmale Karten nebeneinander: Kopf in drei Zeilen (Titel | Preis, Marktkap., Trend) */
+  .price { white-space: nowrap; }
+  /* Vier schmale Karten nebeneinander: Kopf in drei Zeilen (Titel | Preis, Marktkap., Trend).
+     Passt ein langer Preis (z. B. $0,002686) nicht neben den Titel, rutscht er rechtsbündig in eine eigene Zeile. */
   @media (min-width: 1181px) {
-    .coins .coin-head { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
-      grid-template-areas: "title price" "mcap mcap" "trend trend"; }
+    .coins .coin-head { flex-wrap: wrap; align-items: center; gap: 2px 8px; }
     .coins .head-l, .coins .head-r { display: contents; }
-    .coins .coin-title { grid-area: title; }
-    .coins .price { grid-area: price; text-align: right; }
-    .coins .mcap { grid-area: mcap; }
-    .coins .trend { grid-area: trend; }
+    .coins .coin-title { order: 1; }
+    .coins .price { order: 2; margin-left: auto; text-align: right; }
+    .coins .mcap { order: 3; flex-basis: 100%; }
+    .coins .trend { order: 4; flex-basis: 100%; text-align: right; }
   }
   .trend.up { color: var(--up); }
   .trend.down { color: var(--down); }
