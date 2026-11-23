@@ -11,9 +11,11 @@ function lageBlock(c) {
   const s = c.situation;
   if (!s) return "";
   const list = (items) => items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="none">${L("nichts Ausgeprägtes", "nothing pronounced")}</li>`;
-  // die zwei Signale mit dem größten Ausschlag
-  const drivers = [...c.signals].sort((a, b) => Math.abs(b.points) - Math.abs(a.points)).slice(0, 2)
-    .map((x) => `${esc(signalName(x.name))} <b>${signed(x.points)}</b>`).join(", ");
+  // die zwei Signale mit dem größten Anteil am Score (Punkte × Gewicht / Summe der Gewichte), nicht den meisten Rohpunkten
+  const sumW = c.signals.reduce((a, x) => a + (x.weight ?? 1), 0) || 1;
+  const share = (x) => x.points * (x.weight ?? 1) / sumW;
+  const drivers = [...c.signals].sort((a, b) => Math.abs(share(b)) - Math.abs(share(a))).slice(0, 2)
+    .map((x) => `${esc(signalName(x.name))} <b>${num1(share(x))}</b>`).join(", ");
   return `
     <div class="lage" id="hero-lage">
       <div class="lage-head">
@@ -30,7 +32,7 @@ function lageBlock(c) {
         <div class="pro"><div class="label">${L("Für steigende Kurse spricht", "In favour of rising prices")}</div><ul>${list(s.pro)}</ul></div>
         <div class="contra"><div class="label">${L("Dagegen spricht", "Against")}</div><ul>${list(s.contra)}</ul></div>
       </div>
-      <div class="lage-foot">${drivers ? `${L("Stärkste Signale im Score:", "Strongest signals in the score:")} ${drivers} · ` : ""}${L("Einordnung nach Erfahrungswerten.", "Assessment based on rules of thumb.")}</div>
+      <div class="lage-foot">${drivers ? `${L("Größter Anteil am Score:", "Largest share of the score:")} ${drivers} ${L("Punkte", "points")} · ` : ""}${L("Einordnung nach Erfahrungswerten.", "Assessment based on rules of thumb.")}</div>
     </div>`;
 }
 
@@ -97,7 +99,7 @@ function renderHero(c) {
       <div class="ds-line"><span class="ds" id="ds-price"></span><span class="ds" id="ds-score"></span></div>
     </div>
     <div class="score-box">
-      <div class="label">${L("Überhitzungs-Score", "Overheating score")}</div>
+      <div class="label">${L("Stimmungs-Score", "Sentiment score")}</div>
       <div class="score">${signed(c.score)}</div>
       <div class="verdict ${tone(c.score)}">${esc(c.verdict)}</div>
       <div class="track" id="score-track"></div>
@@ -172,11 +174,11 @@ function renderBreakdown(c) {
   }
   $("breakdown").innerHTML = `
     <div class="breakdown-head">
-      <div class="label">${L("Zusammensetzung des Überhitzungs-Scores", "Breakdown of the overheating score")}${whyTip("breakdown")}</div>
+      <div class="label">${L("Zusammensetzung des Stimmungs-Scores", "Breakdown of the sentiment score")}${whyTip("breakdown")}</div>
       <div class="note">${n} ${L("Signale · Score = gewichteter Durchschnitt (Trend und Optionsvola zählen mehr, Fear &amp; Greed und RSI weniger)", "signals · score = weighted average (trend and options volatility count more, Fear &amp; Greed and RSI less)")} · <a href="methodology.html#signals">${L("Methodik", "Methodology")} →</a></div>
     </div>
     ${c.signals.map((s) => bdRow(signalName(s.name) + (w(s) !== 1 ? ` ×${w(s).toLocaleString(LOCALE)}` : ""), s.reason, s.points, s.points * w(s) / sumW, false, n, w(s), s.name)).join("")}
-    ${bdRow(L("Überhitzungs-Score", "Overheating score"), c.verdict, c.score, null, true, n)}
+    ${bdRow(L("Stimmungs-Score", "Sentiment score"), c.verdict, c.score, null, true, n)}
     <div class="bd-axis"><span></span><div class="ticks"><span>−100 ${L("Angst", "Fear")}</span><span>0</span><span>${L("Gier", "Greed")} +100</span></div><span></span></div>`;
 }
 
@@ -271,7 +273,7 @@ function candleTiles() {
   }
   const curDd = price / closes[peak] - 1;  // peak = höchster Schlusskurs im Zeitraum
   const recovered = ddTrough < d.length - 1 ? price / closes[ddTrough] - 1 : null;
-  const dd = ddMax < 0 ? statTile("drawdown", full ? L("Max. Rückgang 1 J", "Max. drawdown 1 y") : L("Max. Rückgang seit Start", "Max. drawdown since listing"), chgSpan(ddMax),
+  const dd = ddMax < 0 ? statTile("drawdown", full ? L("Max. Rückgang 1 J (Schlusskurse)", "Max. drawdown 1 y (closes)") : L("Max. Rückgang seit Start (Schlusskurse)", "Max. drawdown since listing (closes)"), chgSpan(ddMax),
     `<div class="det">${dayC(ddPeak)} → ${dayC(ddTrough)}${recovered != null ? ` · ${L("seither", "since then")} ${chgSpan(recovered)}` : ""}</div>`
     + `<div class="det">${L("Aktuell", "Now")} ${curDd < 0 ? `${chgSpan(curDd)} ${L("unter dem Hoch", "below the high")} (${dayC(peak)})` : `<b>${L("auf dem Hoch", "at the high")}</b>`}</div>`) : "";
 
@@ -288,7 +290,11 @@ function candleTiles() {
       let i = last;
       while (i > 0 && ma200[i - 1] != null && (ma50[i - 1] > ma200[i - 1]) === above) i--;
       const since = ma200[i - 1] != null ? ` ${L("seit", "since")} ${dayC(i)}` : "";
-      cross = `<div class="det">MA50 ${above ? L("über", "above") : L("unter", "below")} MA200${since} (${above ? L("„Golden Cross“", "“golden cross”") : L("„Death Cross“", "“death cross”")})</div>`;
+      // Kreuz ist träge: liegt der Kurs schon auf der anderen Seite beider Linien, dazuschreiben
+      const below = price < ma50[last] && price < ma200[last], over = price > ma50[last] && price > ma200[last];
+      const caveat = above && below ? L(" – Kurs aber unter beiden Linien", " – but price below both lines")
+        : !above && over ? L(" – Kurs aber über beiden Linien", " – but price above both lines") : "";
+      cross = `<div class="det">MA50 ${above ? L("über", "above") : L("unter", "below")} MA200${since} (${above ? L("„Golden Cross“", "“golden cross”") : L("„Death Cross“", "“death cross”")})${caveat}</div>`;
     }
     ma = statTile("maDist", L("Abstand zu den Durchschnitten", "Distance to moving averages"), "",
       `<div class="ma-rows">${rows}</div>${cross}`).replace('<div class="val"></div>', "");

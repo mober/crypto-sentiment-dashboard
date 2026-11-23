@@ -143,6 +143,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <div class="seg" id="win"><button data-w="1h">1h</button><button data-w="4h">4h</button><button data-w="12h">12h</button><button data-w="24h" class="on">24h</button></div>
           <div class="seg" id="group"><button data-g="coin" class="on">Coin</button><button data-g="exchange">Börse</button></div>
+          <div class="seg" id="scope" title="Aktien, ETFs, Metalle und Devisen (TradFi-Kontrakte der Börsen) ein- oder ausblenden"><button data-c="1" class="on">Nur Krypto</button><button data-c="0">Alle Märkte</button></div>
         </div>
       </div>
       <div class="tree" id="tree"><div class="status">Lade Daten …</div></div>
@@ -213,7 +214,8 @@ addStatic({
   "Marktübersicht": "Markets", "Liquidations-Heatmap": "Liquidation heatmap", "Börse": "Exchange", "Lade Daten …": "Loading data …",
   "vor allem Longs liquidiert": "mostly longs liquidated", "vor allem Shorts liquidiert": "mostly shorts liquidated",
   "Fläche = Betrag · Klick filtert den Live-Feed": "Area = amount · click filters the live feed",
-  "Anteil je Börse": "Share per exchange", "Größte Liquidation": "Largest liquidation",
+  "Anteil je Börse": "Share per exchange", "Nur Krypto": "Crypto only", "Alle Märkte": "All markets",
+  "Aktien, ETFs, Metalle und Devisen (TradFi-Kontrakte der Börsen) ein- oder ausblenden": "Show or hide stocks, ETFs, metals and forex (the exchanges' TradFi contracts)", "Größte Liquidation": "Largest liquidation",
   "Liquidationen je Stunde (24 h) und BTC-Kurs": "Liquidations per hour (24 h) and BTC price", "Verlauf": "History",
   "7 T": "7 d", "30 T": "30 d", "90 T": "90 d", "1 J": "1 y", "Lade Verlauf …": "Loading history …",
   "Am stärksten betroffen": "Hit hardest", "Summe": "Total", "Größte Liquidationen": "Largest liquidations", "Datum": "Date",
@@ -223,6 +225,12 @@ addStatic({
   "Long = Long-Position zwangsgeschlossen (Kurs fiel), Short = Short-Position zwangsgeschlossen (Kurs stieg). Binance meldet je Coin höchstens die größte Liquidation pro Sekunde; Hyperliquid und kleinere Börsen fehlen. Die Summen liegen deshalb unter denen von Aggregatoren wie CoinGlass.":
     "Long = long position force-closed (price fell), short = short position force-closed (price rose). Binance reports at most the largest liquidation per coin and second; Hyperliquid and smaller exchanges are missing. The totals are therefore below those of aggregators such as CoinGlass.",
 });
+// Nur Krypto: Aktien/ETF/Rohstoff-Kontrakte ausblenden (Kennzeichnung der Börsen, siehe load_tradfi in liquidations.py)
+let cryptoOnly = true;
+try { cryptoOnly = localStorage.getItem("liqCryptoOnly") !== "0"; } catch (e) { /* ignorieren */ }
+const cq = () => (cryptoOnly ? "&crypto=1" : "");
+// Satzende: kein zweiter Punkt nach Abkürzungen wie „Mio.“
+const dot = (s) => (s.endsWith(".") ? s : s + ".");
 let win = "24h", group = "coin", ov = null, coinFilter = "", seenIds = new Set(), firstFeed = true;
 
 const money = (v) => {
@@ -352,10 +360,10 @@ function renderSummary() {
   }
   const text = EN
     ? `<b>${money(t.total)}</b> liquidated in the last ${WIN_LABEL[win]} (${t.count.toLocaleString(LOCALE)} positions)${pace}.
-      ${top ? `Hit hardest: <b>${esc(top.coin)}</b> with ${money(top.total)}.` : ""}
+      ${top ? `Hit hardest: <b>${esc(top.coin)}</b> with ${dot(money(top.total))}` : ""}
       ${big ? `Largest single liquidation: <b>${money(big.usd)}</b> on ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "long" : "short"} at ${usd(big.price)}).` : ""}`
     : `<b>${money(t.total)}</b> liquidiert in den letzten ${WIN_LABEL[win]} (${t.count.toLocaleString(LOCALE)} Positionen)${pace}.
-      ${top ? `Am stärksten betroffen: <b>${esc(top.coin)}</b> mit ${money(top.total)}.` : ""}
+      ${top ? `Am stärksten betroffen: <b>${esc(top.coin)}</b> mit ${dot(money(top.total))}` : ""}
       ${big ? `Größte einzelne Liquidation: <b>${money(big.usd)}</b> auf ${esc(big.exchange)} (${esc(big.symbol)}, ${big.side === "long" ? "Long" : "Short"} bei ${usd(big.price)}).` : ""}`;
   renderBrief($("summary"), { title, text, action, tone });
 }
@@ -428,7 +436,7 @@ function restore(key) {
     return c && Date.now() / 1000 - c.at < CACHE_MAX_AGE ? c.d : null;
   } catch (e) { return null; }
 }
-const feedKey = (params) => "liq-feed?" + params;
+const feedKey = (params) => "liq-feed?" + params + cq();
 
 function renderOverview() {
   renderTree(); renderTotals(); renderBreakdown(); renderSummary(); renderHours(); renderStatus(ov.status);
@@ -436,10 +444,10 @@ function renderOverview() {
 
 async function loadOverview() {
   try {
-    const r = await fetch("api/liq-overview?window=" + win);
+    const r = await fetch("api/liq-overview?window=" + win + cq());
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
-    ov = d; save("liq-ov", d);
+    ov = d; save("liq-ov" + cq(), d);
     renderOverview();
   } catch (e) {
     if (ov && ov.window === win) return;   // letzten Stand stehen lassen
@@ -450,7 +458,7 @@ async function loadOverview() {
 async function loadFeed() {
   const params = new URLSearchParams({ coin: coinFilter, exchange: $("fEx").value, min: $("fMin").value, limit: 60 });
   try {
-    const r = await fetch("api/liq-feed?" + params);
+    const r = await fetch("api/liq-feed?" + params + cq());
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     save(feedKey(params), d);
@@ -542,7 +550,7 @@ function renderHistory(h) {
 async function loadHistory() {
   const days = histDays, coin = coinFilter;
   try {
-    const r = await fetch(`api/liq-history?days=${days}&coin=${encodeURIComponent(coin)}`);
+    const r = await fetch(`api/liq-history?days=${days}&coin=${encodeURIComponent(coin)}` + cq());
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
     if (days === histDays && coin === coinFilter) renderHistory(d);
@@ -570,6 +578,16 @@ $("win").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   win = b.dataset.w; [...$("win").children].forEach((x) => x.classList.toggle("on", x === b)); loadOverview();
 });
+// Schalter Nur Krypto / Alle Märkte: alle Abschnitte neu laden
+[...$("scope").children].forEach((x) => x.classList.toggle("on", (x.dataset.c === "1") === cryptoOnly));
+$("scope").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  cryptoOnly = b.dataset.c === "1";
+  try { localStorage.setItem("liqCryptoOnly", cryptoOnly ? "1" : "0"); } catch (err) { /* ignorieren */ }
+  [...$("scope").children].forEach((x) => x.classList.toggle("on", x === b));
+  seenIds = new Set(); firstFeed = true;
+  loadOverview(); loadFeed(); loadHistory();
+});
 $("group").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   group = b.dataset.g; [...$("group").children].forEach((x) => x.classList.toggle("on", x === b)); if (ov) renderTree();
@@ -586,7 +604,7 @@ $("fEx").addEventListener("change", () => { firstFeed = true; seenIds.clear(); l
 $("fMin").addEventListener("change", () => { firstFeed = true; seenIds.clear(); loadFeed(); });
 window.addEventListener("resize", () => { if (ov) renderTree(); });
 
-const cachedOv = restore("liq-ov");
+const cachedOv = restore("liq-ov" + cq());
 if (cachedOv && cachedOv.window === win) { ov = cachedOv; renderOverview(); }
 const cachedFeed = restore(feedKey(new URLSearchParams({ coin: coinFilter, exchange: $("fEx").value, min: $("fMin").value, limit: 60 })));
 if (cachedFeed) renderFeed(cachedFeed);

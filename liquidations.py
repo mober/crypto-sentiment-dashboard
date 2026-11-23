@@ -337,7 +337,8 @@ class Store:
         # Abdeckung der 24 h: seit Beginn der Aufzeichnung (Ausfälle dazwischen werden nicht erkannt)
         self.first_seen = max(self.recorded_since, cutoff)
 
-    def history(self, days: int, coin: Optional[str], exchange: Optional[str]) -> Dict[str, Any]:
+    def history(self, days: int, coin: Optional[str], exchange: Optional[str],
+                exclude: Optional[List[Tuple[str, str]]] = None) -> Dict[str, Any]:
         """Summen je Stunde für lange Zeiträume, dazu Coins, Börsen und größte Liquidationen im Zeitraum.
 
         Für Tempo bei einem Jahr: Zeitreihe ohne Coin-Filter aus hourly_ex (wenige Zeilen je Stunde),
@@ -353,11 +354,14 @@ class Store:
             flt += " AND coin = ?"; fargs.append(coin)
         if exchange:
             flt += " AND exchange = ?"; fargs.append(exchange)
+        if exclude:   # Aktien/ETF/Rohstoffe heraus (Paare Börse|Coin)
+            flt += f" AND exchange || '|' || coin NOT IN ({','.join('?' * len(exclude))})"
+            fargs += [f"{x}|{c}" for x, c in exclude]
         sums = "SUM(long_usd), SUM(short_usd), SUM(long_n + short_n)"
         # Eigene Verbindung nur zum Lesen: läuft parallel zum Schreiben (WAL)
         db = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=30)
         try:
-            series_table = "hourly" if coin else "hourly_ex"
+            series_table = "hourly" if coin or exclude else "hourly_ex"
             hours = db.execute(f"SELECT hour, {sums} FROM {series_table} WHERE hour >= ?{flt} GROUP BY hour ORDER BY hour",
                                [h0, *fargs]).fetchall()
 
@@ -583,12 +587,51 @@ class OKX(Source):
         return out
 
 
+# ---------------------------------------------------------------- Aktien, ETFs, Rohstoffe (TradFi)
+# Alle drei Börsen handeln auch Perpetuals auf Aktien, ETFs, Metalle und Devisen. Sie kennzeichnen sie selbst:
+# Binance underlyingType ≠ COIN, Bybit symbolType stock/ETF/commodity/forex, OKX instCategory ≠ 1 (1 = Krypto).
+# Gespeichert als Paare (Börse, Coin), damit gleiche Kürzel auf verschiedenen Börsen getrennt bleiben.
+TRADFI_REFRESH = 6 * 3600
+BYBIT_TRADFI = {"stock", "ETF", "commodity", "forex"}
+
+
+def load_tradfi() -> set:
+    pairs = set()
+    try:
+        for s in _get_json("https://fapi.binance.com/fapi/v1/exchangeInfo")["symbols"]:
+            if s.get("underlyingType") not in (None, "COIN"):
+                pairs.add(("Binance", base_coin(s["symbol"])))
+    except Exception as exc:
+        print(f"  [warn] TradFi Binance: {exc}")
+    try:
+        cursor = ""
+        for _ in range(5):
+            r = _get_json("https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000"
+                          + (f"&cursor={cursor}" if cursor else ""))["result"]
+            for s in r["list"]:
+                if s.get("symbolType") in BYBIT_TRADFI:
+                    pairs.add(("Bybit", base_coin(s["symbol"])))
+            cursor = r.get("nextPageCursor") or ""
+            if not cursor:
+                break
+    except Exception as exc:
+        print(f"  [warn] TradFi Bybit: {exc}")
+    try:
+        for i in _get_json("https://www.okx.com/api/v5/public/instruments?instType=SWAP")["data"]:
+            if i.get("instCategory") not in (None, "", "1"):
+                pairs.add(("OKX", base_coin(i["instId"])))
+    except Exception as exc:
+        print(f"  [warn] TradFi OKX: {exc}")
+    return pairs
+
+
 # ---------------------------------------------------------------- Auswertung
 
 class Collector:
     def __init__(self, data_dir: Optional[Path]) -> None:
         self.store = Store(data_dir / "liquidations.db" if data_dir else None)
         self.sources = [Binance(self.store), Bybit(self.store), OKX(self.store)]
+        self.tradfi: set = set()   # (Börse, Coin) von Aktien/ETF/Rohstoff-Kontrakten, siehe load_tradfi
 
     def start(self) -> "Collector":
         for s in self.sources:
@@ -596,17 +639,31 @@ class Collector:
         threading.Thread(target=self._maintain, daemon=True, name="liq-maintain").start()
         return self
 
+    def is_crypto(self, exchange: str, coin: str) -> bool:
+        return (exchange, coin) not in self.tradfi
+
     def _maintain(self) -> None:
         last_prune = time.time()
+        last_tradfi = 0.0
         while True:
+            if time.time() - last_tradfi > TRADFI_REFRESH:
+                pairs = load_tradfi()
+                if pairs:
+                    self.tradfi = pairs
+                    last_tradfi = time.time()
+                else:
+                    last_tradfi = time.time() - TRADFI_REFRESH + 300   # fehlgeschlagen: in 5 Min. erneut
             time.sleep(5)
             self.store.flush()
             if time.time() - last_prune > 30:
                 self.store.prune()
                 last_prune = time.time()
 
-    def history(self, days: int, coin: Optional[str] = None, exchange: Optional[str] = None) -> Dict[str, Any]:
-        return {"updated": time.time(), "days": days, **self.store.history(days, coin, exchange)}
+    def history(self, days: int, coin: Optional[str] = None, exchange: Optional[str] = None,
+                crypto_only: bool = False) -> Dict[str, Any]:
+        exclude = sorted(self.tradfi) if crypto_only else []
+        return {"updated": time.time(), "days": days, "crypto_only": crypto_only,
+                **self.store.history(days, coin, exchange, exclude)}
 
     def status(self) -> Dict[str, Any]:
         now = time.time()
@@ -618,9 +675,11 @@ class Collector:
                         for s in self.sources],
         }
 
-    def overview(self, window: str) -> Dict[str, Any]:
+    def overview(self, window: str, crypto_only: bool = False) -> Dict[str, Any]:
         now = time.time()
         events = self.store.snapshot(now - KEEP_SECONDS)
+        if crypto_only:
+            events = [e for e in events if self.is_crypto(e[1], e[2])]
         totals = {}
         for key, sec in WINDOWS.items():
             t = {"total": 0.0, "long": 0.0, "short": 0.0, "count": 0}
@@ -658,6 +717,7 @@ class Collector:
         return {
             "updated": now,
             "window": window,
+            "crypto_only": crypto_only,
             "totals": totals,
             "coins": coin_list[:80],
             "coins_other": sum(c["total"] for c in coin_list[80:]),
@@ -668,10 +728,13 @@ class Collector:
             "status": self.status(),
         }
 
-    def feed(self, coin: Optional[str], exchange: Optional[str], min_usd: float, limit: int) -> Dict[str, Any]:
+    def feed(self, coin: Optional[str], exchange: Optional[str], min_usd: float, limit: int,
+             crypto_only: bool = False) -> Dict[str, Any]:
         events = self.store.snapshot(time.time() - KEEP_SECONDS)
         out = []
         for e in reversed(events):
+            if crypto_only and not self.is_crypto(e[1], e[2]):
+                continue
             if coin and e[2] != coin:
                 continue
             if exchange and e[1] != exchange:

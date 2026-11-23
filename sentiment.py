@@ -2,7 +2,7 @@
 """Tägliche Crypto-Sentiment-Übersicht.
 
 Sammelt kostenlose, öffentliche Marktdaten (ohne API-Keys) und berechnet
-einen Überhitzungs-Score von -100 (extreme Angst) bis +100 (überhitzt).
+einen Stimmungs-Score von -100 (extreme Angst) bis +100 (überhitzt).
 
 Quellen:
   - alternative.me     Fear & Greed Index
@@ -93,8 +93,17 @@ SCORE_HISTORY_DAYS = 365  # rückwirkend berechneter Score-Verlauf auf der Detai
 # Versionsnummer und Änderungsprotokoll der Score-Methodik (Seite „Methodik & Datenquellen“, /api/methodology).
 # Bei jeder Änderung an Signalen, Skalen, Gewichten, Schwellen oder an der Einordnung: Version erhöhen und
 # Eintrag oben ergänzen. Hauptversion = Score-Werte ändern sich; Nebenversion = Ergänzung ohne Bruch.
-METHODOLOGY_VERSION = "2.1"
+METHODOLOGY_VERSION = "3.0"
 METHODOLOGY_CHANGES = [
+    {"version": "3.0", "date": "2026-11-23",
+     "de": "Umbenannt in „Stimmungs-Score“ (−100 Angst … +100 Gier/Überhitzung). Open Interest aus 4-h-Werten statt "
+           "Tageswerten (frischer, gleich wie im Derivate-Tab) – dadurch leicht andere Score-Werte. RSI-Begriffe einheitlich: "
+           "„überverkauft/überkauft“ erst unter 30 bzw. über 70. Lagebild nennt die Signale mit dem größten Anteil am Score "
+           "(Punkte × Gewicht) statt den meisten Rohpunkten.",
+     "en": "Renamed to “sentiment score” (−100 fear … +100 greed/overheating). Open interest from 4 h values instead of daily "
+           "values (fresher, same as the derivatives tab) – slightly different score values as a result. Consistent RSI wording: "
+           "“oversold/overbought” only below 30 or above 70. The situation lists the signals with the largest share of the score "
+           "(points × weight) instead of the most raw points."},
     {"version": "2.1", "date": "2026-11-23",
      "de": "Datenstatus je Kennzahl (Quelle, Stand, live/aktuell/verzögert/veraltet/nicht verfügbar); Fear & Greed mit Datum. "
            "Berechnung unverändert.",
@@ -251,9 +260,11 @@ def get_funding(symbol: str) -> Dict[str, Any]:
 
 
 def get_open_interest(symbol: str) -> Dict[str, Any]:
+    # 4-h-Werte wie die Kurve im Derivate-Tab: letzter Wert gegen den vor genau 7 Tagen (42 Schritte),
+    # statt Tageswerten, die bis zu 24 h alt sein können
     hist = futures_data(
         "https://fapi.binance.com/futures/data/openInterestHist"
-        f"?symbol={symbol}USDT&period=1d&limit=8", symbol
+        f"?symbol={symbol}USDT&period=4h&limit=43", symbol
     )
     first = float(hist[0]["sumOpenInterestValue"])
     last = float(hist[-1]["sumOpenInterestValue"])
@@ -1319,6 +1330,20 @@ def _l(lang: str):
     return (lambda de, en: en) if lang == "en" else (lambda de, en: de)
 
 
+def rsi_word(v: float, L: Any, prefix: str = "") -> str:
+    # Einheitliche RSI-Wörter (wie im Lagebild): überverkauft/überkauft erst ab 30/70, bis 40/60 „nahe am …“
+    low, high = RSI_SCALE[0][0], RSI_SCALE[-1][0]
+    if v <= low:
+        return prefix + L("überverkauft", "oversold")
+    if v >= high:
+        return prefix + L("überkauft", "overbought")
+    if v <= 40:
+        return L("schwach, nahe am überverkauften Bereich", "weak, close to oversold")
+    if v >= 60:
+        return L("stark, nahe am überkauften Bereich", "strong, close to overbought")
+    return "neutral"
+
+
 def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     """Liefert Einzelsignale von -100 (Angst) über 0 (neutral) bis +100 (überhitzt/Gier).
 
@@ -1361,8 +1386,8 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
     rs = d.get("rsi")
     if rs:
         v = rs["value"]
-        add("RSI (14)", scale(v, RSI_SCALE), f"{v:.0f}", L("überkauft", "overbought"),
-            L("überverkauft", "oversold"), "neutral")
+        w = rsi_word(v, L)
+        add("RSI (14)", scale(v, RSI_SCALE), f"{v:.0f}", w, w, w)
 
     dv = d.get("dvol")
     if dv:
@@ -1385,8 +1410,8 @@ def score(d: Dict[str, Any], lang: str = "de") -> List[Dict[str, Any]]:
                 L("Spekulationsrausch", "speculative frenzy"), L("Panikverkäufe", "panic selling"), "normal")
         if not rs and mo["rsi_hourly"] is not None:
             v = mo["rsi_hourly"]
-            add("RSI (14 Std.)", scale(v, RSI_SCALE), f"{v:.0f}", L("überkauft", "overbought"),
-                L("überverkauft", "oversold"), "neutral")
+            w = rsi_word(v, L, L("kurzfristig ", "short term "))
+            add("RSI (14 Std.)", scale(v, RSI_SCALE), f"{v:.0f}", w, w, w)
 
     mv = d.get("mvrv")
     if mv:

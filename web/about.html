@@ -193,7 +193,7 @@ function marketCard(c) {
     <section class="card">
       <h2>${L("Aktuelle Marktlage", "Current market situation")}</h2>
       <div class="market">
-        <div><div class="label"><span${tipAttr("score")}>${L("Überhitzungs-Score", "Overheating score")}</span></div>
+        <div><div class="label"><span${tipAttr("score")}>${L("Stimmungs-Score", "Sentiment score")}</span></div>
           <span class="big">${signed(c.score)}</span> <span class="${tone(c.score)}">${esc(c.verdict)}</span></div>
         ${s ? `<div><div class="label"><span${tipAttr("situation")}>${L("Lage", "Situation")}</span></div>${esc(s.title)}</div>` : ""}
         ${s && s.action ? `<div><div class="label"><span${tipAttr("action")}>${L("Empfehlung", "Suggestion")}</span></div>

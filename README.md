@@ -1,7 +1,7 @@
 # Crypto-Sentiment-Dashboard
 
 Ein lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten einschätzt, wie „heiß“ der
-Kryptomarkt gerade ist – je Coin ein **Überhitzungs-Score** von −100 (extreme Angst) bis +100
+Kryptomarkt gerade ist – je Coin ein **Stimmungs-Score** von −100 (extreme Angst) bis +100
 (Überhitzung), dazu Kurs-Charts, Derivate, echte Liquidationen, Orderbuch, On-Chain-Daten und News.
 
 - **Keine API-Keys, keine Konten:** alle Quellen sind öffentlich und kostenlos.

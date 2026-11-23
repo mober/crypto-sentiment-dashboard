@@ -249,9 +249,10 @@ def _refresh_in_background() -> None:
     _payload_cache.refresh("payload", build_payload)
 
 
-def get_liq_history(days: int, coin: Optional[str], exchange: Optional[str]) -> Dict[str, Any]:
+def get_liq_history(days: int, coin: Optional[str], exchange: Optional[str], crypto_only: bool = False) -> Dict[str, Any]:
     """Liquidationen über Wochen/Monate aus SQLite (Stundensummen), 60 s gecacht."""
-    return _liq_history_cache.get((days, coin, exchange), lambda _: _collector.history(days, coin, exchange))
+    return _liq_history_cache.get((days, coin, exchange, crypto_only),
+                                  lambda _: _collector.history(days, coin, exchange, crypto_only))
 
 
 def get_payload(force: bool = False) -> Dict[str, Any]:
@@ -806,14 +807,14 @@ def api_liq_history(q: Query) -> Dict[str, Any]:
         days = 0
     require(days in LIQ_HISTORY_DAYS and not (coin and not SYMBOL_RE.match(coin))
             and not (exchange and exchange not in LIQ_EXCHANGES), "ungültiger Zeitraum, Coin oder Börse")
-    return get_liq_history(days, coin, exchange)
+    return get_liq_history(days, coin, exchange, q("crypto") == "1")
 
 
 def api_liq_overview(q: Query) -> Dict[str, Any]:
     col = collector()
     window = q("window", "24h")
     require(window in liquidations.WINDOWS, "ungültiges Zeitfenster")
-    return col.overview(window)
+    return col.overview(window, q("crypto") == "1")
 
 
 def api_liq_feed(q: Query) -> Dict[str, Any]:
@@ -826,7 +827,7 @@ def api_liq_feed(q: Query) -> Dict[str, Any]:
         raise ApiError(400, {"error": "ungültige Zahl"})
     require(not (coin and not SYMBOL_RE.match(coin)) and not (exchange and exchange not in LIQ_EXCHANGES),
             "ungültiger Coin oder ungültige Börse")
-    return col.feed(coin, exchange, min_usd, limit)
+    return col.feed(coin, exchange, min_usd, limit, q("crypto") == "1")
 
 
 def api_methodology(q: Query) -> Dict[str, Any]:

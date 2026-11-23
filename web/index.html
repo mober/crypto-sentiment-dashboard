@@ -49,7 +49,7 @@
   .chip .chg.up { color: var(--up); }
   .chip .chg.down { color: var(--down); }
   .chip.static { cursor: default; border-color: transparent; opacity: .55; }
-  .chip.active { background: var(--text); color: var(--card); }
+  .chip.active { background: var(--accent); color: var(--accent-text); }
   .chip.active .rank, .chip.active .chg { color: inherit; opacity: .75; }
   .chip.fixed { cursor: default; }
 
@@ -320,7 +320,8 @@ function renderChips() {
   const chip = (t) => {
     // Trending: Rang 1 kräftig (40 %), letzter Rang blass (6 %); Top 20 ohne Färbung (Rang = Größe, nicht Aufmerksamkeit)
     const heat = isTop ? 0 : list.length > 1 ? 6 + ((list.length - t.rank) / (list.length - 1)) * 34 : 40;
-    const chg = t.change_24h == null ? ""
+    // fehlender oder genau 0 gemeldeter Wert ohne Handel: „–“ statt „0,0 %“
+    const chg = t.change_24h == null || t.change_24h === 0 ? `<span class="chg muted">–</span>`
       : `<span class="chg ${t.change_24h >= 0 ? "up" : "down"}">${pct(t.change_24h)}</span>`;
     const mcRank = L("Marktkap.-Rang", "Market cap rank");
     const title = isTop ? `${mcRank} ${t.rank}: ${t.name}`
@@ -346,7 +347,7 @@ function renderChips() {
         </div>
         <div class="label"><span${tipAttr(isTop ? "top20" : "trending")}>${isTop ? L("Nach Marktkap. (CoinGecko)", "By market cap (CoinGecko)") : L("Meistgesucht (CoinGecko)", "Most searched (CoinGecko)")}</span>${isTop ? "" : whyTip("trending")}</div>
       </div>
-      <div class="note">${isTop ? L("ohne Stablecoins · Zahl = Marktkap.-Rang", "without stablecoins · number = market cap rank") : L("Rang 1 = meistgesucht", "rank 1 = most searched")} · ${L("rechts: Kurs 24 h · Klick = zur Watchlist (dunkel = schon dabei)", "right: price 24 h · click = add to watchlist (dark = already in)")}</div>
+      <div class="note">${isTop ? L("ohne Stablecoins · Zahl = Marktkap.-Rang", "without stablecoins · number = market cap rank") : L("Rang 1 = meistgesucht", "rank 1 = most searched")} · ${L("rechts: Kurs 24 h · Klick = zur Watchlist (blau = schon dabei)", "right: price 24 h · click = add to watchlist (blue = already in)")}</div>
     </div>
     <div class="chips">${list.length ? list.map(chip).join("") : `<span class="note">${empty}</span>`}</div>
     <div class="ds-line">${isTop
@@ -399,7 +400,7 @@ function renderCoin(c, id = null) {
 
       <div>
         <div class="score-line">
-          <span class="label"><span${tipAttr("score")}>${L("Überhitzungs-Score", "Overheating score")}</span></span>
+          <span class="label"><span${tipAttr("score")}>${L("Stimmungs-Score", "Sentiment score")}</span></span>
           <span class="score">${signed(c.score)}</span>
         </div>
         <div class="gauge"><div class="marker" style="left:${pos}%"></div></div>

@@ -112,7 +112,7 @@ const SIG = {
     what: L("Durchschnittliche Funding Rate der letzten 7 Tage. Coins mit 1-h- oder 4-h-Takt werden auf 8 h umgerechnet.", "Average funding rate of the last 7 days. Coins paying every 1 h or 4 h are converted to 8 h."),
     src: "Binance Futures", avail: L("Coins mit USDT-Perpetual", "coins with a USDT perpetual") },
   "Open Interest": { label: "Open Interest", fmt: (v) => pctN(v) + L(" in 7 T", " in 7 d"),
-    what: L("Veränderung des offenen Futures-Kapitals über 7 Tage. Aufbau von Hebel = Gier, Abbau = Angst.", "Change in open futures capital over 7 days. Building leverage = greed, deleveraging = fear."),
+    what: L("Veränderung des offenen Futures-Kapitals über 7 Tage (4-h-Werte, letzter gegen den vor 7 Tagen). Aufbau von Hebel = Gier, Abbau = Angst.", "Change in open futures capital over 7 days (4 h values, latest vs. 7 days earlier). Building leverage = greed, deleveraging = fear."),
     src: "Binance Futures", avail: L("Coins mit USDT-Perpetual", "coins with a USDT perpetual") },
   "Preis vs. MA200": { label: L("Preis vs. MA200", "Price vs. MA200"), fmt: (v) => pctN(v),
     what: L("Abstand des Kurses zum Durchschnitt der letzten 200 Tages-Schlusskurse. +10 % gilt als normaler Aufwärtstrend (0 Punkte).", "Distance of the price from the average of the last 200 daily closes. +10% counts as a normal uptrend (0 points)."),
@@ -186,8 +186,8 @@ function render(m) {
 
   const sec = {
     goal: `
-      <p>${L("Der <b>Überhitzungs-Score</b> fasst für jeden Coin bis zu acht Signale (ohne Binance-Daten ergänzt um Ersatz-Signale) zu einer Zahl von −100 (extreme Angst) bis +100 (Überhitzung) zusammen. Er soll zeigen, ob ein Markt <b>einseitig</b> geworden ist – zu viel Hebel, zu viel Euphorie oder Panik –, denn solche Phasen enden oft in Gegenbewegungen.",
-        "The <b>overheating score</b> combines up to eight signals per coin (supplemented by fallback signals without Binance data) into one number from −100 (extreme fear) to +100 (overheating). It is meant to show whether a market has become <b>one-sided</b> – too much leverage, too much euphoria or panic – because such phases often end in reversals.")}</p>
+      <p>${L("Der <b>Stimmungs-Score</b> fasst für jeden Coin bis zu acht Signale (ohne Binance-Daten ergänzt um Ersatz-Signale) zu einer Zahl von −100 (extreme Angst) bis +100 (extreme Gier, Überhitzung) zusammen. Negative Werte heißen also Angst, nicht „wenig Überhitzung“ (bis v2.1 hieß er „Überhitzungs-Score“). Er soll zeigen, ob ein Markt <b>einseitig</b> geworden ist – zu viel Hebel, zu viel Euphorie oder Panik –, denn solche Phasen enden oft in Gegenbewegungen.",
+        "The <b>sentiment score</b> combines up to eight signals per coin (supplemented by fallback signals without Binance data) into one number from −100 (extreme fear) to +100 (extreme greed, overheating). Negative values therefore mean fear, not “little overheating” (until v2.1 it was called “overheating score”). It is meant to show whether a market has become <b>one-sided</b> – too much leverage, too much euphoria or panic – because such phases often end in reversals.")}</p>
       <h3>${L("Was der Score nicht kann", "What the score cannot do")}</h3>
       <ul>
         <li>${L("Er ist <b>keine Kursprognose</b> und kein Timing-Werkzeug. Märkte können lange überhitzt oder ängstlich bleiben.", "It is <b>not a price forecast</b> and not a timing tool. Markets can stay overheated or fearful for a long time.")}</li>

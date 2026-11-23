@@ -1,7 +1,7 @@
 # Crypto-Sentiment-Dashboard
 
 Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) einen
-Überhitzungs-Score je Coin berechnet. Nur Python-Standardbibliothek, kein Build-Schritt.
+Stimmungs-Score je Coin berechnet. Nur Python-Standardbibliothek, kein Build-Schritt.
 
 ## Starten
 
@@ -111,6 +111,10 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   Cache-Intervalle), Texte je Signal in `SIG` auf der Seite. **Score-Methodik geändert (Signale, Skalen, Gewichte,
   Schwellen, Einordnung) → `METHODOLOGY_VERSION` erhöhen und Eintrag oben in `METHODOLOGY_CHANGES` (`sentiment.py`)**;
   neues Signal auch in `SIGNAL_SCALES` und `SIG` eintragen.
+- Liquidationen „Nur Krypto“ (Standard, `localStorage.liqCryptoOnly`, Parameter `crypto=1` für overview/feed/history):
+  Aktien/ETF/Rohstoff-Kontrakte nach Kennzeichnung der Börsen (`load_tradfi` in `liquidations.py`: Binance
+  `underlyingType` ≠ COIN, Bybit `symbolType`, OKX `instCategory` ≠ 1), Paare (Börse, Coin), alle 6 h erneuert.
+- Marktübersicht ohne eigene Spaltenauswahl: `fitColumns` blendet `opt-wide`, dann `opt-mid` aus, bis die Tabelle passt.
 - Filter der Marktübersicht (`markets.html`, Menü „Filter“, `localStorage.marketFilter`, Chips über der Tabelle): Sortierung
   (Gewinner/Verlierer 24 h/7 T, Volumen, Umschlag, Abstand MA200), Assetklassen, Mindest-Marktkap./-Volumen, Trend zu MA50/MA200,
   Stablecoins ausblenden, nur vollständiger Score, nur Watchlist, Liquiditätswarnungen ausblenden. Aktiver Filter → alle Top 1000
