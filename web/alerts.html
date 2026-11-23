@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alarme</title>
+<link rel="stylesheet" href="base.css">
+<script src="i18n.js"></script>
+<script src="nav.js"></script>
+<style>
+  .card { padding: 18px 20px; margin-bottom: 20px; }
+  .card h2 { margin: 0 0 4px; font-size: 16px; }
+  .card .intro { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .card .intro a { color: inherit; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span { color: var(--muted); font-size: 12px; }
+  .field.grow { flex: 1 1 220px; }
+  input, select { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; min-width: 0; }
+  input:focus, select:focus { outline: none; border-color: var(--muted); }
+  .unit { color: var(--muted); font-size: 13px; padding-bottom: 8px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; min-height: 1.4em; }
+  .msg { font-size: 13px; margin-top: 10px; min-height: 1.4em; }
+  .msg.ok { color: var(--up); } .msg.err { color: var(--down); }
+  details.adv { margin-top: 12px; }
+  details.adv summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details.adv .row { margin-top: 10px; }
+  .actions { display: flex; gap: 8px; }
+  button.primary { background: var(--text); color: var(--card); border-color: var(--text); }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 9px 10px; text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid var(--border); }
+  td { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; } th.num { text-align: right; }
+  td a { color: var(--text); font-weight: 600; text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  td.wrap { white-space: normal; }
+  tr.off td:not(.ctl) { color: var(--muted); }
+  td.ctl { width: 1%; }
+  button.del { border: 0; background: none; color: var(--muted); font-size: 18px; padding: 0 6px; line-height: 1; }
+  button.del:hover:not(:disabled) { color: var(--down); }
+  .empty { color: var(--muted); font-size: 14px; padding: 12px 0 2px; }
+  .badge { font-size: 12px; padding: 1px 7px; border-radius: 6px; }
+  .badge.on { background: var(--hot-bg); color: var(--hot); }
+  .sent-ok { color: var(--up); } .sent-err { color: var(--down); }
+
+  @media (max-width: 640px) {
+    .card { padding: 16px; }
+    .field.grow { flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Alarme</h1>
+      <div class="sub" id="status">Lade …</div>
+    </div>
+    <nav class="actions">
+      <button id="check" title="Alle Regeln jetzt prüfen statt beim nächsten Durchlauf">Jetzt prüfen</button>
+    </nav>
+  </header>
+
+  <section class="card">
+    <h2>Benachrichtigung über ntfy</h2>
+    <p class="intro" id="ntfy-intro"></p>
+    <div class="row">
+      <label class="field grow"><span>Kanal (geheim halten)</span><input id="topic" autocomplete="off" spellcheck="false" placeholder="z. B. krypto-alarm-x7k2p9"></label>
+      <button type="button" id="random" title="Zufälligen, schwer zu erratenden Kanalnamen erzeugen">Zufällig</button>
+    </div>
+    <details class="adv">
+      <summary>Erweitert</summary>
+      <div class="row">
+        <label class="field grow"><span>ntfy-Server</span><input id="server" spellcheck="false" placeholder="https://ntfy.sh"></label>
+        <label class="field grow"><span>Adresse des Dashboards (Link in der Nachricht)</span><input id="link" spellcheck="false" placeholder="https://…"></label>
+      </div>
+    </details>
+    <div class="row" style="margin-top:14px">
+      <button type="button" class="primary" id="save">Speichern</button>
+      <button type="button" id="test">Testnachricht senden</button>
+    </div>
+    <div class="msg" id="settings-msg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Neue Regel</h2>
+    <p class="intro">Coins aus deiner Watchlist. Eine Regel meldet sich, sobald die Bedingung erfüllt ist, danach erst wieder, wenn sie zwischendurch nicht erfüllt war – und höchstens einmal pro Stunde.</p>
+    <div class="row">
+      <label class="field"><span>Bedingung</span><select id="kind"></select></label>
+      <label class="field"><span>Coin</span><select id="coin"></select></label>
+      <label class="field" id="thr-field"><span>Schwelle</span><input id="threshold" inputmode="decimal" size="10"></label>
+      <span class="unit" id="unit"></span>
+      <button type="button" class="primary" id="add">Hinzufügen</button>
+    </div>
+    <div class="hint" id="kind-hint"></div>
+    <div class="msg" id="add-msg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Regeln</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Coin</th><th>Bedingung</th><th class="num">Aktuell</th><th>Zuletzt ausgelöst</th><th>Aktiv</th><th></th></tr></thead>
+      <tbody id="rules"></tbody>
+    </table></div>
+    <div class="empty" id="rules-empty" hidden>Noch keine Regeln.</div>
+  </section>
+
+  <section class="card">
+    <h2>Verlauf</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Zeit</th><th>Meldung</th><th>Gesendet</th></tr></thead>
+      <tbody id="fired"></tbody>
+    </table></div>
+    <div class="empty" id="fired-empty" hidden>Noch keine Alarme ausgelöst.</div>
+  </section>
+
+  <footer>Geprüft wird auf dem Server, auch wenn keine Seite offen ist. Regeln gelten für alle, die dieses Dashboard öffnen können.</footer>
+</main>
+
+<script src="format.js"></script>
+<script src="watchlist.js"></script>
+<script>
+addStatic({
+  "Alarme": "Alerts", "Lade …": "Loading …", "Jetzt prüfen": "Check now",
+  "Alle Regeln jetzt prüfen statt beim nächsten Durchlauf": "Check all rules now instead of at the next run",
+  "Benachrichtigung über ntfy": "Notifications via ntfy", "Kanal (geheim halten)": "Topic (keep it secret)",
+  "z. B. krypto-alarm-x7k2p9": "e.g. crypto-alert-x7k2p9", "Zufällig": "Random",
+  "Zufälligen, schwer zu erratenden Kanalnamen erzeugen": "Generate a random, hard-to-guess topic name",
+  "Erweitert": "Advanced", "ntfy-Server": "ntfy server", "Adresse des Dashboards (Link in der Nachricht)": "Dashboard address (link in the message)",
+  "Speichern": "Save", "Testnachricht senden": "Send test message", "Neue Regel": "New rule",
+  "Coins aus deiner Watchlist. Eine Regel meldet sich, sobald die Bedingung erfüllt ist, danach erst wieder, wenn sie zwischendurch nicht erfüllt war – und höchstens einmal pro Stunde.":
+    "Coins from your watchlist. A rule notifies as soon as its condition is met, then again only after it was not met in between – and at most once per hour.",
+  "Bedingung": "Condition", "Schwelle": "Threshold", "Hinzufügen": "Add", "Regeln": "Rules", "Aktuell": "Current",
+  "Zuletzt ausgelöst": "Last triggered", "Aktiv": "Active", "Noch keine Regeln.": "No rules yet.", "Verlauf": "History",
+  "Zeit": "Time", "Meldung": "Message", "Gesendet": "Sent", "Noch keine Alarme ausgelöst.": "No alerts triggered yet.",
+  "Geprüft wird auf dem Server, auch wenn keine Seite offen ist. Regeln gelten für alle, die dieses Dashboard öffnen können.":
+    "Checks run on the server, even when no page is open. Rules apply to everyone who can open this dashboard.",
+});
+document.title = L("Alarme", "Alerts");
+
+// Bedingungen wie KINDS in alerts.py. Eingabe in der angezeigten Einheit, gespeichert wird toApi(Eingabe).
+const KIND_DEFS = {
+  score_above: { label: L("Score über", "Score above"), unit: L("Punkte (−100 … +100)", "points (−100 … +100)"),
+    hint: L("Ab +40 gilt ein Coin als überhitzt, ab +15 als leicht gierig.", "From +40 a coin counts as overheated, from +15 as slightly greedy."), ph: "40" },
+  score_below: { label: L("Score unter", "Score below"), unit: L("Punkte (−100 … +100)", "points (−100 … +100)"),
+    hint: L("Unter −40 herrscht extreme Angst – allein kein verlässliches Kaufsignal.", "Below −40 there is extreme fear – not a reliable buy signal on its own."), ph: "-40" },
+  price_above: { label: L("Kurs über", "Price above"), unit: "USD", hint: L("Kurs der laufenden Tageskerze (Binance).", "Price of the current daily candle (Binance)."), ph: "" },
+  price_below: { label: L("Kurs unter", "Price below"), unit: "USD", hint: L("Kurs der laufenden Tageskerze (Binance).", "Price of the current daily candle (Binance)."), ph: "" },
+  ma200_cross: { label: L("Kurs kreuzt MA200", "Price crosses MA200"), unit: "",
+    hint: L("Meldet jeden Wechsel über oder unter den 200-Tage-Durchschnitt, nicht den Ausgangszustand.", "Notifies every move above or below the 200-day average, not the starting state."), ph: "" },
+  funding_above: { label: L("Funding über", "Funding above"), unit: L("% pro 8 h", "% per 8 h"),
+    hint: L("Letzte Zahlung, auf 8 h umgerechnet. Über 0,05 % ist hoch (viele gehebelte Longs).", "Latest payment, converted to 8 h. Above 0.05% is high (many leveraged longs)."), ph: "0.05", toApi: (v) => v / 100, fromApi: (v) => v * 100 },
+  funding_below: { label: L("Funding unter", "Funding below"), unit: L("% pro 8 h", "% per 8 h"),
+    hint: L("Negativ heißt: Shorts zahlen an Longs – oft bei Panik.", "Negative means shorts pay longs – often during panic."), ph: "-0.01", toApi: (v) => v / 100, fromApi: (v) => v * 100 },
+  liq_1h: { label: L("Liquidationen in 1 h über", "Liquidations in 1 h above"), unit: L("Mio. USD", "M USD"),
+    hint: L("Summe aus Binance, Bybit und OKX in der letzten Stunde, auch für alle Coins zusammen.", "Total from Binance, Bybit and OKX in the last hour, also for all coins together."), ph: "50", toApi: (v) => v * 1e6, fromApi: (v) => v / 1e6 },
+};
+const ALL = "*";
+
+let state = null;
+
+// Zahl aus dem Eingabefeld: Komma oder Punkt als Dezimaltrenner
+const parseNum = (s) => {
+  const t = String(s).trim().replace(/\s/g, "").replace("−", "-");
+  return /^-?\d+([.,]\d+)?$/.test(t) ? Number(t.replace(",", ".")) : NaN;
+};
+const num = (v, d) => v.toLocaleString(LOCALE, { maximumFractionDigits: d });
+
+// Messwert einer Regel für die Tabelle
+function fmtVal(kind, v) {
+  if (v == null) return dash;
+  if (kind.startsWith("score")) return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v));
+  if (kind.startsWith("price")) return usd(v);
+  if (kind === "ma200_cross") return `${pct(v)} ${L("zum MA200", "vs. MA200")}`;
+  if (kind.startsWith("funding")) return pct(v, 4);
+  return usd(v);   // Liquidationen
+}
+function fmtThr(kind, v) {
+  if (v == null) return "";
+  if (kind.startsWith("score")) return (v > 0 ? "+" : v < 0 ? "−" : "") + num(Math.abs(v), 1);
+  if (kind.startsWith("funding")) return pct(v, 4);
+  return usd(v);
+}
+const fmtTime = (t) => (t ? new Date(t * 1000).toLocaleString(LOCALE, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : dash);
+function ago(t) {
+  const min = Math.max(0, (Date.now() / 1000 - t) / 60);
+  if (min < 1) return L("gerade eben", "just now");
+  if (min < 60) return L(`vor ${Math.round(min)} Min.`, `${Math.round(min)} min ago`);
+  return L(`vor ${Math.round(min / 60)} Std.`, `${Math.round(min / 60)} h ago`);
+}
+
+async function api(body) {
+  const opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  const res = await fetch("api/alerts", opts);
+  const p = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(p.error || "HTTP " + res.status);
+  return p;
+}
+
+function setMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text || "";
+  el.className = "msg" + (text ? (ok ? " ok" : " err") : "");
+}
+
+// --- Einstellungen ---
+
+function renderSettings() {
+  const s = state.settings;
+  $("topic").value = s.topic || "";
+  $("server").value = s.server && s.server !== "https://ntfy.sh" ? s.server : "";
+  // Link: gespeicherter Wert, sonst die Adresse dieser Seite (lokal sinnlos: dann leer lassen)
+  const local = /^(localhost|127\.)/.test(location.hostname);
+  $("link").value = s.link || (local ? "" : location.origin);
+  renderIntro();
+}
+
+function renderIntro() {
+  const topic = $("topic").value.trim();
+  const server = ($("server").value.trim() || "https://ntfy.sh").replace(/\/$/, "");
+  const sub = topic ? ` <a href="${esc(server + "/" + topic)}" target="_blank" rel="noopener">${esc(server.replace(/^https?:\/\//, "") + "/" + topic)}</a>` : "";
+  $("ntfy-intro").innerHTML = L(
+    `Alarme kommen als Push-Nachricht aufs Handy: App <b>ntfy</b> installieren (iOS/Android, kostenlos, ohne Konto) und dort den Kanal unten abonnieren – oder im Browser öffnen:${sub || " (erst Kanal eintragen)"}. Wer den Kanalnamen kennt, kann mitlesen; daher einen zufälligen wählen.`,
+    `Alerts arrive as push notifications on your phone: install the <b>ntfy</b> app (iOS/Android, free, no account) and subscribe to the topic below – or open it in the browser:${sub || " (enter a topic first)"}. Anyone who knows the topic name can read along, so pick a random one.`);
+}
+
+function randomTopic() {
+  const chars = "abcdefghijkmnpqrstuvwxyz23456789";
+  const a = new Uint32Array(12);
+  crypto.getRandomValues(a);
+  return "krypto-" + [...a].map((x) => chars[x % chars.length]).join("");
+}
+
+async function saveSettings() {
+  const body = { action: "settings", topic: $("topic").value.trim(), server: $("server").value.trim(), link: $("link").value.trim(), lang: LANG };
+  state = await api(body);
+  renderAll();
+}
+
+$("topic").addEventListener("input", renderIntro);
+$("server").addEventListener("input", renderIntro);
+$("random").addEventListener("click", () => { $("topic").value = randomTopic(); renderIntro(); });
+$("save").addEventListener("click", async () => {
+  try { await saveSettings(); setMsg("settings-msg", L("Gespeichert.", "Saved."), true); }
+  catch (e) { setMsg("settings-msg", e.message, false); }
+});
+$("test").addEventListener("click", async () => {
+  $("test").disabled = true;
+  try {
+    await saveSettings();   // erst speichern, damit der Test den eingetragenen Kanal nutzt
+    await api({ action: "test" });
+    setMsg("settings-msg", L("Testnachricht gesendet – sie sollte gleich in der App erscheinen.", "Test message sent – it should appear in the app shortly."), true);
+  } catch (e) { setMsg("settings-msg", e.message, false); }
+  $("test").disabled = false;
+});
+
+// --- Neue Regel ---
+
+function fillKinds() {
+  $("kind").innerHTML = Object.entries(KIND_DEFS).map(([k, d]) => `<option value="${k}">${esc(d.label)}</option>`).join("");
+}
+
+function fillCoins() {
+  const kind = $("kind").value;
+  const prev = $("coin").value;
+  const coins = watchList();
+  $("coin").innerHTML = (kind === "liq_1h" ? `<option value="${ALL}">${L("Alle Coins", "All coins")}</option>` : "")
+    + coins.map((c) => `<option value="${esc(c.symbol + ":" + c.id)}">${esc(c.symbol)} – ${esc(c.name || c.id)}</option>`).join("");
+  if ([...$("coin").options].some((o) => o.value === prev)) $("coin").value = prev;
+}
+
+function onKind() {
+  const d = KIND_DEFS[$("kind").value];
+  const needs = $("kind").value !== "ma200_cross";
+  $("thr-field").hidden = !needs;
+  $("unit").textContent = needs ? d.unit : "";
+  $("threshold").placeholder = d.ph ? d.ph.replace(".", DEC) : "";
+  $("kind-hint").textContent = d.hint;
+  fillCoins();
+}
+
+$("kind").addEventListener("change", onKind);
+document.addEventListener("watchlist", fillCoins);
+$("add").addEventListener("click", async () => {
+  const kind = $("kind").value, d = KIND_DEFS[kind];
+  const [symbol, coin_id] = $("coin").value === ALL ? [ALL, null] : $("coin").value.split(":");
+  const body = { action: "add", kind, symbol, coin_id };
+  if (kind !== "ma200_cross") {
+    const v = parseNum($("threshold").value);
+    if (Number.isNaN(v)) { setMsg("add-msg", L("Bitte eine Zahl als Schwelle eingeben.", "Please enter a number as threshold."), false); return; }
+    body.threshold = d.toApi ? d.toApi(v) : v;
+  }
+  try {
+    state = await api(body);
+    renderAll();
+    $("threshold").value = "";
+    setMsg("add-msg", L("Regel angelegt. Geprüft wird spätestens in 5 Minuten.", "Rule added. It will be checked within 5 minutes."), true);
+  } catch (e) { setMsg("add-msg", e.message, false); }
+});
+
+// --- Tabellen ---
+
+function renderRules() {
+  const rows = state.rules.map((r) => {
+    const d = KIND_DEFS[r.kind] || { label: r.kind };
+    const coin = r.symbol === ALL ? L("Alle Coins", "All coins") : r.coin_id
+      ? `<a href="coin.html?symbol=${encodeURIComponent(r.symbol)}&id=${encodeURIComponent(r.coin_id)}">${esc(r.symbol)}</a>` : esc(r.symbol);
+    const cond = esc(d.label) + (r.threshold != null ? " " + fmtThr(r.kind, r.threshold) : "");
+    const isMet = r.last_value != null && r.threshold != null
+      && (r.kind.endsWith("above") || r.kind === "liq_1h" ? r.last_value > r.threshold : r.last_value < r.threshold);
+    const met = isMet ? ` <span class="badge on">${L("erfüllt", "met")}</span>` : "";
+    return `<tr class="${r.enabled ? "" : "off"}">
+      <td>${coin}</td><td>${cond}${met}</td>
+      <td class="num">${fmtVal(r.kind, r.last_value)}</td>
+      <td>${r.last_fired ? fmtTime(r.last_fired) : dash}</td>
+      <td class="ctl"><input type="checkbox" data-enable="${r.id}"${r.enabled ? " checked" : ""} aria-label="${L("Regel aktiv", "Rule active")}"></td>
+      <td class="ctl"><button class="del" data-del="${r.id}" title="${L("Regel löschen", "Delete rule")}" aria-label="${L("Regel löschen", "Delete rule")}">×</button></td>
+    </tr>`;
+  });
+  $("rules").innerHTML = rows.join("");
+  $("rules-empty").hidden = rows.length > 0;
+}
+
+function renderFired() {
+  const rows = state.fired.map((f) => `<tr>
+    <td>${fmtTime(f.time)}</td><td class="wrap">${esc(f.text)}</td>
+    <td>${f.sent ? `<span class="sent-ok">✓</span>` : `<span class="sent-err" title="${esc(f.error || "")}">✕ ${esc((f.error || "").slice(0, 60))}</span>`}</td>
+  </tr>`);
+  $("fired").innerHTML = rows.join("");
+  $("fired-empty").hidden = rows.length > 0;
+}
+
+function renderStatus() {
+  const parts = [];
+  parts.push(state.last_run ? L("Zuletzt geprüft ", "Last checked ") + ago(state.last_run) : L("Noch nicht geprüft (erste Prüfung 1 Min. nach Serverstart)", "Not checked yet (first check 1 min after server start)"));
+  parts.push(L("alle 5 Min.", "every 5 min"));
+  if (!state.settings.topic) parts.push(L("kein ntfy-Kanal eingestellt", "no ntfy topic set"));
+  if (state.last_error) parts.push(L("Fehler: ", "Error: ") + state.last_error);
+  $("status").textContent = parts.join(" · ");
+}
+
+function renderAll() {
+  renderRules();
+  renderFired();
+  renderStatus();
+}
+
+$("rules").addEventListener("change", async (e) => {
+  const id = Number(e.target.dataset.enable);
+  if (!id) return;
+  try { state = await api({ action: "enable", id, enabled: e.target.checked }); renderAll(); }
+  catch (err) { alert(err.message); }
+});
+$("rules").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-del]");
+  if (!btn) return;
+  try { state = await api({ action: "delete", id: Number(btn.dataset.del) }); renderAll(); }
+  catch (err) { alert(err.message); }
+});
+$("check").addEventListener("click", async () => {
+  $("check").disabled = true;
+  try { state = await api({ action: "check" }); renderAll(); }
+  catch (e) { $("status").textContent = e.message; }
+  $("check").disabled = false;
+});
+
+// --- Start ---
+
+fillKinds();
+onKind();
+(async () => {
+  try {
+    state = await api();
+    renderSettings();
+    renderAll();
+  } catch (e) {
+    $("status").textContent = L("Alarme konnten nicht geladen werden: ", "Alerts could not be loaded: ") + e.message;
+  }
+})();
+// Werte und Verlauf regelmäßig nachladen (ohne die Eingabefelder anzufassen)
+setInterval(async () => {
+  if (document.hidden || !state) return;
+  try { state = await api(); renderAll(); } catch (e) { /* beim nächsten Mal */ }
+}, 60000);
+</script>
+</body>
+</html>

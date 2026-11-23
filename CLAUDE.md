@@ -27,6 +27,15 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   `/api/liq-history?days=7|30|90|365&coin=&exchange=` (Stundenwerte, Coins, Börsen, größte Orders aus SQLite,
   Cache 60 s; Abschnitt „Verlauf“ auf der Seite, Balken je Tag bzw. 4 h in Ortszeit, gebildet im Browser).
   Test im Terminal: `python3 liquidations.py --seconds 60`
+- `alerts.py` – Alarme: Regeln je Coin (`KINDS`: Score/Kurs über/unter, Kurs kreuzt MA200, Funding über/unter
+  pro 8 h, Liquidationen in 1 h über X, auch für alle Coins `*`), SQLite `data/alerts.db` (`rules`, `fired`, `settings`).
+  `Checker` prüft alle 5 Min. im Server (erste Prüfung 1 Min. nach Start) mit denselben Coin-Daten wie die Watchlist-Karten
+  (`get_watch_coins`, CoinGecko gebündelt) und `Store.snapshot` der Liquidationen. Auslösen nur auf Flanke (Bedingung wird
+  wahr), höchstens einmal je `COOLDOWN` (1 h); ohne ntfy-Kanal wird nichts ausgelöst (Meldung bliebe sonst verbraucht).
+  Versand per ntfy als JSON-POST an den Server-Root (`send_ntfy`), Texte `TEXTS` de/en nach `settings.lang`.
+  Seite `web/alerts.html` (Navigation „Alarme“): Kanal, Test, Regeln, Verlauf. Endpoint `GET /api/alerts`, Änderungen über
+  `POST /api/alerts` mit JSON `{action: add|delete|enable|settings|test|check}` (`POST_ROUTES`, `do_POST`; nur
+  `application/json`, damit fremde Formulare nichts ändern können). Regeln gelten für alle, die das Dashboard öffnen können.
 - `server.py` – HTTP-Server mit Cache (5 Min.) und den Endpoints `/api/sentiment`,
   `/api/coin?symbol=…&id=…`, `/api/markets?page=…` (oder `?category=…`: größte 100 einer Sparte),
   `/api/categories` (alle CoinGecko-Sparten, eine Abfrage), `/api/defi` (TVL je Kategorie und

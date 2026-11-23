@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
+import alerts
 import liquidations
 import sentiment
 
@@ -38,6 +39,8 @@ STATIC_DIR = Path(__file__).resolve().parent / "web"
 DATA_DIR = Path(os.environ.get("STATE_DIRECTORY") or Path(__file__).resolve().parent / "data")
 LIQ_EXCHANGES = set(liquidations.EXCHANGES)
 _collector: Optional[liquidations.Collector] = None   # startet in main()
+_alerts: Optional[alerts.Checker] = None              # startet in main()
+POST_MAX_BYTES = 10_000   # Anfragen der Alarmseite sind klein
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}$")
 COIN_ID_RE = re.compile(r"^[a-z0-9-]{1,100}$")  # CoinGecko-ID, z. B. "bitcoin"
@@ -690,6 +693,88 @@ def api_liq_feed(q: Query) -> Dict[str, Any]:
     return col.feed(coin, exchange, min_usd, limit)
 
 
+# --- Alarme (alerts.py): GET liefert alles für die Seite, POST ändert Regeln und Einstellungen
+
+def alert_checker() -> alerts.Checker:
+    if _alerts is None:
+        raise ApiError(503, {"error": "Alarme laufen nicht"})
+    return _alerts
+
+
+def alerts_state() -> Dict[str, Any]:
+    chk = alert_checker()
+    return {
+        "settings": chk.store.settings(),
+        "rules": chk.store.rules(),
+        "fired": chk.store.fired(),
+        "last_run": chk.last_run,
+        "last_error": chk.last_error,
+        "check_seconds": alerts.CHECK_SECONDS,
+        "cooldown": alerts.COOLDOWN,
+    }
+
+
+def api_alerts(q: Query) -> Dict[str, Any]:
+    return alerts_state()
+
+
+def api_alerts_post(body: Dict[str, Any]) -> Dict[str, Any]:
+    """{"action": "add" | "delete" | "enable" | "settings" | "test" | "check", …}"""
+    chk = alert_checker()
+    action = body.get("action")
+    if action == "add":
+        kind, symbol, coin_id = body.get("kind"), str(body.get("symbol") or "").upper(), body.get("coin_id") or None
+        require(kind in alerts.KINDS, "unbekannte Bedingung")
+        if kind == "liq_1h":
+            require(symbol == alerts.ALL_COINS or SYMBOL_RE.match(symbol), "ungültiger Coin")
+            coin_id = None
+        else:
+            require(SYMBOL_RE.match(symbol) and isinstance(coin_id, str) and COIN_ID_RE.match(coin_id),
+                    "ungültiger Coin")
+        threshold = None
+        if alerts.KINDS[kind]:
+            try:
+                threshold = float(body.get("threshold"))
+            except (TypeError, ValueError):
+                raise ApiError(400, {"error": "ungültige Schwelle"})
+            require(threshold == threshold and abs(threshold) < 1e15, "ungültige Schwelle")
+            require(kind != "liq_1h" and not kind.startswith("price") or threshold > 0, "Schwelle muss über 0 liegen")
+        try:
+            chk.store.add_rule(symbol, coin_id, kind, threshold)
+        except ValueError as e:
+            raise ApiError(400, {"error": str(e)})
+    elif action in ("delete", "enable"):
+        require(isinstance(body.get("id"), int), "ungültige Regel")
+        if action == "delete":
+            chk.store.delete_rule(body["id"])
+        else:
+            chk.store.set_enabled(body["id"], bool(body.get("enabled")))
+    elif action == "settings":
+        topic = str(body.get("topic") or "").strip()
+        server = str(body.get("server") or alerts.NTFY_DEFAULT).strip().rstrip("/")
+        link = str(body.get("link") or "").strip().rstrip("/")
+        lang = body.get("lang") if body.get("lang") in sentiment.LANGS else "de"
+        require(not topic or alerts.TOPIC_RE.match(topic), "Kanalname: 8–64 Zeichen, nur Buchstaben, Ziffern, - und _")
+        require(alerts.URL_RE.match(server), "ungültige ntfy-Adresse")
+        require(not link or alerts.URL_RE.match(link), "ungültige Adresse des Dashboards")
+        chk.store.save_settings({"topic": topic, "server": server, "link": link, "lang": lang})
+    elif action == "test":
+        try:
+            chk.send_test()
+        except Exception as e:
+            raise ApiError(502, {"error": f"Senden fehlgeschlagen: {e}"})
+    elif action == "check":
+        chk.check()   # sofort prüfen (Button „Jetzt prüfen“)
+    else:
+        raise ApiError(400, {"error": "unbekannte Aktion"})
+    return alerts_state()
+
+
+POST_ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
+    "/api/alerts": api_alerts_post,
+}
+
+
 ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
     "/api/sentiment": api_sentiment,
     "/api/markets": api_markets,
@@ -710,6 +795,7 @@ ROUTES: Dict[str, Callable[[Query], Dict[str, Any]]] = {
     "/api/liq-history": api_liq_history,
     "/api/liq-overview": api_liq_overview,
     "/api/liq-feed": api_liq_feed,
+    "/api/alerts": api_alerts,
 }
 
 
@@ -746,6 +832,35 @@ class Handler(SimpleHTTPRequestHandler):
             return
         self.send_json(payload)
 
+    def do_POST(self) -> None:
+        route = POST_ROUTES.get(urlparse(self.path).path)
+        if route is None:
+            self.send_json({"error": "nicht gefunden"}, 404)
+            return
+        # Nur JSON annehmen: ein fremdes Formular kann kein application/json ohne CORS-Vorabfrage schicken
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self.send_json({"error": "JSON erwartet"}, 415)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 < length <= POST_MAX_BYTES:
+            self.send_json({"error": "ungültige Länge"}, 400)
+            return
+        try:
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise ValueError
+            payload = route(body)
+        except ValueError:
+            self.send_json({"error": "ungültiges JSON"}, 400)
+            return
+        except ApiError as e:
+            self.send_json(e.payload, e.status)
+            return
+        self.send_json(payload)
+
     def log_message(self, fmt: str, *args) -> None:
         if "/api/" in (str(args[0]) if args else ""):
             super().log_message(fmt, *args)
@@ -768,6 +883,12 @@ def main() -> None:
             get_onchain(sym)
             get_score_history(sym)
     threading.Thread(target=warm_onchain, daemon=True, name="onchain-warmup").start()
+
+    # Alarme: Regeln prüfen alle 5 Min. mit denselben Coin-Daten wie die Watchlist-Karten (CoinGecko gebündelt)
+    global _alerts
+    _alerts = alerts.Checker(alerts.AlertStore(DATA_DIR / "alerts.db"),
+                             lambda entries: get_watch_coins(entries)["coins"],
+                             _collector.store.snapshot).start()
 
     # Dashboard-Daten schon beim Start laden, damit der erste Seitenaufruf nicht warten muss
     threading.Thread(target=_refresh_in_background, daemon=True, name="sentiment-warmup").start()

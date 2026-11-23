@@ -8,6 +8,7 @@ const NAV_PAGES = [
   { href: "markets.html", files: ["markets.html"], label: () => L("Märkte", "Markets") },
   { href: "sectors.html", files: ["sectors.html"], label: () => L("Sparten", "Sectors") },
   { href: "liquidations.html", files: ["liquidations.html"], label: () => L("Liquidationen", "Liquidations") },
+  { href: "alerts.html", files: ["alerts.html"], label: () => L("Alarme", "Alerts") },
 ];
 
 function buildNav() {
