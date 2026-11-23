@@ -62,6 +62,9 @@ Lokales Dashboard, das aus kostenlosen öffentlichen Marktdaten (ohne API-Keys) 
   (Liste `NAV_PAGES`, aktive Seite farbig gefüllt in `--accent` mit `aria-current="page"`, Unterseiten über `section` mit
   `aria-current="true"` – `coin.html`/`about.html` gehören zu „Märkte“; die `<h1>` jeder Hauptseite heißt wie ihr Menüpunkt, Sprachumschalter); bis 640 px klappen die Seiten in ein Menü „☰“.
   Seitenlinks gehören dorthin, nicht in den `<header>` der Seiten (dort nur seitenspezifische Knöpfe).
+  Detailseiten setzen darunter Breadcrumbs über `setBreadcrumb(items, sections)` (sticky, `.crumbs`): `coin.html`
+  Märkte → Coin → aktueller Abschnitt beim Scrollen (`CRUMB_SECTIONS`/`setCoinCrumbs` in `coin-base.js`, neue Karten
+  dort eintragen), `about.html` Märkte → Coin → Profil.
 - `web/index.html` – Dashboard, `web/markets.html` – Rangliste (Top 1000, Suche, Sparten-Filter),
   `web/sectors.html` – Sparten: Rotation der Hauptsparten in 24 h (Liste `MAIN` mit deutschen
   Namen und CoinGecko-IDs), DeFi-TVL (Kategorien/Chains, 24 h/7 T) und Tabelle aller Sparten

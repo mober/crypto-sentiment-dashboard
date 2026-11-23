@@ -225,6 +225,8 @@ addStatic({
 
 // --- Start ---------------------------------------------------------------
 
+setCoinCrumbs();
+
 if (!validSymbol) {
   $("hero").className = "card status error";
   $("hero").textContent = L("Kein gültiger Coin angegeben.", "No valid coin given.");

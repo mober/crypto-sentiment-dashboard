@@ -106,6 +106,13 @@ const coinId = params.get("id") || "";
 const MAIN_SYMBOLS = ["BTC", "ETH", "SOL"];  // wie SYMBOLS in server.py
 const query = "symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : "");
 $("back").href = "coin.html?" + query;
+// Breadcrumbs: Märkte → Coin → Profil (setBreadcrumb in nav.js)
+const setAboutCrumbs = (name) => setBreadcrumb([
+  { label: L("Märkte", "Markets"), href: "markets.html" },
+  ...(symbol ? [{ label: name || symbol, href: "coin.html?" + query }] : []),
+  { label: L("Profil", "Profile") },
+]);
+setAboutCrumbs();
 
 // Mengen kompakt, z. B. 766,8 Mio.
 const amount = (v) => {
@@ -276,6 +283,7 @@ async function loadProfile() {
     profile = p;
     document.title = `${p.name} – ${L("Profil", "Profile")}`;
     $("title").textContent = `${L("Über", "About")} ${p.name}`;
+    setAboutCrumbs(p.name);
     $("updated").textContent = L("Profil-Stand: ", "Profile as of: ") + new Date(p.updated).toLocaleString(LOCALE);
     render();
   } catch (e) {

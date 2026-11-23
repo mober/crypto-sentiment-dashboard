@@ -82,6 +82,7 @@ function renderHero(c) {
     fng ? `Fear &amp; Greed <b>${fng.value}</b> (${fngZone(fng.value).name})` : "",
   ].filter(Boolean).join(" · ");
   const coinName = c.data.name || symbol;
+  setCoinCrumbs(coinName);
   $("title-star").innerHTML = watchStar({ id: coinId || c.data.coin_id, symbol, name: c.data.name });
   const aboutHref = "about.html?symbol=" + encodeURIComponent(symbol) + (coinId ? "&id=" + encodeURIComponent(coinId) : "");
   $("hero").className = "card hero";
