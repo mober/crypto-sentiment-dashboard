@@ -59,9 +59,16 @@ deploy/deploy.sh root@203.0.113.5
 
 Passwort, Domain oder Anmeldung ändern: `setup.sh` einfach erneut ausführen (mit oder ohne Benutzername).
 
+> **Achtung, eigener Server (maxheadroom):** Dort `setup.sh` **nicht** mehr ausführen. Es schreibt die
+> ganze `/etc/caddy/Caddyfile` neu aus `Caddyfile.template`; Einstiegsseite und alle Unterseiten
+> (`/trading/`, `/renate/`, `/noah/` …) wären danach weg. Zum Aktualisieren nur `deploy.sh` verwenden,
+> Änderungen an Caddy von Hand in `/etc/caddy/Caddyfile` (vorher Sicherung anlegen).
+
 ## Unter einem Unterpfad (z. B. `/trading/`)
 
-Auf maxheadroom23.org läuft das Dashboard neben anderen Seiten unter `/trading/`. Dieser Teil steht
+Auf maxheadroom23.org läuft das Dashboard neben anderen Seiten unter `/trading/`; die Einstiegsseite
+mit den Links liegt in `/var/www/start`. markus-obermaier.com, www.markus-obermaier.com und
+194-163-159-110.sslip.io stehen im selben Caddy-Block und liefern dasselbe aus. Dieser Teil steht
 nicht in `Caddyfile.template`, sondern ist von Hand in `/etc/caddy/Caddyfile` eingetragen (das
 Frontend nutzt relative Pfade, deshalb reicht `handle_path`):
 
